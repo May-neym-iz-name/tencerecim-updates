@@ -1,0 +1,176 @@
+const Database = require('better-sqlite3')
+const path = require('path')
+const { app } = require('electron')
+
+let db
+
+function getDbPath() {
+  return path.join(app.getPath('userData'), 'tencerecim.db')
+}
+
+function init() {
+  db = new Database(getDbPath())
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
+  createTables()
+  migrate()
+  seedLokasyonlar()
+  return db
+}
+
+function getDb() { return db }
+
+function createTables() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lokasyonlar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ad TEXT NOT NULL,
+      adres TEXT,
+      telefon TEXT,
+      aktif INTEGER DEFAULT 1,
+      ikas_lokasyon_id TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS markalar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ad TEXT NOT NULL UNIQUE,
+      aktif INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS tedarikciler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ad TEXT NOT NULL UNIQUE,
+      telefon TEXT,
+      email TEXT,
+      aktif INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS kategoriler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ad TEXT NOT NULL,
+      ust_kategori_id INTEGER REFERENCES kategoriler(id),
+      tam_yol TEXT,
+      aktif INTEGER DEFAULT 1,
+      UNIQUE(ad, ust_kategori_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS urunler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ad TEXT NOT NULL,
+      barkod TEXT UNIQUE,
+      sku TEXT UNIQUE,
+      marka_id INTEGER REFERENCES markalar(id),
+      marka TEXT,
+      kategori_id INTEGER REFERENCES kategoriler(id),
+      kategori TEXT,
+      tedarikci_id INTEGER REFERENCES tedarikciler(id),
+      aciklama TEXT,
+      alis_fiyati REAL DEFAULT 0,
+      satis_fiyati REAL NOT NULL,
+      kdv_orani INTEGER DEFAULT 20,
+      aktif INTEGER DEFAULT 1,
+      ikas_urun_id TEXT,
+      ikas_varyant_id TEXT,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime')),
+      guncelleme_tarihi TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS urun_stoklar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      urun_id INTEGER NOT NULL REFERENCES urunler(id),
+      lokasyon_id INTEGER NOT NULL REFERENCES lokasyonlar(id),
+      miktar INTEGER DEFAULT 0,
+      minimum_stok INTEGER DEFAULT 0,
+      UNIQUE(urun_id, lokasyon_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS musteriler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ad TEXT NOT NULL,
+      soyad TEXT NOT NULL,
+      telefon TEXT,
+      email TEXT,
+      tc_kimlik TEXT,
+      vergi_no TEXT,
+      vergi_dairesi TEXT,
+      unvan TEXT,
+      adres TEXT,
+      il TEXT,
+      ilce TEXT,
+      iskonto_orani REAL DEFAULT 0,
+      aktif INTEGER DEFAULT 1,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS satislar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fis_no TEXT UNIQUE NOT NULL,
+      lokasyon_id INTEGER NOT NULL REFERENCES lokasyonlar(id),
+      musteri_id INTEGER REFERENCES musteriler(id),
+      odeme_tipi TEXT DEFAULT 'nakit',
+      durum TEXT DEFAULT 'tamamlandi',
+      ara_toplam REAL DEFAULT 0,
+      iskonto_toplam REAL DEFAULT 0,
+      kdv_toplam REAL DEFAULT 0,
+      genel_toplam REAL DEFAULT 0,
+      notlar TEXT,
+      tarih TEXT DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS satis_kalemleri (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      satis_id INTEGER NOT NULL REFERENCES satislar(id),
+      urun_id INTEGER NOT NULL REFERENCES urunler(id),
+      miktar INTEGER NOT NULL,
+      birim_fiyat REAL NOT NULL,
+      iskonto_orani REAL DEFAULT 0,
+      kdv_orani INTEGER DEFAULT 20,
+      toplam REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS stok_sayimlar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lokasyon_id INTEGER NOT NULL REFERENCES lokasyonlar(id),
+      durum TEXT DEFAULT 'devam_ediyor',
+      notlar TEXT,
+      baslangic_tarihi TEXT DEFAULT (datetime('now','localtime')),
+      bitis_tarihi TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS stok_sayim_kalemleri (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sayim_id INTEGER NOT NULL REFERENCES stok_sayimlar(id),
+      urun_id INTEGER NOT NULL REFERENCES urunler(id),
+      beklenen_miktar INTEGER DEFAULT 0,
+      sayilan_miktar INTEGER,
+      fark INTEGER
+    );
+  `)
+}
+
+function migrate() {
+  // iskonto_orani kolonu musteriler tablosuna yoksa ekle
+  try { db.exec("ALTER TABLE musteriler ADD COLUMN iskonto_orani REAL DEFAULT 0") } catch {}
+  try { db.exec("ALTER TABLE satislar ADD COLUMN iskonto_toplam REAL DEFAULT 0") } catch {}
+  try { db.exec("ALTER TABLE satis_kalemleri ADD COLUMN iskonto_orani REAL DEFAULT 0") } catch {}
+  try { db.exec("ALTER TABLE urunler ADD COLUMN marka_id INTEGER REFERENCES markalar(id)") } catch {}
+  try { db.exec("ALTER TABLE urunler ADD COLUMN kategori_id INTEGER REFERENCES kategoriler(id)") } catch {}
+  try { db.exec("ALTER TABLE urunler ADD COLUMN tedarikci_id INTEGER REFERENCES tedarikciler(id)") } catch {}
+  try { db.exec("ALTER TABLE urunler ADD COLUMN ikas_varyant_id TEXT") } catch {}
+}
+
+function seedLokasyonlar() {
+  const count = db.prepare('SELECT COUNT(*) as n FROM lokasyonlar').get()
+  if (count.n === 0) {
+    db.prepare("INSERT INTO lokasyonlar (ad, adres) VALUES (?, ?)").run('Tencerecim Pendik', 'Pendik')
+    db.prepare("INSERT INTO lokasyonlar (ad, adres) VALUES (?, ?)").run('Tencerecim Gölcük', 'Gölcük')
+  } else {
+    // Mevcut lokasyonların adlarını güncelle
+    const lok1 = db.prepare('SELECT id FROM lokasyonlar WHERE id = 1').get()
+    if (lok1) db.prepare("UPDATE lokasyonlar SET ad = 'Tencerecim Pendik' WHERE id = 1 AND ad LIKE 'Ma%aza 1%'").run()
+    const lok2 = db.prepare('SELECT id FROM lokasyonlar WHERE id = 2').get()
+    if (lok2) db.prepare("UPDATE lokasyonlar SET ad = 'Tencerecim Gölcük' WHERE id = 2 AND ad LIKE 'Ma%aza 2%'").run()
+  }
+}
+
+module.exports = { init, getDb }

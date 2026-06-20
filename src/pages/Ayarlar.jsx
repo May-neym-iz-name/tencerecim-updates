@@ -1,0 +1,78 @@
+import { useState, useEffect } from 'react'
+import toast from 'react-hot-toast'
+import { lokasyonApi } from '../api/ipc'
+
+export default function Ayarlar() {
+  const [lokasyonlar, setLokasyonlar] = useState([])
+  const [yeniLok, setYeniLok] = useState({ ad: '', adres: '', telefon: '' })
+
+  useEffect(() => { lokasyonApi.listele().then(setLokasyonlar) }, [])
+
+  async function lokasyonEkle(e) {
+    e.preventDefault()
+    try {
+      await lokasyonApi.olustur(yeniLok)
+      toast.success('Lokasyon eklendi')
+      setYeniLok({ ad: '', adres: '', telefon: '' })
+      lokasyonApi.listele().then(setLokasyonlar)
+    } catch (e) { toast.error(e.message) }
+  }
+
+  async function lokasyonGuncelle(lok) {
+    try {
+      await lokasyonApi.guncelle(lok.id, { ad: lok.ad, adres: lok.adres || '', telefon: lok.telefon || '' })
+      toast.success('Lokasyon güncellendi')
+    } catch (e) { toast.error(e.message) }
+  }
+
+  return (
+    <div className="p-5 max-w-2xl">
+      <h2 className="text-2xl font-bold text-gray-800 mb-5">Ayarlar</h2>
+
+      <div className="bg-white rounded-xl border p-5 mb-5">
+        <h3 className="font-semibold mb-3">Mağaza Lokasyonları</h3>
+        <div className="space-y-3 mb-4">
+          {lokasyonlar.map(lok => (
+            <div key={lok.id} className="border rounded-lg p-3 bg-gray-50">
+              <p className="text-xs text-gray-400 mb-2">Lokasyon #{lok.id}</p>
+              <div className="grid grid-cols-3 gap-2">
+                <input defaultValue={lok.ad} placeholder="Mağaza adı"
+                  onBlur={e => lokasyonGuncelle({ ...lok, ad: e.target.value })}
+                  className="border rounded px-2 py-1.5 text-sm" />
+                <input defaultValue={lok.adres || ''} placeholder="Adres"
+                  onBlur={e => lokasyonGuncelle({ ...lok, adres: e.target.value })}
+                  className="border rounded px-2 py-1.5 text-sm" />
+                <input defaultValue={lok.telefon || ''} placeholder="Telefon"
+                  onBlur={e => lokasyonGuncelle({ ...lok, telefon: e.target.value })}
+                  className="border rounded px-2 py-1.5 text-sm" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <form onSubmit={lokasyonEkle} className="border-t pt-4">
+          <p className="text-sm font-medium mb-2 text-gray-600">Yeni Lokasyon Ekle</p>
+          <div className="grid grid-cols-3 gap-2">
+            <input value={yeniLok.ad} onChange={e => setYeniLok(l => ({ ...l, ad: e.target.value }))}
+              placeholder="Mağaza adı *" required className="border rounded px-2 py-1.5 text-sm" />
+            <input value={yeniLok.adres} onChange={e => setYeniLok(l => ({ ...l, adres: e.target.value }))}
+              placeholder="Adres" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={yeniLok.telefon} onChange={e => setYeniLok(l => ({ ...l, telefon: e.target.value }))}
+              placeholder="Telefon" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+          <button type="submit" className="mt-2 bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">+ Ekle</button>
+        </form>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+        <h3 className="font-semibold text-amber-800 mb-2">⚠️ Yakında Eklenecek</h3>
+        <ul className="text-sm text-amber-700 space-y-1">
+          <li>• Supabase bulut senkronizasyonu</li>
+          <li>• ikas e-ticaret entegrasyonu</li>
+          <li>• Barkod yazıcı desteği</li>
+          <li>• Otomatik güncelleme ayarları</li>
+        </ul>
+      </div>
+    </div>
+  )
+}

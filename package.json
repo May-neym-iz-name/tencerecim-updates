@@ -1,0 +1,74 @@
+{
+  "name": "tencerecim",
+  "version": "1.0.0",
+  "description": "Tencerecim Mağaza Yönetim Sistemi",
+  "main": "electron/main.js",
+  "author": "Tencerecim",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "vite build && electron-builder",
+    "build:win": "vite build && electron-builder --win",
+    "electron": "electron .",
+    "vite": "vite"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "electron-updater": "^6.1.8",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.1",
+    "electron": "^22.3.27",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.47",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hot-toast": "^2.4.1",
+    "react-router-dom": "^6.26.2",
+    "tailwindcss": "^3.4.12",
+    "vite": "^5.4.8",
+    "vite-plugin-electron": "^0.28.8",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.tencerecim.magaza",
+    "productName": "Tencerecim Mağaza",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "!node_modules/electron/dist/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Tencerecim Magaza"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "May-neym-iz-name",
+      "repo": "tencerecim-updates"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; }
+
+/* Fiş yazdırma stili */
+@media print {
+  body > #root > div > nav { display: none !important; }
+  body > #root > div > main { padding: 0 !important; }
+  .no-print { display: none !important; }
+  .fis-yazdir { display: block !important; }
+}
