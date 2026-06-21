@@ -39,8 +39,13 @@ ipcMain.handle('update:kontrolEt', async () => {
 })
 
 // İndirme bitince kur + yeniden başlat.
-ipcMain.on('update:kurVeYenidenBaslat', () => {
-  autoUpdater.quitAndInstall()
+// NOT: renderer invoke ile çağırır → ipcMain.handle olmalı (on ile tetiklenmez).
+let kuruluyor = false
+ipcMain.handle('update:kurVeYenidenBaslat', () => {
+  kuruluyor = true
+  // isSilent=true: sessiz kurulum (giriş öncesi otomatik akış için sihirbaz açılmaz)
+  // isForceRunAfter=true: kurulumdan sonra uygulamayı tekrar başlat
+  setImmediate(() => autoUpdater.quitAndInstall(true, true))
 })
 
 function createWindow() {
@@ -75,6 +80,8 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  // Güncelleme kurulurken erken app.quit() çağırma; quitAndInstall süreci yönetir.
+  if (kuruluyor) return
   if (process.platform !== 'darwin') app.quit()
 })
 
