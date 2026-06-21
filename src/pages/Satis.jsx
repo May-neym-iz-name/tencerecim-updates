@@ -8,6 +8,13 @@ const MUSTERI_BOSH = {
   vergi_dairesi: '', unvan: '', adres: '', il: '', ilce: '', iskonto_orani: '',
 }
 
+// Kategorileri ağaç sırasına dizip her birinin derinliğini (girinti için) hesaplar.
+function kategoriHiyerarsik(kategoriler) {
+  return [...kategoriler]
+    .sort((a, b) => (a.tam_yol || a.ad).localeCompare(b.tam_yol || b.ad, 'tr'))
+    .map(k => ({ ...k, derinlik: ((k.tam_yol || '').match(/>/g) || []).length }))
+}
+
 // Müşteri formu alanları (Müşteriler sayfasıyla aynı) — [name, label, zorunlu]
 const MUSTERI_ALANLARI = [
   [['ad', 'Ad *', true], ['soyad', 'Soyad *', true]],
@@ -248,24 +255,16 @@ export default function Satis() {
                   </button>
                 </div>
                 <div className="p-2 space-y-0.5">
-                  {/* Ana kategoriler ve alt kategoriler gruplu */}
-                  {kategoriler.filter(k => !k.ust_kategori_id).map(ana => {
-                    const altlar = kategoriler.filter(k => k.ust_kategori_id === ana.id)
+                  {/* Tüm kategoriler ağaç sırasında, derinliğe göre girintili (her seviye desteklenir) */}
+                  {kategoriHiyerarsik(kategoriler).map(k => {
+                    const secili = secilenKategori === String(k.id)
                     return (
-                      <div key={ana.id}>
-                        <button
-                          onClick={() => { setSecilenKategori(String(ana.id)); setKategoriAcik(false) }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors ${secilenKategori === String(ana.id) ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50 text-gray-800'}`}>
-                          {ana.ad}
-                        </button>
-                        {altlar.map(alt => (
-                          <button key={alt.id}
-                            onClick={() => { setSecilenKategori(String(alt.id)); setKategoriAcik(false) }}
-                            className={`w-full text-left pl-7 pr-3 py-1.5 rounded-lg text-xs transition-colors ${secilenKategori === String(alt.id) ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-600'}`}>
-                            └ {alt.ad}
-                          </button>
-                        ))}
-                      </div>
+                      <button key={k.id}
+                        onClick={() => { setSecilenKategori(String(k.id)); setKategoriAcik(false) }}
+                        style={{ paddingLeft: `${0.75 + k.derinlik * 1.1}rem` }}
+                        className={`w-full text-left pr-3 py-1.5 rounded-lg transition-colors ${k.derinlik === 0 ? 'text-sm font-medium' : 'text-xs'} ${secili ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-700'}`}>
+                        {k.derinlik > 0 && <span className="text-gray-400">└ </span>}{k.ad}
+                      </button>
                     )
                   })}
                 </div>

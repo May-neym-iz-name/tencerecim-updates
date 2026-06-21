@@ -4,6 +4,13 @@ import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi } from '../ap
 
 const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20 }
 
+// Kategorileri ağaç sırasına dizip her birinin derinliğini (girinti için) hesaplar.
+function kategoriHiyerarsik(kategoriler) {
+  return [...kategoriler]
+    .sort((a, b) => (a.tam_yol || a.ad).localeCompare(b.tam_yol || b.ad, 'tr'))
+    .map(k => ({ ...k, derinlik: ((k.tam_yol || '').match(/>/g) || []).length }))
+}
+
 function InlineEkle({ label, onEkle }) {
   const [deger, setDeger] = useState('')
   async function submit(e) {
@@ -131,7 +138,9 @@ export default function Urunler() {
         </select>
         <select value={filtreKategori} onChange={e => setFiltreKategori(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white max-w-56">
           <option value="">Tüm Kategoriler</option>
-          {kategoriler.map(k => <option key={k.id} value={k.id}>{k.tam_yol}</option>)}
+          {kategoriHiyerarsik(kategoriler).map(k => (
+            <option key={k.id} value={k.id}>{'   '.repeat(k.derinlik)}{k.ad}</option>
+          ))}
         </select>
         {(filtreMarka || filtreKategori || arama) && (
           <button onClick={() => { setFiltreMarka(''); setFiltreKategori(''); setArama('') }} className="text-xs text-gray-500 hover:text-red-600 px-2">✕ Temizle</button>
@@ -200,7 +209,9 @@ export default function Urunler() {
                   <label className="block text-xs font-medium text-gray-600 mb-1">Kategori</label>
                   <select value={form.kategori_id} onChange={e => setForm(f=>({...f,kategori_id:e.target.value}))} className="w-full border rounded-lg px-3 py-2 text-sm">
                     <option value="">— Seçin —</option>
-                    {kategoriler.map(k => <option key={k.id} value={k.id}>{k.tam_yol}</option>)}
+                    {kategoriHiyerarsik(kategoriler).map(k => (
+                      <option key={k.id} value={k.id}>{'   '.repeat(k.derinlik)}{k.ad}</option>
+                    ))}
                   </select>
                   <InlineEkle label="kategori" onEkle={kategoriEkle} />
                 </div>
