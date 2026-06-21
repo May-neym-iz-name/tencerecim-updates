@@ -54,7 +54,7 @@ export default function Satis() {
   const [islemde, setIslemde] = useState(false)
 
   // Uygulama ayarları (müşteri zorunlu mu, indirim tipi)
-  const { ayarlar } = useAyarlar()
+  const { ayarlar, kaydet: ayarKaydet } = useAyarlar()
   const iskontoTipi = ayarlar.iskonto_tipi || 'oran'
   const musteriZorunlu = !!ayarlar.musteri_zorunlu
 
@@ -416,9 +416,17 @@ export default function Satis() {
         {/* Alt: Özet + Ödeme + Buton */}
         <div className="border-t bg-gray-50 p-3 flex-shrink-0 space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500 flex-shrink-0">
-              Genel İndirim {iskontoTipi === 'tutar' ? '(₺)' : '(%)'}
-            </span>
+            <span className="text-xs text-gray-500 flex-shrink-0">Genel İndirim</span>
+            {/* %/₺ tipi seçici (kullanıcı tercihi, yerelde saklanır) */}
+            <div className="flex border rounded-lg overflow-hidden flex-shrink-0">
+              {[['oran', '%'], ['tutar', '₺']].map(([val, sembol]) => (
+                <button key={val} type="button"
+                  onClick={() => { ayarKaydet('iskonto_tipi', val); setManuelIskonto(0) }}
+                  className={`px-2 py-1 text-xs font-medium transition-colors ${iskontoTipi === val ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  {sembol}
+                </button>
+              ))}
+            </div>
             <input type="number" min="0" max={iskontoTipi === 'tutar' ? undefined : 100}
               step={iskontoTipi === 'tutar' ? '1' : '0.5'} value={manuelIskonto || ''}
               onChange={e => setManuelIskonto(parseFloat(e.target.value) || 0)}

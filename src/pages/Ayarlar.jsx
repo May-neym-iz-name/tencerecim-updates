@@ -92,20 +92,7 @@ export default function Ayarlar() {
             </span>
           </label>
 
-          {/* İskonto tipi */}
-          <div>
-            <span className="block text-sm font-medium text-gray-800 mb-1.5">Genel indirim tipi</span>
-            <div className="flex gap-2">
-              {[['oran', 'Oran (%)'], ['tutar', 'Tutar (₺)']].map(([val, label]) => (
-                <button key={val} disabled={!yonetici}
-                  onClick={() => ayarDegistir('iskonto_tipi', val)}
-                  className={`px-4 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50 ${ayarlar.iskonto_tipi === val ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <span className="block text-xs text-gray-500 mt-1">Satış ekranındaki genel indirim alanı yüzde mi yoksa TL mi olsun.</span>
-          </div>
+          <p className="text-xs text-gray-400">Genel indirim tipini (% / ₺) satış ekranındaki indirim alanının yanından değiştirebilirsiniz.</p>
         </div>
       </div>
 

@@ -1,34 +1,33 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { ayarlariGetir, ayarKaydet } from '../lib/ayarlar'
+import { createContext, useContext, useState, useCallback } from 'react'
 
+// Uygulama ayarları YEREL olarak (localStorage) saklanır — Supabase gerektirmez.
+// Bunlar makineye/kullanıcıya özel tercihlerdir, merkezi politika değil.
 const VARSAYILAN = { musteri_zorunlu: false, iskonto_tipi: 'oran' }
+const ANAHTAR = 'tencerecim_ayarlar'
+
+function yukle() {
+  try {
+    const raw = localStorage.getItem(ANAHTAR)
+    if (raw) return { ...VARSAYILAN, ...JSON.parse(raw) }
+  } catch { /* bozuk veri → varsayılan */ }
+  return VARSAYILAN
+}
 
 const AyarlarContext = createContext(null)
 
 export function AyarlarProvider({ children }) {
-  const [ayarlar, setAyarlar] = useState(VARSAYILAN)
-  const [yuklendi, setYuklendi] = useState(false)
+  const [ayarlar, setAyarlar] = useState(yukle)
 
-  const yenile = useCallback(async () => {
-    try {
-      const m = await ayarlariGetir()
-      setAyarlar({ ...VARSAYILAN, ...m })
-    } catch {
-      // Tablo henüz yoksa veya bağlantı yoksa güvenli varsayılanlarla devam et
-      setAyarlar(VARSAYILAN)
-    }
-    setYuklendi(true)
-  }, [])
-
-  useEffect(() => { yenile() }, [yenile])
-
-  const kaydet = useCallback(async (anahtar, deger) => {
-    await ayarKaydet(anahtar, deger)
-    setAyarlar(a => ({ ...a, [anahtar]: deger }))
+  const kaydet = useCallback((anahtar, deger) => {
+    setAyarlar(a => {
+      const yeni = { ...a, [anahtar]: deger }
+      try { localStorage.setItem(ANAHTAR, JSON.stringify(yeni)) } catch { /* yok say */ }
+      return yeni
+    })
   }, [])
 
   return (
-    <AyarlarContext.Provider value={{ ayarlar, yuklendi, kaydet, yenile }}>
+    <AyarlarContext.Provider value={{ ayarlar, kaydet }}>
       {children}
     </AyarlarContext.Provider>
   )
