@@ -1,6 +1,6 @@
 {
   "name": "tencerecim",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Tencerecim Mağaza Yönetim Sistemi",
   "main": "electron/main.js",
   "author": "Tencerecim",
@@ -25,7 +25,7 @@
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.0.1",
     "electron": "^22.3.27",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "24.13.1",
     "postcss": "^8.4.47",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
