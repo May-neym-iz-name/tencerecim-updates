@@ -1,8 +1,23 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi, fisApi } from '../api/ipc'
+import { useAyarlar } from '../ayarlar/AyarlarContext'
 
-const MUSTERI_BOSH = { ad: '', soyad: '', telefon: '', iskonto_orani: '' }
+const MUSTERI_BOSH = {
+  ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '',
+  vergi_dairesi: '', unvan: '', adres: '', il: '', ilce: '', iskonto_orani: '',
+}
+
+// Müşteri formu alanları (Müşteriler sayfasıyla aynı) — [name, label, zorunlu]
+const MUSTERI_ALANLARI = [
+  [['ad', 'Ad *', true], ['soyad', 'Soyad *', true]],
+  [['telefon', 'Telefon', false], ['email', 'E-posta', false]],
+  [['tc_kimlik', 'TC Kimlik No', false], ['vergi_no', 'Vergi No', false]],
+  [['vergi_dairesi', 'Vergi Dairesi', false], ['unvan', 'Ünvan (Kurumsal)', false]],
+  [['adres', 'Adres', false]],
+  [['il', 'İl *', true], ['ilce', 'İlçe *', true]],
+  [['iskonto_orani', 'Sabit İskonto Oranı (%)', false]],
+]
 
 export default function Satis() {
   // Ürün browser
@@ -34,9 +49,14 @@ export default function Satis() {
 
   // Sepet
   const [sepet, setSepet] = useState([])
-  const [genelIskonto, setGenelIskonto] = useState(0)
+  const [manuelIskonto, setManuelIskonto] = useState(0) // değeri ayar tipine göre % veya ₺
   const [odemeTipi, setOdemeTipi] = useState('nakit')
   const [islemde, setIslemde] = useState(false)
+
+  // Uygulama ayarları (müşteri zorunlu mu, indirim tipi)
+  const { ayarlar } = useAyarlar()
+  const iskontoTipi = ayarlar.iskonto_tipi || 'oran'
+  const musteriZorunlu = !!ayarlar.musteri_zorunlu
 
   // Başlangıç yüklemesi
   useEffect(() => {
@@ -56,12 +76,6 @@ export default function Satis() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [])
-
-  // Müşteri iskontosu otomatik uygula
-  useEffect(() => {
-    if (secilenMusteri?.iskonto_orani > 0) setGenelIskonto(secilenMusteri.iskonto_orani)
-    else setGenelIskonto(0)
-  }, [secilenMusteri])
 
   // Ürün listesini yükle (filtreler değişince)
   const urunleriYukle = useCallback(async () => {
@@ -119,18 +133,20 @@ export default function Satis() {
     setSepet(prev => prev.map(k => k.urun_id === urun_id ? { ...k, miktar } : k))
   }
 
-  // Müşteri kaydet
+  // Müşteri kaydet (Müşteriler sayfasıyla aynı form; ad/soyad/il/ilçe zorunlu)
   async function musteriKaydet(e) {
     e.preventDefault()
-    if (!musteriForm.ad.trim()) return
+    if (!musteriForm.ad.trim() || !musteriForm.soyad.trim() || !musteriForm.il.trim() || !musteriForm.ilce.trim()) {
+      toast.error('Ad, soyad, il ve ilçe zorunludur')
+      return
+    }
     setMusteriKayitYukleniyor(true)
     try {
-      const veri = {
-        ad: musteriForm.ad.trim(),
-        soyad: musteriForm.soyad.trim(),
-        telefon: musteriForm.telefon.trim(),
-        iskonto_orani: parseFloat(musteriForm.iskonto_orani) || 0,
-      }
+      const veri = Object.fromEntries(
+        Object.entries(musteriForm)
+          .filter(([, v]) => String(v).trim() !== '')
+          .map(([k, v]) => [k, k === 'iskonto_orani' ? (parseFloat(v) || 0) : (typeof v === 'string' ? v.trim() : v)])
+      )
       const yeniMusteri = await musteriApi.olustur(veri)
       setSecilenMusteri({ ...veri, id: yeniMusteri.id })
       setMusteriArama(`${veri.ad} ${veri.soyad}`.trim())
@@ -142,7 +158,16 @@ export default function Satis() {
   }
 
   // Hesaplamalar
-  const efektifIskonto = (k) => Math.max(k.kalem_iskonto || 0, genelIskonto)
+  // Brüt toplam (iskontosuz) — TL indirimi yüzdeye çevirmek için
+  const brutToplam = sepet.reduce((t, k) => t + k.satis_fiyati * k.miktar, 0)
+  const musteriIskonto = secilenMusteri?.iskonto_orani || 0
+  // Manuel indirimi yüzdeye çevir (ayar 'tutar' ise TL → %)
+  const manuelYuzde = iskontoTipi === 'tutar'
+    ? (brutToplam > 0 ? Math.min(100, (manuelIskonto / brutToplam) * 100) : 0)
+    : (manuelIskonto || 0)
+  const genelIskontoYuzde = Math.max(musteriIskonto, manuelYuzde)
+
+  const efektifIskonto = (k) => Math.max(k.kalem_iskonto || 0, genelIskontoYuzde)
   const kalemToplam = (k) => k.satis_fiyati * k.miktar * (1 - efektifIskonto(k) / 100)
   const toplamKDVsiz = sepet.reduce((t, k) => t + kalemToplam(k) * 100 / (100 + k.kdv_orani), 0)
   const toplamKDV = sepet.reduce((t, k) => t + kalemToplam(k) * k.kdv_orani / (100 + k.kdv_orani), 0)
@@ -152,17 +177,18 @@ export default function Satis() {
   async function satisOlustur() {
     if (!secilenLokasyonId) { toast.error('Lokasyon seçin'); return }
     if (sepet.length === 0) { toast.error('Sepet boş'); return }
+    if (musteriZorunlu && !secilenMusteri) { toast.error('Bu satış için müşteri seçilmesi zorunludur'); return }
     setIslemde(true)
     try {
       const satis = await satisApi.olustur({
         lokasyon_id: secilenLokasyonId,
         musteri_id: secilenMusteri?.id || null,
         odeme_tipi: odemeTipi,
-        genel_iskonto: genelIskonto,
+        genel_iskonto: genelIskontoYuzde,
         kalemler: sepet.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) })),
       })
       toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
-      setSepet([]); setSecilenMusteri(null); setMusteriArama(''); setGenelIskonto(0)
+      setSepet([]); setSecilenMusteri(null); setMusteriArama(''); setManuelIskonto(0)
       barkodRef.current?.focus()
       // Fişi yazdır (hata olursa satışı engellemesin)
       fisApi.yazdir(satis.id).catch(err => toast.error(`Fiş yazdırılamadı: ${err.message}`))
@@ -372,7 +398,7 @@ export default function Satis() {
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <span className="text-xs text-gray-400">%</span>
                       <input type="number" min="0" max="100" step="0.5"
-                        value={k.kalem_iskonto || ''} placeholder={String(genelIskonto || '0')}
+                        value={k.kalem_iskonto || ''} placeholder={genelIskontoYuzde ? genelIskontoYuzde.toFixed(0) : '0'}
                         onChange={e => setSepet(prev => prev.map(i => i.urun_id === k.urun_id ? { ...i, kalem_iskonto: parseFloat(e.target.value) || 0 } : i))}
                         className="w-12 border rounded px-1.5 py-1 text-xs text-center" />
                     </div>
@@ -390,12 +416,18 @@ export default function Satis() {
         {/* Alt: Özet + Ödeme + Buton */}
         <div className="border-t bg-gray-50 p-3 flex-shrink-0 space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500 flex-shrink-0">Genel İskonto</span>
-            <input type="number" min="0" max="100" step="0.5" value={genelIskonto || ''}
-              onChange={e => setGenelIskonto(parseFloat(e.target.value) || 0)}
-              placeholder="0" className="w-16 border rounded-lg px-2 py-1 text-xs text-center ml-auto" />
-            <span className="text-xs text-gray-400">%</span>
+            <span className="text-xs text-gray-500 flex-shrink-0">
+              Genel İndirim {iskontoTipi === 'tutar' ? '(₺)' : '(%)'}
+            </span>
+            <input type="number" min="0" max={iskontoTipi === 'tutar' ? undefined : 100}
+              step={iskontoTipi === 'tutar' ? '1' : '0.5'} value={manuelIskonto || ''}
+              onChange={e => setManuelIskonto(parseFloat(e.target.value) || 0)}
+              placeholder="0" className="w-20 border rounded-lg px-2 py-1 text-xs text-center ml-auto" />
+            <span className="text-xs text-gray-400">{iskontoTipi === 'tutar' ? '₺' : '%'}</span>
           </div>
+          {musteriIskonto > 0 && (
+            <p className="text-[11px] text-green-600 -mt-1.5">Müşteri sabit iskontosu: %{musteriIskonto}</p>
+          )}
 
           <div className="bg-white rounded-lg border p-2.5 space-y-1">
             <div className="flex justify-between text-xs text-gray-500"><span>Ara Toplam</span><span>₺{toplamKDVsiz.toFixed(2)}</span></div>
@@ -413,7 +445,10 @@ export default function Satis() {
             ))}
           </div>
 
-          <button onClick={satisOlustur} disabled={islemde || sepet.length === 0}
+          {musteriZorunlu && !secilenMusteri && sepet.length > 0 && (
+            <p className="text-[11px] text-amber-600 text-center -mb-1">⚠️ Satış için müşteri seçimi zorunlu</p>
+          )}
+          <button onClick={satisOlustur} disabled={islemde || sepet.length === 0 || (musteriZorunlu && !secilenMusteri)}
             className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 text-sm transition-colors">
             {islemde ? '⏳ İşleniyor...' : `✓ Satışı Tamamla  ₺${genelToplam.toFixed(2)}`}
           </button>
@@ -430,35 +465,28 @@ export default function Satis() {
       {/* ===== Yeni Müşteri Modal ===== */}
       {musteriFormAcik && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setMusteriFormAcik(false)}>
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-base font-bold">Yeni Müşteri Ekle</h3>
               <button onClick={() => setMusteriFormAcik(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
             </div>
             <form onSubmit={musteriKaydet} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Ad *</label>
-                  <input required value={musteriForm.ad} onChange={e => setMusteriForm(f => ({ ...f, ad: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" autoFocus />
+              {MUSTERI_ALANLARI.map((satir, i) => (
+                <div key={i} className={`grid gap-3 ${satir.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  {satir.map(([name, label, req], j) => (
+                    <div key={name}>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                      <input name={name} required={req} value={musteriForm[name]}
+                        autoFocus={i === 0 && j === 0}
+                        type={name === 'iskonto_orani' ? 'number' : 'text'}
+                        min={name === 'iskonto_orani' ? 0 : undefined}
+                        max={name === 'iskonto_orani' ? 100 : undefined}
+                        onChange={e => setMusteriForm(f => ({ ...f, [name]: e.target.value }))}
+                        className="w-full border rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Soyad</label>
-                  <input value={musteriForm.soyad} onChange={e => setMusteriForm(f => ({ ...f, soyad: e.target.value }))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Telefon</label>
-                <input value={musteriForm.telefon} onChange={e => setMusteriForm(f => ({ ...f, telefon: e.target.value }))}
-                  className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="05xx xxx xx xx" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Sabit İskonto Oranı (%)</label>
-                <input type="number" min="0" max="100" value={musteriForm.iskonto_orani}
-                  onChange={e => setMusteriForm(f => ({ ...f, iskonto_orani: e.target.value }))}
-                  className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0" />
-              </div>
+              ))}
               <div className="flex gap-2 pt-1">
                 <button type="submit" disabled={musteriKayitYukleniyor}
                   className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium text-sm hover:bg-blue-700 disabled:opacity-50">

@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
+import { AyarlarProvider } from './ayarlar/AyarlarContext'
 import Giris from './pages/Giris.jsx'
 import Satis from './pages/Satis.jsx'
 import Urunler from './pages/Urunler.jsx'
@@ -85,7 +86,11 @@ function Uygulama() {
 
 function Kapi() {
   const { girisYapildi } = useAuth()
-  return girisYapildi ? <Uygulama /> : <Giris />
+  return girisYapildi ? (
+    <AyarlarProvider>
+      <Uygulama />
+    </AyarlarProvider>
+  ) : <Giris />
 }
 
 export default function App() {

@@ -1,10 +1,20 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { lokasyonApi } from '../api/ipc'
+import { useAyarlar } from '../ayarlar/AyarlarContext'
+import { useAuth } from '../auth/AuthContext'
 
 export default function Ayarlar() {
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [yeniLok, setYeniLok] = useState({ ad: '', adres: '', telefon: '' })
+  const { ayarlar, kaydet } = useAyarlar()
+  const { profil } = useAuth()
+  const yonetici = profil?.rol === 'super_admin' || profil?.rol === 'yonetici'
+
+  async function ayarDegistir(anahtar, deger) {
+    try { await kaydet(anahtar, deger); toast.success('Ayar kaydedildi') }
+    catch (e) { toast.error('Ayar kaydedilemedi: ' + e.message) }
+  }
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar) }, [])
 
@@ -62,6 +72,41 @@ export default function Ayarlar() {
           </div>
           <button type="submit" className="mt-2 bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">+ Ekle</button>
         </form>
+      </div>
+
+      {/* Satış Ayarları (yalnızca yönetici/süper yönetici) */}
+      <div className="bg-white rounded-xl border p-5 mb-5">
+        <h3 className="font-semibold mb-1">Satış Ayarları</h3>
+        {!yonetici && <p className="text-xs text-gray-400 mb-3">Bu ayarları yalnızca yöneticiler değiştirebilir.</p>}
+
+        <div className="space-y-4 mt-3">
+          {/* Müşteri zorunlu */}
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" disabled={!yonetici}
+              checked={!!ayarlar.musteri_zorunlu}
+              onChange={e => ayarDegistir('musteri_zorunlu', e.target.checked)}
+              className="w-4 h-4 mt-0.5" />
+            <span>
+              <span className="text-sm font-medium text-gray-800">Müşteri bilgisi girilmeden satış yapılamasın</span>
+              <span className="block text-xs text-gray-500">Açıkken, satışı tamamlamak için müşteri seçilmesi zorunludur.</span>
+            </span>
+          </label>
+
+          {/* İskonto tipi */}
+          <div>
+            <span className="block text-sm font-medium text-gray-800 mb-1.5">Genel indirim tipi</span>
+            <div className="flex gap-2">
+              {[['oran', 'Oran (%)'], ['tutar', 'Tutar (₺)']].map(([val, label]) => (
+                <button key={val} disabled={!yonetici}
+                  onClick={() => ayarDegistir('iskonto_tipi', val)}
+                  className={`px-4 py-1.5 rounded-lg text-sm border transition-colors disabled:opacity-50 ${ayarlar.iskonto_tipi === val ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="block text-xs text-gray-500 mt-1">Satış ekranındaki genel indirim alanı yüzde mi yoksa TL mi olsun.</span>
+          </div>
+        </div>
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
