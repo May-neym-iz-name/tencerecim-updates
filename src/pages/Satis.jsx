@@ -85,7 +85,7 @@ export default function Satis() {
         arama: urunArama || undefined,
         marka_id: secilenMarka || undefined,
         kategori_id: secilenKategori || undefined,
-        boyut: 48,
+        boyut: 0, // sınırsız — tüm ürünler listelensin
       })
       setUrunler(r.urunler)
     } catch {}

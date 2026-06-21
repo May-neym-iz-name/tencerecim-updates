@@ -38,7 +38,7 @@ export default function Urunler() {
 
   const yukle = useCallback(async () => {
     try {
-      const r = await urunlerApi.listele({ arama, marka_id: filtreMarka || undefined, kategori_id: filtreKategori || undefined })
+      const r = await urunlerApi.listele({ arama, marka_id: filtreMarka || undefined, kategori_id: filtreKategori || undefined, boyut: 0 })
       setUrunler(r.urunler); setToplam(r.toplam)
     } catch (e) { toast.error(e.message) }
   }, [arama, filtreMarka, filtreKategori])

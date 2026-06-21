@@ -30,6 +30,11 @@ module.exports = {
     }
     if (marka_id) { where += ' AND u.marka_id = ?'; params.push(marka_id) }
     const toplam = db.prepare(`SELECT COUNT(*) as n FROM urunler u ${where}`).get(...params).n
+    // boyut <= 0 => sınırsız (tüm ürünler). Aksi halde sayfalama uygulanır.
+    if (!boyut || boyut <= 0) {
+      const sorgu = `${URUN_SELECT} ${where} ORDER BY u.ad`
+      return { toplam, urunler: db.prepare(sorgu).all(...params) }
+    }
     const sorgu = `${URUN_SELECT} ${where} ORDER BY u.ad LIMIT ? OFFSET ?`
     params.push(boyut, (sayfa - 1) * boyut)
     return { toplam, urunler: db.prepare(sorgu).all(...params) }
