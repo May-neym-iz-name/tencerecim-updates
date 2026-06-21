@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const { autoUpdater } = require('electron-updater')
 
@@ -8,25 +8,39 @@ let mainWindow
 autoUpdater.autoDownload = true
 autoUpdater.autoInstallOnAppQuit = true
 
-autoUpdater.on('update-available', () => {
-  if (mainWindow) {
-    mainWindow.webContents.send('update-status', 'Yeni güncelleme indiriliyor...')
+// Güncelleme durumunu renderer'a (giriş öncesi güncelleme ekranı) bildir.
+function guncellemeDurum(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update:durum', payload)
   }
-})
+}
 
-autoUpdater.on('update-downloaded', () => {
-  dialog.showMessageBox(mainWindow, {
-    type: 'info',
-    title: 'Güncelleme Hazır',
-    message: 'Yeni sürüm indirildi. Uygulama yeniden başlatılarak güncellenecek.',
-    buttons: ['Şimdi Güncelle', 'Sonra'],
-  }).then(({ response }) => {
-    if (response === 0) autoUpdater.quitAndInstall()
-  })
-})
-
+autoUpdater.on('checking-for-update', () => guncellemeDurum({ tip: 'kontrol' }))
+autoUpdater.on('update-available', (info) =>
+  guncellemeDurum({ tip: 'mevcut', surum: info?.version }))
+autoUpdater.on('update-not-available', () => guncellemeDurum({ tip: 'yok' }))
+autoUpdater.on('download-progress', (p) =>
+  guncellemeDurum({ tip: 'indiriliyor', yuzde: Math.round(p?.percent || 0) }))
+autoUpdater.on('update-downloaded', () => guncellemeDurum({ tip: 'indirildi' }))
 autoUpdater.on('error', (err) => {
-  console.error('Auto-updater hatası:', err.message)
+  console.error('Auto-updater hatası:', err?.message)
+  guncellemeDurum({ tip: 'hata', mesaj: err?.message })
+})
+
+// Renderer açılış anında güncelleme kontrolünü tetikler.
+ipcMain.handle('update:kontrolEt', async () => {
+  if (isDev) return { tip: 'yok' } // geliştirmede güncelleme yok
+  try {
+    await autoUpdater.checkForUpdates()
+  } catch (err) {
+    guncellemeDurum({ tip: 'hata', mesaj: err?.message })
+  }
+  return { tip: 'baslatildi' }
+})
+
+// İndirme bitince kur + yeniden başlat.
+ipcMain.on('update:kurVeYenidenBaslat', () => {
+  autoUpdater.quitAndInstall()
 })
 
 function createWindow() {
@@ -57,9 +71,7 @@ function createWindow() {
 app.whenReady().then(() => {
   require('./db/database').init()
   createWindow()
-  if (!isDev) {
-    setTimeout(() => autoUpdater.checkForUpdates(), 3000)
-  }
+  // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
 })
 
 app.on('window-all-closed', () => {

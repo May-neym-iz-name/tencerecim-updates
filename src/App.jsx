@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { AyarlarProvider } from './ayarlar/AyarlarContext'
+import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import Giris from './pages/Giris.jsx'
 import Satis from './pages/Satis.jsx'
 import Urunler from './pages/Urunler.jsx'
@@ -95,9 +96,11 @@ function Kapi() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Kapi />
-      <Toaster position="top-right" />
-    </AuthProvider>
+    <GuncellemeKapisi>
+      <AuthProvider>
+        <Kapi />
+        <Toaster position="top-right" />
+      </AuthProvider>
+    </GuncellemeKapisi>
   )
 }
