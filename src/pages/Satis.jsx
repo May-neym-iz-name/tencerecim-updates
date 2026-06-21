@@ -249,8 +249,8 @@ export default function Satis() {
                 </div>
                 <div className="p-2 space-y-0.5">
                   {/* Ana kategoriler ve alt kategoriler gruplu */}
-                  {kategoriler.filter(k => !k.ust_id).map(ana => {
-                    const altlar = kategoriler.filter(k => k.ust_id === ana.id)
+                  {kategoriler.filter(k => !k.ust_kategori_id).map(ana => {
+                    const altlar = kategoriler.filter(k => k.ust_kategori_id === ana.id)
                     return (
                       <div key={ana.id}>
                         <button

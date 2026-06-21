@@ -17,7 +17,17 @@ module.exports = {
       where += ' AND (u.ad LIKE ? OR u.barkod LIKE ? OR u.sku LIKE ?)'
       params.push(`%${arama}%`, `%${arama}%`, `%${arama}%`)
     }
-    if (kategori_id) { where += ' AND u.kategori_id = ?'; params.push(kategori_id) }
+    if (kategori_id) {
+      // Seçilen kategori + tüm alt kategorilerindeki ürünleri kapsa (tam_yol prefix eşleşmesi).
+      const kat = db.prepare('SELECT tam_yol FROM kategoriler WHERE id = ?').get(kategori_id)
+      if (kat && kat.tam_yol) {
+        where += ' AND u.kategori_id IN (SELECT id FROM kategoriler WHERE tam_yol = ? OR tam_yol LIKE ?)'
+        params.push(kat.tam_yol, kat.tam_yol + '>%')
+      } else {
+        where += ' AND u.kategori_id = ?'
+        params.push(kategori_id)
+      }
+    }
     if (marka_id) { where += ' AND u.marka_id = ?'; params.push(marka_id) }
     const toplam = db.prepare(`SELECT COUNT(*) as n FROM urunler u ${where}`).get(...params).n
     const sorgu = `${URUN_SELECT} ${where} ORDER BY u.ad LIMIT ? OFFSET ?`
