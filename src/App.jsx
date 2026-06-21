@@ -9,6 +9,7 @@ import StokSayim from './pages/StokSayim.jsx'
 import Musteriler from './pages/Musteriler.jsx'
 import Ayarlar from './pages/Ayarlar.jsx'
 import SatisGecmisi from './pages/SatisGecmisi.jsx'
+import Kullanicilar from './pages/Kullanicilar.jsx'
 
 const navItems = [
   { to: '/', label: '🛒 Satış', end: true, yetki: 'satis_yap', el: <Satis /> },
@@ -18,6 +19,7 @@ const navItems = [
   { to: '/stok-sayim', label: '🔢 Stok Sayım', yetki: 'stok_sayim', el: <StokSayim /> },
   { to: '/musteriler', label: '👥 Müşteriler', yetki: 'musteri_goruntule', el: <Musteriler /> },
   { to: '/ayarlar', label: '⚙️ Ayarlar', yetki: 'ayarlar_duzenle', el: <Ayarlar /> },
+  { to: '/kullanicilar', label: '🔑 Kullanıcılar', yetki: 'kullanici_yonetimi', el: <Kullanicilar /> },
 ]
 
 const ROL_ETIKET = { super_admin: 'Süper Yönetici', yonetici: 'Yönetici', personel: 'Personel', ozel: 'Özel' }
