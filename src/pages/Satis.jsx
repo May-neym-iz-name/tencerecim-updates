@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi } from '../api/ipc'
+import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi, fisApi } from '../api/ipc'
 
 const MUSTERI_BOSH = { ad: '', soyad: '', telefon: '', iskonto_orani: '' }
 
@@ -164,6 +164,8 @@ export default function Satis() {
       toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
       setSepet([]); setSecilenMusteri(null); setMusteriArama(''); setGenelIskonto(0)
       barkodRef.current?.focus()
+      // Fişi yazdır (hata olursa satışı engellemesin)
+      fisApi.yazdir(satis.id).catch(err => toast.error(`Fiş yazdırılamadı: ${err.message}`))
     } catch (e) { toast.error(e.message || 'Satış hatası') }
     setIslemde(false)
   }

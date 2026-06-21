@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { satisApi, lokasyonApi } from '../api/ipc'
+import { satisApi, lokasyonApi, fisApi } from '../api/ipc'
 
 export default function SatisGecmisi() {
   const [satislar, setSatislar] = useState([])
@@ -182,8 +182,13 @@ export default function SatisGecmisi() {
             <div className="flex justify-between font-bold text-base border-t pt-1"><span>Toplam</span><span>₺{satisDetay.genel_toplam?.toFixed(2)}</span></div>
           </div>
 
+          <button onClick={() => fisApi.yazdir(satisDetay.id).catch(e => toast.error(`Fiş yazdırılamadı: ${e.message}`))}
+            className="w-full mt-3 border border-gray-300 text-gray-700 py-1.5 rounded-lg text-sm hover:bg-gray-50">
+            🖨️ Fişi Yazdır
+          </button>
+
           {satisDetay.durum === 'tamamlandi' && (
-            <button onClick={() => satisIptal(satisDetay.id)} className="w-full mt-3 border border-red-300 text-red-600 py-1.5 rounded-lg text-sm hover:bg-red-50">
+            <button onClick={() => satisIptal(satisDetay.id)} className="w-full mt-2 border border-red-300 text-red-600 py-1.5 rounded-lg text-sm hover:bg-red-50">
               Satışı İptal Et
             </button>
           )}

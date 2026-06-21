@@ -81,6 +81,7 @@ const handlerModules = [
   require('./db/tedarikciler'),
   require('./db/kategoriler'),
   require('./db/excel-import'),
+  require('./fis-yazdir'),
 ]
 
 for (const mod of handlerModules) {

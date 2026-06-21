@@ -69,3 +69,7 @@ export const excelApi = {
   dosyaSec: () => invoke('excel:dosya-sec'),
   urunYukle: (yol) => invoke('excel:urun-yukle', yol),
 }
+
+export const fisApi = {
+  yazdir: (satis_id, sessiz = false) => invoke('fis:yazdir', { satis_id, sessiz }),
+}
