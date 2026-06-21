@@ -93,11 +93,17 @@ Sonuç: Kurulu tüm bilgisayarlar bir sonraki açılışta otomatik güncellenir
 
 ---
 
-## 5. Bekleyen / İleride Yapılacaklar
+## 5. Geliştirme Fazları (yönetici planı)
 
-- [ ] **Supabase** ile 2 mağaza + e-ticaret arası veri senkronizasyonu
-- [ ] **ikas** e-ticaret entegrasyonu
-- [ ] Fiyat / barkod etiket yazıcısı entegrasyonu (yazıcı alınınca)
+- [x] **Faz 1 — Sağlamlaştırma:** Satış hesaplaması saf modüle çıkarıldı
+  (`electron/db/satis-hesapla.js`), fiş no çakışma bug'ı giderildi (artık sıralı:
+  F202606210001...), vitest + 11 test eklendi (`npm test`).
+- [x] **Faz 2 — Satış fişi yazdırma:** `electron/fis-yazdir.js`. Satış sonrası
+  otomatik yazdırır + Satış Geçmişi'nden yeniden yazdırma. 80mm termal ve A4 uyumlu.
+- [ ] **Faz 3 — İki mağaza senkronizasyonu (Supabase):** Supabase URL + anon key gerekiyor.
+- [ ] **Faz 4 — ikas e-ticaret entegrasyonu:** ikas API anahtarı gerekiyor.
+- [ ] Fiyat / barkod etiket yazıcısı (yazıcı alınınca)
+- [ ] `frontend/` ölü kopya klasörü silinecek (güvenlik filtresi engelledi, kullanıcı onayı bekliyor)
 
 ---
 
