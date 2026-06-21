@@ -82,6 +82,7 @@ const handlerModules = [
   require('./db/kategoriler'),
   require('./db/excel-import'),
   require('./fis-yazdir'),
+  require('./auth'),
 ]
 
 for (const mod of handlerModules) {

@@ -73,3 +73,9 @@ export const excelApi = {
 export const fisApi = {
   yazdir: (satis_id, sessiz = false) => invoke('fis:yazdir', { satis_id, sessiz }),
 }
+
+export const authApi = {
+  beniHatirlaKaydet: (email, sifre) => invoke('auth:beni-hatirla-kaydet', { email, sifre }),
+  beniHatirlaGetir: () => invoke('auth:beni-hatirla-getir'),
+  beniHatirlaTemizle: () => invoke('auth:beni-hatirla-temizle'),
+}
