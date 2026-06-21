@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../auth/AuthContext'
 import { authApi } from '../api/ipc'
+import logo from '../assets/logo.png'
 
 export default function Giris() {
   const { giris } = useAuth()
@@ -38,7 +39,7 @@ export default function Giris() {
     <div className="flex h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-gray-700">
       <form onSubmit={gonder} className="bg-white rounded-2xl shadow-2xl p-8 w-96">
         <div className="text-center mb-6">
-          <div className="text-3xl mb-1">🏪</div>
+          <img src={logo} alt="Tencerecim" className="w-20 h-20 object-contain mx-auto mb-2" />
           <h1 className="text-xl font-bold text-gray-800">Tencerecim</h1>
           <p className="text-sm text-gray-500">Mağaza Yönetim Sistemi</p>
         </div>

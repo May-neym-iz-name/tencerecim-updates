@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { AyarlarProvider } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
+import logo from './assets/logo.png'
 import Giris from './pages/Giris.jsx'
 import Satis from './pages/Satis.jsx'
 import Urunler from './pages/Urunler.jsx'
@@ -45,9 +46,12 @@ function Uygulama() {
     <HashRouter>
       <div className="flex h-screen bg-gray-50 overflow-hidden">
         <nav className="w-52 bg-gray-900 text-white flex flex-col flex-shrink-0">
-          <div className="px-4 py-4 border-b border-gray-700">
-            <h1 className="text-base font-bold text-white">🏪 Tencerecim</h1>
-            <p className="text-xs text-gray-400 mt-0.5">Mağaza Yönetim Sistemi</p>
+          <div className="px-4 py-4 border-b border-gray-700 flex items-center gap-2.5">
+            <img src={logo} alt="Tencerecim" className="w-9 h-9 object-contain flex-shrink-0" />
+            <div>
+              <h1 className="text-base font-bold text-white leading-tight">Tencerecim</h1>
+              <p className="text-[11px] text-gray-400">Mağaza Yönetim Sistemi</p>
+            </div>
           </div>
           <div className="flex-1 py-2 overflow-auto">
             {erisilebilir.map(item => (

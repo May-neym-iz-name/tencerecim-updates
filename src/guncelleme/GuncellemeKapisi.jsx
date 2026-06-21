@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import logo from '../assets/logo.png'
 
 // Güvenlik için: güncelleme kontrolü çok uzun sürerse (internet yok vb.)
 // kullanıcıyı sonsuza kadar bekletmemek adına uygulamaya geç.
@@ -66,7 +67,7 @@ export default function GuncellemeKapisi({ children }) {
   return (
     <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
       <div className="flex flex-col items-center gap-5 px-8 text-center max-w-sm">
-        <div className="text-4xl">🏪</div>
+        <img src={logo} alt="Tencerecim" className="w-24 h-24 object-contain" />
         <h1 className="text-lg font-semibold">Tencerecim Mağaza</h1>
 
         {durum === 'kontrol' && (
