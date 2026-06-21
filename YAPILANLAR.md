@@ -100,7 +100,17 @@ Sonuç: Kurulu tüm bilgisayarlar bir sonraki açılışta otomatik güncellenir
   F202606210001...), vitest + 11 test eklendi (`npm test`).
 - [x] **Faz 2 — Satış fişi yazdırma:** `electron/fis-yazdir.js`. Satış sonrası
   otomatik yazdırır + Satış Geçmişi'nden yeniden yazdırma. 80mm termal ve A4 uyumlu.
-- [ ] **Faz 3 — İki mağaza senkronizasyonu (Supabase):** Supabase URL + anon key gerekiyor.
+- [~] **Faz 3 — Kimlik doğrulama + yetkilendirme + senkron:**
+  - [x] Supabase bağlantısı (`src/lib/supabase.js`), giriş ekranı (`Giris.jsx`)
+  - [x] "Beni hatırla" — e-posta+şifre OS-şifreli saklanır (`electron/auth.js`, safeStorage)
+  - [x] Rol/yetki sistemi (`src/auth/`): süper yönetici / yönetici / personel / özel + lokasyon kısıtı + 17 granüler yetki
+  - [x] Yetkiye göre menü gizleme, çıkış (`App.jsx`)
+  - [x] Kullanıcı/yetki yönetim ekranı (`Kullanicilar.jsx`) — süper yönetici ayarlar
+  - [x] Supabase şeması: `supabase/01_auth_rbac.sql` (profiles, yetki_kodlari, RLS, trigger)
+  - [ ] Sayfa içi lokasyon filtreleme (örn. Gölcük kullanıcısı sadece Gölcük'ü seçebilsin)
+  - [ ] Veri senkronu (ürün/stok/müşteri/satış) — `supabase/02_*.sql` + senkron motoru
+  - Mimari: yerel-öncelikli + olay-tabanlı senkron (sürekli polling YOK)
+  - Süper yönetici: info@resiftencerecim.com | Hesaplar Supabase panelinden açılır, yetkiler uygulamadan
 - [ ] **Faz 4 — ikas e-ticaret entegrasyonu:** ikas API anahtarı gerekiyor.
 - [ ] Fiyat / barkod etiket yazıcısı (yazıcı alınınca)
 - [ ] `frontend/` ölü kopya klasörü silinecek (güvenlik filtresi engelledi, kullanıcı onayı bekliyor)
