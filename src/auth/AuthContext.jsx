@@ -21,8 +21,12 @@ export function AuthProvider({ children }) {
     if (error) throw new Error(cevirHata(error.message))
 
     const { data: p, error: pErr } = await supabase
-      .from('profiles').select('*').eq('id', data.user.id).single()
+      .from('profiles').select('*').eq('id', data.user.id).maybeSingle()
     if (pErr) throw new Error('Profil bilgisi alınamadı: ' + pErr.message)
+    if (!p) {
+      await supabase.auth.signOut()
+      throw new Error('Hesabınızın profili bulunamadı. Yöneticinize başvurun (profil oluşturulmamış).')
+    }
     if (!p.aktif) {
       await supabase.auth.signOut()
       throw new Error('Hesabınız pasif durumda. Yöneticinize başvurun.')
