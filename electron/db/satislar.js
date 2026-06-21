@@ -1,19 +1,33 @@
 const { getDb } = require('./database')
+const { satisHesapla } = require('./satis-hesapla')
 
-function fisNoUret() {
+function bugununTarihKodu() {
   const now = new Date()
-  const tarih = now.getFullYear().toString() +
+  return now.getFullYear().toString() +
     String(now.getMonth() + 1).padStart(2, '0') +
     String(now.getDate()).padStart(2, '0')
-  return `F${tarih}${Math.floor(Math.random() * 9000 + 1000)}`
+}
+
+// Aynı gün içinde sıralı, çakışmasız fiş no üretir: F + YYYYMMDD + 4 haneli sıra
+function fisNoUret(db) {
+  const tarih = bugununTarihKodu()
+  const onek = `F${tarih}`
+  const row = db.prepare(
+    "SELECT fis_no FROM satislar WHERE fis_no LIKE ? ORDER BY fis_no DESC LIMIT 1"
+  ).get(`${onek}%`)
+  const sonSira = row ? parseInt(row.fis_no.slice(onek.length), 10) || 0 : 0
+  return `${onek}${String(sonSira + 1).padStart(4, '0')}`
 }
 
 module.exports = {
   'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0 }) => {
     const db = getDb()
-    let araToplam = 0, iskontoToplam = 0, kdvToplam = 0, genelToplam = 0
-    const kalemDetay = []
+    if (!lokasyon_id) throw new Error('Lokasyon seçilmedi')
+    if (!Array.isArray(kalemler) || kalemler.length === 0) throw new Error('Satış en az bir kalem içermelidir')
 
+    // Ürün/stok doğrula ve hesaplama için kalem verisini hazırla
+    const hesapKalemleri = []
+    const kalemMeta = []
     for (const kalem of kalemler) {
       const urun = db.prepare('SELECT * FROM urunler WHERE id = ? AND aktif = 1').get(kalem.urun_id)
       if (!urun) throw new Error(`Ürün bulunamadı: ${kalem.urun_id}`)
@@ -21,32 +35,25 @@ module.exports = {
       if (!stok || stok.miktar < kalem.miktar) throw new Error(`Yetersiz stok: ${urun.ad}`)
 
       const birimFiyat = kalem.birim_fiyat ?? urun.satis_fiyati
-      // Kalem bazlı iskonto + genel iskonto
-      const iskonto = Math.max(kalem.iskonto_orani || 0, genel_iskonto)
-      const iskontoluFiyat = birimFiyat * (1 - iskonto / 100)
-      const toplamBrut = birimFiyat * kalem.miktar
-      const toplamIskontolu = iskontoluFiyat * kalem.miktar
-      const kdv = toplamIskontolu * urun.kdv_orani / (100 + urun.kdv_orani)
-
-      araToplam += toplamIskontolu - kdv
-      iskontoToplam += toplamBrut - toplamIskontolu
-      kdvToplam += kdv
-      genelToplam += toplamIskontolu
-      kalemDetay.push({ ...kalem, urun, stok, birimFiyat, iskonto, toplam: toplamIskontolu })
+      hesapKalemleri.push({ miktar: kalem.miktar, birim_fiyat: birimFiyat, kdv_orani: urun.kdv_orani, iskonto_orani: kalem.iskonto_orani })
+      kalemMeta.push({ urun_id: kalem.urun_id, miktar: kalem.miktar, kdv_orani: urun.kdv_orani })
     }
+
+    const { araToplam, iskontoToplam, kdvToplam, genelToplam, kalemSonuc } = satisHesapla(hesapKalemleri, genel_iskonto)
 
     const insertFn = db.transaction(() => {
       const satis = db.prepare(`
         INSERT INTO satislar (fis_no, lokasyon_id, musteri_id, odeme_tipi, notlar, ara_toplam, iskonto_toplam, kdv_toplam, genel_toplam)
         VALUES (?,?,?,?,?,?,?,?,?)
-      `).run(fisNoUret(), lokasyon_id, musteri_id||null, odeme_tipi, notlar||null,
-        r(araToplam), r(iskontoToplam), r(kdvToplam), r(genelToplam))
+      `).run(fisNoUret(db), lokasyon_id, musteri_id||null, odeme_tipi, notlar||null,
+        araToplam, iskontoToplam, kdvToplam, genelToplam)
 
-      for (const k of kalemDetay) {
+      kalemMeta.forEach((k, i) => {
+        const h = kalemSonuc[i]
         db.prepare(`INSERT INTO satis_kalemleri (satis_id,urun_id,miktar,birim_fiyat,iskonto_orani,kdv_orani,toplam) VALUES (?,?,?,?,?,?,?)`)
-          .run(satis.lastInsertRowid, k.urun_id, k.miktar, k.birimFiyat, k.iskonto, k.urun.kdv_orani, r(k.toplam))
+          .run(satis.lastInsertRowid, k.urun_id, k.miktar, h.birimFiyat, h.iskonto, k.kdv_orani, r(h.toplam))
         db.prepare('UPDATE urun_stoklar SET miktar=miktar-? WHERE urun_id=? AND lokasyon_id=?').run(k.miktar, k.urun_id, lokasyon_id)
-      }
+      })
       return db.prepare('SELECT * FROM satislar WHERE id=?').get(satis.lastInsertRowid)
     })
     return insertFn()
