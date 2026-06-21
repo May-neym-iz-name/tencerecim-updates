@@ -5,3 +5,4 @@ dist-electron/
 *.db
 *.db-journal
 .env
+ecc-kaynak/
