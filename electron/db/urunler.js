@@ -1,6 +1,13 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
+// Ürün her lokasyonda 0 stokla görünsün ki Stok ekranında bulunabilsin.
+function stokSatirlariOlustur(db, urunId) {
+  const lokasyonlar = db.prepare('SELECT id FROM lokasyonlar').all()
+  const ekle = db.prepare('INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok) VALUES (?, ?, 0, 0)')
+  for (const l of lokasyonlar) ekle.run(urunId, l.id)
+}
+
 const URUN_SELECT = `
   SELECT u.*, m.ad as marka_adi, k.tam_yol as kategori_yol, t.ad as tedarikci_adi
   FROM urunler u
@@ -58,14 +65,30 @@ module.exports = {
     yetkiKontrol('urun_duzenle')
     const db = getDb()
     const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
+
+    // Yumuşak silme (aktif=0) nedeniyle aynı barkod/SKU pasif bir üründe kalmış olabilir.
+    // UNIQUE kısıtını ihlal etmemek için: pasif eşleşme varsa onu güncelleyip yeniden aktive et.
+    const cakisan = (barkod && db.prepare('SELECT * FROM urunler WHERE barkod = ?').get(barkod))
+                 || (sku && db.prepare('SELECT * FROM urunler WHERE sku = ?').get(sku))
+    if (cakisan) {
+      if (cakisan.aktif) {
+        throw new Error(`Bu ${barkod && cakisan.barkod === barkod ? 'barkod' : 'SKU'} zaten aktif bir üründe kullanılıyor`)
+      }
+      db.prepare(`
+        UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
+        aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?, aktif=1, guncelleme_tarihi=datetime('now','localtime')
+        WHERE id=?
+      `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null,
+         aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20, cakisan.id)
+      stokSatirlariOlustur(db, cakisan.id)
+      return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(cakisan.id)
+    }
+
     const r = db.prepare(`
       INSERT INTO urunler (ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null, aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20)
-    // Ürün her lokasyonda 0 stokla görünsün ki Stok/Stok Sayım ekranlarında bulunabilsin.
-    const lokasyonlar = db.prepare('SELECT id FROM lokasyonlar').all()
-    const stokEkle = db.prepare('INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok) VALUES (?, ?, 0, 0)')
-    for (const l of lokasyonlar) stokEkle.run(r.lastInsertRowid, l.id)
+    stokSatirlariOlustur(db, r.lastInsertRowid)
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(r.lastInsertRowid)
   },
 
@@ -78,12 +101,18 @@ module.exports = {
     if (mevcut && Number(mevcut.satis_fiyati) !== Number(satis_fiyati)) {
       yetkiKontrol('fiyat_degistir')
     }
-    db.prepare(`
-      UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
-      aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?, guncelleme_tarihi=datetime('now','localtime')
-      WHERE id=?
-    `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null,
-       aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20, id)
+    try {
+      db.prepare(`
+        UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
+        aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?, guncelleme_tarihi=datetime('now','localtime')
+        WHERE id=?
+      `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null,
+         aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20, id)
+    } catch (e) {
+      if (String(e.message).includes('UNIQUE') && e.message.includes('barkod')) throw new Error('Bu barkod başka bir üründe kullanılıyor')
+      if (String(e.message).includes('UNIQUE') && e.message.includes('sku')) throw new Error('Bu SKU başka bir üründe kullanılıyor')
+      throw e
+    }
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(id)
   },
 
