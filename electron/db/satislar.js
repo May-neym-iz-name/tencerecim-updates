@@ -1,5 +1,6 @@
 const { getDb } = require('./database')
 const { satisHesapla } = require('./satis-hesapla')
+const { _yetkiKontrol: yetkiKontrol, _lokasyonKontrol: lokasyonKontrol } = require('../yetki')
 
 function bugununTarihKodu() {
   const now = new Date()
@@ -21,6 +22,8 @@ function fisNoUret(db) {
 
 module.exports = {
   'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0 }) => {
+    yetkiKontrol('satis_yap')
+    lokasyonKontrol(lokasyon_id)
     const db = getDb()
     if (!lokasyon_id) throw new Error('Lokasyon seçilmedi')
     if (!Array.isArray(kalemler) || kalemler.length === 0) throw new Error('Satış en az bir kalem içermelidir')
@@ -103,6 +106,7 @@ module.exports = {
   },
 
   'satislar:iptal': (id) => {
+    yetkiKontrol('satis_iptal')
     const db = getDb()
     const satis = db.prepare('SELECT * FROM satislar WHERE id=?').get(id)
     if (!satis || satis.durum === 'iptal') throw new Error('Satış bulunamadı veya zaten iptal')

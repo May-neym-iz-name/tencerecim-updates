@@ -16,7 +16,23 @@ function init() {
   migrate()
   seedLokasyonlar()
   seedUpsSehirIlce()
+  backfillStok()
   return db
+}
+
+// Her aktif ürün × lokasyon için eksik stok satırlarını 0 ile tamamlar.
+// Böylece stok satırı olmayan (ör. yeni eklenmiş) ürünler Stok ve Stok Sayım
+// ekranlarında 0 olarak görünür ve stok girilebilir.
+function backfillStok() {
+  db.exec(`
+    INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok)
+    SELECT u.id, l.id, 0, 0
+    FROM urunler u CROSS JOIN lokasyonlar l
+    WHERE u.aktif = 1
+      AND NOT EXISTS (
+        SELECT 1 FROM urun_stoklar s WHERE s.urun_id = u.id AND s.lokasyon_id = l.id
+      )
+  `)
 }
 
 function getDb() { return db }

@@ -100,6 +100,7 @@ const handlerModules = [
   require('./db/tedarikciler'),
   require('./db/kategoriler'),
   require('./db/excel-import'),
+  require('./yetki'),
   require('./db/ups-ayarlar'),
   require('./ups/kargo'),
   require('./ups/etiket-yazdir'),

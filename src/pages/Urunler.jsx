@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi } from '../api/ipc'
+import { useAuth } from '../auth/AuthContext'
 import BarkodModal from '../components/BarkodModal'
 
 const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20 }
@@ -30,6 +31,11 @@ function InlineEkle({ label, onEkle }) {
 }
 
 export default function Urunler() {
+  const { yetkiVar } = useAuth()
+  const duzenleYetkisi = yetkiVar('urun_duzenle')
+  const silYetkisi = yetkiVar('urun_sil')
+  const fiyatYetkisi = yetkiVar('fiyat_degistir')
+  const excelYetkisi = yetkiVar('excel_ice_aktar')
   const [urunler, setUrunler] = useState([])
   const [toplam, setToplam] = useState(0)
   const [arama, setArama] = useState('')
@@ -111,14 +117,18 @@ export default function Urunler() {
       <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <h2 className="text-xl font-bold text-gray-800">Ürünler</h2>
         <div className="flex gap-2">
-          <button onClick={handleExcelYukle} disabled={excelYukleniyor}
-            className="flex items-center gap-1.5 border border-green-600 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50 text-sm disabled:opacity-50">
-            {excelYukleniyor ? '⏳ Yükleniyor...' : '📥 Excel İçe Aktar'}
-          </button>
-          <button onClick={() => { setForm(BOSH); setDuzenlenenId(null); setFormAcik(true) }}
-            className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-sm">
-            + Yeni Ürün
-          </button>
+          {excelYetkisi && (
+            <button onClick={handleExcelYukle} disabled={excelYukleniyor}
+              className="flex items-center gap-1.5 border border-green-600 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-50 text-sm disabled:opacity-50">
+              {excelYukleniyor ? '⏳ Yükleniyor...' : '📥 Excel İçe Aktar'}
+            </button>
+          )}
+          {duzenleYetkisi && (
+            <button onClick={() => { setForm(BOSH); setDuzenlenenId(null); setFormAcik(true) }}
+              className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-sm">
+              + Yeni Ürün
+            </button>
+          )}
         </div>
       </div>
 
@@ -172,8 +182,12 @@ export default function Urunler() {
                 <td className="px-3 py-2 text-gray-500">%{u.kdv_orani}</td>
                 <td className="px-3 py-2 whitespace-nowrap">
                   <button onClick={() => setBarkodUrun(u)} className="text-gray-600 hover:underline text-xs mr-2" title="Barkod etiketi bas">🏷️ Barkod</button>
-                  <button onClick={() => handleDuzenle(u)} className="text-blue-600 hover:underline text-xs mr-2">Düzenle</button>
-                  <button onClick={() => handleSil(u.id)} className="text-red-500 hover:underline text-xs">Sil</button>
+                  {duzenleYetkisi && (
+                    <button onClick={() => handleDuzenle(u)} className="text-blue-600 hover:underline text-xs mr-2">Düzenle</button>
+                  )}
+                  {silYetkisi && (
+                    <button onClick={() => handleSil(u.id)} className="text-red-500 hover:underline text-xs">Sil</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -229,14 +243,18 @@ export default function Urunler() {
                   <InlineEkle label="tedarikçi" onEkle={tedarikciEkle} />
                 </div>
 
-                {[['barkod','Barkod','text'],['sku','SKU Kodu','text'],['alis_fiyati','Alış Fiyatı (₺)','number'],['satis_fiyati','Satış Fiyatı (₺) *','number'],['kdv_orani','KDV Oranı (%)','number']].map(([name,label,type]) => (
+                {[['barkod','Barkod','text'],['sku','SKU Kodu','text'],['alis_fiyati','Alış Fiyatı (₺)','number'],['satis_fiyati','Satış Fiyatı (₺) *','number'],['kdv_orani','KDV Oranı (%)','number']].map(([name,label,type]) => {
+                  // Mevcut ürünü düzenlerken satış fiyatı, fiyat_degistir yetkisi yoksa kilitli.
+                  const fiyatKilitli = name === 'satis_fiyati' && duzenlenenId && !fiyatYetkisi
+                  return (
                   <div key={name}>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{label}{fiyatKilitli && ' 🔒'}</label>
                     <input type={type} step={type==='number'?'0.01':undefined} required={name==='satis_fiyati'}
+                      disabled={fiyatKilitli} title={fiyatKilitli ? 'Fiyat değiştirme yetkiniz yok' : undefined}
                       value={form[name]} onChange={e => setForm(f=>({...f,[name]:e.target.value}))}
-                      className="w-full border rounded-lg px-3 py-2 text-sm" />
+                      className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-400" />
                   </div>
-                ))}
+                )})}
 
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>

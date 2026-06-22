@@ -9,8 +9,9 @@ export default function Ayarlar() {
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [yeniLok, setYeniLok] = useState({ ad: '', adres: '', telefon: '' })
   const { ayarlar, kaydet } = useAyarlar()
-  const { profil } = useAuth()
-  const yonetici = profil?.rol === 'super_admin' || profil?.rol === 'yonetici'
+  const { yetkiVar } = useAuth()
+  // Tutarlılık: sayfa zaten ayarlar_duzenle ile açılıyor; iç bölümler de aynı yetkiye bağlı (rol yerine).
+  const yonetici = yetkiVar('ayarlar_duzenle')
 
   async function ayarDegistir(anahtar, deger) {
     try { await kaydet(anahtar, deger); toast.success('Ayar kaydedildi') }

@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { satisApi, lokasyonApi, fisApi } from '../api/ipc'
+import { useAuth } from '../auth/AuthContext'
 
 export default function SatisGecmisi() {
+  const { yetkiVar, erisilebilirLokasyonlar } = useAuth()
+  const iptalYetkisi = yetkiVar('satis_iptal')
+  const raporYetkisi = yetkiVar('rapor_goruntule')
   const [satislar, setSatislar] = useState([])
   const [toplam, setToplam] = useState(0)
   const [lokasyonlar, setLokasyonlar] = useState([])
@@ -28,7 +32,7 @@ export default function SatisGecmisi() {
   }, [filtre])
 
   useEffect(() => { yukle() }, [yukle])
-  useEffect(() => { lokasyonApi.listele().then(setLokasyonlar) }, [])
+  useEffect(() => { lokasyonApi.listele().then(lok => setLokasyonlar(erisilebilirLokasyonlar(lok))) }, [])
 
   async function satisDetayAc(id) {
     setSeciliSatis(id)
@@ -50,8 +54,8 @@ export default function SatisGecmisi() {
       <div className="flex-1 flex flex-col p-4 overflow-hidden">
         <h2 className="text-xl font-bold text-gray-800 mb-3 flex-shrink-0">Satış Geçmişi</h2>
 
-        {/* Özet Kartları */}
-        {ozet && (
+        {/* Özet Kartları (ciro/rapor — rapor_goruntule yetkisi gerektirir) */}
+        {ozet && raporYetkisi && (
           <div className="grid grid-cols-4 gap-3 mb-3 flex-shrink-0">
             {[
               ['Satış Sayısı', ozet.satis_sayisi || 0, '🧾'],
@@ -119,7 +123,7 @@ export default function SatisGecmisi() {
                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${durumRenk[s.durum]||''}`}>{s.durum}</span>
                   </td>
                   <td className="px-2 py-2">
-                    {s.durum==='tamamlandi' && (
+                    {s.durum==='tamamlandi' && iptalYetkisi && (
                       <button onClick={e => { e.stopPropagation(); satisIptal(s.id) }} className="text-xs text-red-500 hover:underline">İptal</button>
                     )}
                   </td>
@@ -187,7 +191,7 @@ export default function SatisGecmisi() {
             🖨️ Fişi Yazdır
           </button>
 
-          {satisDetay.durum === 'tamamlandi' && (
+          {satisDetay.durum === 'tamamlandi' && iptalYetkisi && (
             <button onClick={() => satisIptal(satisDetay.id)} className="w-full mt-2 border border-red-300 text-red-600 py-1.5 rounded-lg text-sm hover:bg-red-50">
               Satışı İptal Et
             </button>

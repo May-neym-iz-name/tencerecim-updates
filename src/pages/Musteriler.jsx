@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { musteriApi } from '../api/ipc'
+import { useAuth } from '../auth/AuthContext'
 
 const BOSH = { ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '', vergi_dairesi: '', unvan: '', adres: '', il: '', ilce: '', iskonto_orani: '' }
 
 export default function Musteriler() {
+  const { yetkiVar } = useAuth()
+  const duzenleYetkisi = yetkiVar('musteri_duzenle')
+  const silYetkisi = yetkiVar('musteri_sil')
   const [musteriler, setMusteriler] = useState([])
   const [toplam, setToplam] = useState(0)
   const [arama, setArama] = useState('')
@@ -59,10 +63,12 @@ export default function Musteriler() {
     <div className="p-5">
       <div className="flex justify-between items-center mb-5">
         <h2 className="text-2xl font-bold text-gray-800">Müşteriler</h2>
+        {duzenleYetkisi && (
         <button onClick={() => { setForm(BOSH); setDuzenlenenId(null); setFormAcik(true) }}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium">
           + Yeni Müşteri
         </button>
+        )}
       </div>
 
       <input value={arama} onChange={e => setArama(e.target.value)}
@@ -90,8 +96,12 @@ export default function Musteriler() {
                 <td className="px-4 py-2.5 text-gray-500">{m.il ? `${m.il}${m.ilce ? '/' + m.ilce : ''}` : '—'}</td>
                 <td className="px-4 py-2.5 text-xs">{m.iskonto_orani > 0 ? <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">%{m.iskonto_orani}</span> : '—'}</td>
                 <td className="px-4 py-2.5">
-                  <button onClick={() => handleDuzenle(m)} className="text-blue-600 hover:underline text-xs mr-3">Düzenle</button>
-                  <button onClick={() => handleSil(m.id)} className="text-red-500 hover:underline text-xs">Sil</button>
+                  {duzenleYetkisi && (
+                    <button onClick={() => handleDuzenle(m)} className="text-blue-600 hover:underline text-xs mr-3">Düzenle</button>
+                  )}
+                  {silYetkisi && (
+                    <button onClick={() => handleSil(m.id)} className="text-red-500 hover:underline text-xs">Sil</button>
+                  )}
                 </td>
               </tr>
             ))}

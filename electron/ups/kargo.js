@@ -1,6 +1,7 @@
 // UPS kargo işlemleri: gönderi oluşturma, takip, iptal, kurye çağırma.
 const { getDb } = require('../db/database')
 const { _ayarlariGetir } = require('../db/ups-ayarlar')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const soap = require('./soap')
 
 function kimlik(ayar) {
@@ -45,6 +46,7 @@ function gondericiKontrol(ayar) {
 module.exports = {
   // Gönderi oluşturur, DB'ye kaydeder ve etiket PNG'lerini döndürür.
   'kargo:olustur': async (veri) => {
+    yetkiKontrol('kargo_yonet')
     const ayar = _ayarlariGetir()
     gondericiKontrol(ayar)
 
@@ -130,6 +132,7 @@ module.exports = {
 
   // Gönderiyi iptal eder.
   'kargo:iptal': async (id) => {
+    yetkiKontrol('kargo_iptal')
     const db = getDb()
     const k = db.prepare('SELECT * FROM kargolar WHERE id = ?').get(id)
     if (!k) throw new Error('Kargo bulunamadı')
@@ -143,6 +146,7 @@ module.exports = {
 
   // Kurye çağırma (on-demand pickup).
   'kargo:pickup': async (veri) => {
+    yetkiKontrol('kargo_yonet')
     const ayar = _ayarlariGetir()
     gondericiKontrol(ayar)
     const session = await soap.login(kimlik(ayar))

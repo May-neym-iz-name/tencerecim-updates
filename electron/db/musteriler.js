@@ -1,4 +1,5 @@
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 module.exports = {
   'musteriler:listele': ({ arama, sayfa = 1, boyut = 100 } = {}) => {
@@ -20,6 +21,7 @@ module.exports = {
   },
 
   'musteriler:olustur': (veri) => {
+    yetkiKontrol('musteri_duzenle')
     const db = getDb()
     const cols = Object.keys(veri).join(', ')
     const placeholders = Object.keys(veri).map(k => `@${k}`).join(', ')
@@ -28,6 +30,7 @@ module.exports = {
   },
 
   'musteriler:guncelle': ({ id, ...veri }) => {
+    yetkiKontrol('musteri_duzenle')
     const db = getDb()
     const alanlar = Object.keys(veri).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE musteriler SET ${alanlar} WHERE id = @id`).run({ ...veri, id })
@@ -35,6 +38,7 @@ module.exports = {
   },
 
   'musteriler:sil': (id) => {
+    yetkiKontrol('musteri_sil')
     getDb().prepare('UPDATE musteriler SET aktif = 0 WHERE id = ?').run(id)
     return { mesaj: 'Müşteri silindi' }
   },

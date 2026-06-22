@@ -36,6 +36,9 @@ export function AuthProvider({ children }) {
     if (beniHatirla) await authApi.beniHatirlaKaydet(email.trim(), sifre).catch(() => {})
     else await authApi.beniHatirlaTemizle().catch(() => {})
 
+    // Aktif profili arka uca bildir (backend yetki kontrolü). Hassas IPC'lerden önce yapılmalı.
+    await authApi.profilAyarla({ rol: p.rol, izinler: p.izinler, izinli_lokasyonlar: p.izinli_lokasyonlar, aktif: p.aktif }).catch(() => {})
+
     setUser(data.user)
     setProfil(p)
     return p
@@ -43,6 +46,7 @@ export function AuthProvider({ children }) {
 
   const cikis = useCallback(async () => {
     await supabase.auth.signOut().catch(() => {})
+    await authApi.profilTemizle().catch(() => {})
     setUser(null)
     setProfil(null)
   }, [])

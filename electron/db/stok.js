@@ -1,4 +1,5 @@
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 module.exports = {
   'stok:listele': ({ lokasyon_id, dusuk_stok } = {}) => {
@@ -17,6 +18,7 @@ module.exports = {
   },
 
   'stok:guncelle': ({ urun_id, lokasyon_id, miktar }) => {
+    yetkiKontrol('stok_duzenle')
     const db = getDb()
     db.prepare(`
       INSERT INTO urun_stoklar (urun_id, lokasyon_id, miktar)
@@ -27,6 +29,7 @@ module.exports = {
   },
 
   'stok:minimum-guncelle': ({ urun_id, lokasyon_id, minimum_stok }) => {
+    yetkiKontrol('stok_duzenle')
     const db = getDb()
     db.prepare(`
       INSERT INTO urun_stoklar (urun_id, lokasyon_id, minimum_stok)
@@ -37,6 +40,7 @@ module.exports = {
   },
 
   'sayim:baslat': ({ lokasyon_id, notlar }) => {
+    yetkiKontrol('stok_sayim')
     const db = getDb()
     const result = db.prepare('INSERT INTO stok_sayimlar (lokasyon_id, notlar) VALUES (?, ?)').run(lokasyon_id, notlar || null)
     const sayimId = result.lastInsertRowid
@@ -74,6 +78,7 @@ module.exports = {
   },
 
   'sayim:tamamla': ({ sayim_id, stogu_guncelle = true }) => {
+    yetkiKontrol('stok_sayim')
     const db = getDb()
     const sayim = db.prepare('SELECT * FROM stok_sayimlar WHERE id = ?').get(sayim_id)
     if (!sayim) throw new Error('Sayım bulunamadı')

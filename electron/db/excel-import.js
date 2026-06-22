@@ -1,5 +1,6 @@
 const { getDb } = require('./database')
 const { dialog } = require('electron')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 function getOrCreateMarka(ad) {
   if (!ad) return null
@@ -46,6 +47,7 @@ function getOrCreateKategori(tamYol) {
 
 module.exports = {
   'excel:urun-yukle': async (dosyaYolu) => {
+    yetkiKontrol('excel_ice_aktar')
     const db = getDb()
     let XLSX
     try { XLSX = require('xlsx') } catch { throw new Error('xlsx paketi bulunamadı. npm install xlsx çalıştırın.') }

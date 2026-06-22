@@ -1,4 +1,5 @@
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 const URUN_SELECT = `
   SELECT u.*, m.ad as marka_adi, k.tam_yol as kategori_yol, t.ad as tedarikci_adi
@@ -49,18 +50,29 @@ module.exports = {
   },
 
   'urunler:olustur': (veri) => {
+    yetkiKontrol('urun_duzenle')
     const db = getDb()
     const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
     const r = db.prepare(`
       INSERT INTO urunler (ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null, aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20)
+    // Ürün her lokasyonda 0 stokla görünsün ki Stok/Stok Sayım ekranlarında bulunabilsin.
+    const lokasyonlar = db.prepare('SELECT id FROM lokasyonlar').all()
+    const stokEkle = db.prepare('INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok) VALUES (?, ?, 0, 0)')
+    for (const l of lokasyonlar) stokEkle.run(r.lastInsertRowid, l.id)
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(r.lastInsertRowid)
   },
 
   'urunler:guncelle': ({ id, ...veri }) => {
+    yetkiKontrol('urun_duzenle')
     const db = getDb()
     const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
+    // Satış fiyatı değişiyorsa ayrıca fiyat_degistir yetkisi gerekir.
+    const mevcut = db.prepare('SELECT satis_fiyati FROM urunler WHERE id = ?').get(id)
+    if (mevcut && Number(mevcut.satis_fiyati) !== Number(satis_fiyati)) {
+      yetkiKontrol('fiyat_degistir')
+    }
     db.prepare(`
       UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
       aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?, guncelleme_tarihi=datetime('now','localtime')
@@ -71,6 +83,7 @@ module.exports = {
   },
 
   'urunler:sil': (id) => {
+    yetkiKontrol('urun_sil')
     getDb().prepare('UPDATE urunler SET aktif = 0 WHERE id = ?').run(id)
     return { mesaj: 'Ürün silindi' }
   },

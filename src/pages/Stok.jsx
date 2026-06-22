@@ -4,7 +4,8 @@ import { stokApi, lokasyonApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 
 export default function Stok() {
-  const { erisilebilirLokasyonlar } = useAuth()
+  const { erisilebilirLokasyonlar, yetkiVar } = useAuth()
+  const duzenleYetkisi = yetkiVar('stok_duzenle')
   const [stoklar, setStoklar] = useState([])
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [secilenLokasyon, setSecilenLokasyon] = useState('')
@@ -84,8 +85,10 @@ export default function Stok() {
                     }
                   </td>
                   <td className="px-4 py-2.5">
-                    <button onClick={() => setDuzenleModal({ ...s, yeni_miktar: s.miktar })}
-                      className="text-blue-600 hover:underline text-xs">Düzenle</button>
+                    {duzenleYetkisi && (
+                      <button onClick={() => setDuzenleModal({ ...s, yeni_miktar: s.miktar })}
+                        className="text-blue-600 hover:underline text-xs">Düzenle</button>
+                    )}
                   </td>
                 </tr>
               )
