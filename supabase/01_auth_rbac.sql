@@ -40,6 +40,8 @@ insert into public.yetki_kodlari (kod, ad, grup) values
   ('musteri_goruntule','Müşterileri görüntüleme','Müşteri'),
   ('musteri_duzenle','Müşteri ekleme/düzenleme','Müşteri'),
   ('musteri_sil','Müşteri silme','Müşteri'),
+  ('kargo_yonet','Kargo gönderisi oluşturma/görüntüleme','Kargo'),
+  ('kargo_iptal','Kargo gönderisi iptal etme','Kargo'),
   ('rapor_goruntule','Raporları/ciroyu görüntüleme','Yönetim'),
   ('ayarlar_duzenle','Ayarları düzenleme','Yönetim'),
   ('excel_ice_aktar','Excel ile ürün içe aktarma','Yönetim'),

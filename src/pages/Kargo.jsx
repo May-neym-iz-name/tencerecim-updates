@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi, upsApi } from '../api/ipc'
+import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
 
 const DURUM_RENK = {
@@ -9,6 +10,8 @@ const DURUM_RENK = {
 }
 
 export default function Kargo() {
+  const { yetkiVar } = useAuth()
+  const iptalYetkisi = yetkiVar('kargo_iptal')
   const [kargolar, setKargolar] = useState([])
   const [formAcik, setFormAcik] = useState(false)
   const [yukleniyor, setYukleniyor] = useState(false)
@@ -88,7 +91,7 @@ export default function Kargo() {
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <button onClick={() => takip(k.takip_no)} className="text-blue-600 hover:underline text-xs mr-2">Takip</button>
                   <button onClick={() => etiketBas(k)} className="text-gray-600 hover:underline text-xs mr-2">Etiket</button>
-                  {k.durum !== 'iptal' && (
+                  {k.durum !== 'iptal' && iptalYetkisi && (
                     <button onClick={() => iptal(k)} className="text-red-600 hover:underline text-xs">İptal</button>
                   )}
                 </td>
