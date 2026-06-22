@@ -62,13 +62,18 @@ module.exports = {
     return insertFn()
   },
 
-  'satislar:listele': ({ lokasyon_id, baslangic, bitis, odeme_tipi, sayfa = 1, boyut = 50 } = {}) => {
+  'satislar:listele': ({ lokasyon_id, baslangic, bitis, odeme_tipi, fis_no, sayfa = 1, boyut = 50 } = {}) => {
     const db = getDb()
     let where = 'WHERE 1=1'
     const params = []
     if (lokasyon_id) { where += ' AND s.lokasyon_id=?'; params.push(lokasyon_id) }
-    if (baslangic) { where += ' AND DATE(s.tarih)>=?'; params.push(baslangic) }
-    if (bitis) { where += ' AND DATE(s.tarih)<=?'; params.push(bitis) }
+    // Fiş no araması: geçmiş tüm fişlerde bulunabilsin diye tarih aralığı YOK SAYILIR.
+    if (fis_no) {
+      where += ' AND s.fis_no LIKE ?'; params.push(`%${fis_no}%`)
+    } else {
+      if (baslangic) { where += ' AND DATE(s.tarih)>=?'; params.push(baslangic) }
+      if (bitis) { where += ' AND DATE(s.tarih)<=?'; params.push(bitis) }
+    }
     if (odeme_tipi) { where += ' AND s.odeme_tipi=?'; params.push(odeme_tipi) }
     const toplam = db.prepare(`SELECT COUNT(*) as n FROM satislar s ${where}`).get(...params).n
     const sorgu = `

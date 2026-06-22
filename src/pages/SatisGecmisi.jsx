@@ -17,11 +17,16 @@ export default function SatisGecmisi() {
 
   const bugun = new Date().toISOString().split('T')[0]
   const [filtre, setFiltre] = useState({ lokasyon_id: '', baslangic: bugun, bitis: bugun, odeme_tipi: '', sayfa: 1 })
+  const [fisArama, setFisArama] = useState('')
 
   const yukle = useCallback(async () => {
     setYukleniyor(true)
     try {
-      const params = { ...filtre, lokasyon_id: filtre.lokasyon_id || undefined, odeme_tipi: filtre.odeme_tipi || undefined }
+      // Fiş no araması varsa tarih/lokasyon filtrelerini yok say (tüm geçmişte ara).
+      const fis = fisArama.trim()
+      const params = fis
+        ? { fis_no: fis, sayfa: filtre.sayfa }
+        : { ...filtre, lokasyon_id: filtre.lokasyon_id || undefined, odeme_tipi: filtre.odeme_tipi || undefined }
       const [r, o] = await Promise.all([
         satisApi.listele(params),
         satisApi.gunlukOzet({ lokasyon_id: filtre.lokasyon_id || undefined, tarih: filtre.baslangic === filtre.bitis ? filtre.baslangic : undefined }),
@@ -29,7 +34,7 @@ export default function SatisGecmisi() {
       setSatislar(r.satislar); setToplam(r.toplam); setOzet(o)
     } catch (e) { toast.error(e.message) }
     setYukleniyor(false)
-  }, [filtre])
+  }, [filtre, fisArama])
 
   useEffect(() => { yukle() }, [yukle])
   useEffect(() => { lokasyonApi.listele().then(lok => setLokasyonlar(erisilebilirLokasyonlar(lok))) }, [])
@@ -72,8 +77,19 @@ export default function SatisGecmisi() {
           </div>
         )}
 
-        {/* Filtreler */}
-        <div className="flex gap-2 mb-3 flex-shrink-0 flex-wrap">
+        {/* Fiş no araması (tüm geçmişte arar; tarih/lokasyon filtrelerini yok sayar) */}
+        <div className="flex gap-2 mb-2 flex-shrink-0">
+          <input value={fisArama} onChange={e => setFisArama(e.target.value)}
+            placeholder="🔍 Fiş numarası ile ara (tüm geçmiş)..."
+            className="border rounded-lg px-3 py-1.5 text-sm flex-1" />
+          {fisArama && (
+            <button onClick={() => setFisArama('')}
+              className="text-xs text-gray-500 hover:text-red-600 border rounded-lg px-3 py-1.5">✕ Temizle</button>
+          )}
+        </div>
+
+        {/* Filtreler (fiş araması aktifken devre dışı) */}
+        <div className={`flex gap-2 mb-3 flex-shrink-0 flex-wrap ${fisArama ? 'opacity-40 pointer-events-none' : ''}`}>
           <input type="date" value={filtre.baslangic} onChange={e => setFiltre(f=>({...f, baslangic:e.target.value, sayfa:1}))}
             className="border rounded-lg px-3 py-1.5 text-sm" />
           <span className="self-center text-gray-400 text-sm">—</span>

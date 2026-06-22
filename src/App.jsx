@@ -8,7 +8,6 @@ import Giris from './pages/Giris.jsx'
 import Satis from './pages/Satis.jsx'
 import Urunler from './pages/Urunler.jsx'
 import Stok from './pages/Stok.jsx'
-import StokSayim from './pages/StokSayim.jsx'
 import Musteriler from './pages/Musteriler.jsx'
 import Kargo from './pages/Kargo.jsx'
 import Ayarlar from './pages/Ayarlar.jsx'
@@ -20,7 +19,6 @@ const navItems = [
   { to: '/satis-gecmisi', label: '📋 Satış Geçmişi', yetki: 'satis_gecmisi_goruntule', el: <SatisGecmisi /> },
   { to: '/urunler', label: '📦 Ürünler', yetki: 'urun_goruntule', el: <Urunler /> },
   { to: '/stok', label: '📊 Stok', yetki: 'stok_goruntule', el: <Stok /> },
-  { to: '/stok-sayim', label: '🔢 Stok Sayım', yetki: 'stok_sayim', el: <StokSayim /> },
   { to: '/musteriler', label: '👥 Müşteriler', yetki: 'musteri_goruntule', el: <Musteriler /> },
   { to: '/kargo', label: '📦 Kargo', yetki: 'kargo_yonet', el: <Kargo /> },
   { to: '/ayarlar', label: '⚙️ Ayarlar', yetki: 'ayarlar_duzenle', el: <Ayarlar /> },

@@ -46,7 +46,12 @@ module.exports = {
   },
 
   'urunler:barkodla': (barkod) => {
-    return getDb().prepare(`${URUN_SELECT} WHERE u.barkod = ? AND u.aktif = 1`).get(barkod)
+    const deger = String(barkod || '').trim()
+    if (!deger) return undefined
+    // Barkod ya da SKU ile eşleştir; olası baştaki/sondaki boşlukları yok say.
+    return getDb().prepare(
+      `${URUN_SELECT} WHERE (TRIM(u.barkod) = ? OR TRIM(u.sku) = ?) AND u.aktif = 1`
+    ).get(deger, deger)
   },
 
   'urunler:olustur': (veri) => {
