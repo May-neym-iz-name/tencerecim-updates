@@ -114,8 +114,9 @@ export default function Kargo() {
 
 // Kurye çağırma (on-demand pickup) modalı.
 function KuryeFormu({ acik, kapat }) {
-  const bugun = new Date().toISOString().slice(0, 10)
-  const [tarih, setTarih] = useState(bugun)
+  // UPS kuralı: toplama tarihi bugünden SONRA olmalı → varsayılan/min yarın.
+  const yarin = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  const [tarih, setTarih] = useState(yarin)
   const [koliAdedi, setKoliAdedi] = useState(1)
   const [gonderiliyor, setGonderiliyor] = useState(false)
   if (!acik) return null
@@ -137,8 +138,8 @@ function KuryeFormu({ acik, kapat }) {
         <h3 className="text-lg font-bold text-gray-800 mb-1">🚚 Kurye Çağır</h3>
         <p className="text-xs text-gray-400 mb-4">Mağazadan paket aldırmak için UPS'e kurye talebi gönderir. Gönderici bilgileri Ayarlar'dan alınır.</p>
         <form onSubmit={gonder} className="space-y-3">
-          <label className="block text-xs text-gray-500">Toplama tarihi
-            <input type="date" min={bugun} value={tarih} onChange={e => setTarih(e.target.value)}
+          <label className="block text-xs text-gray-500">Toplama tarihi (en erken yarın)
+            <input type="date" min={yarin} value={tarih} onChange={e => setTarih(e.target.value)}
               className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
           </label>
           <label className="block text-xs text-gray-500">Koli adedi
