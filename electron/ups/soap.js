@@ -7,6 +7,38 @@
 //
 // Oturum: Login_Type1 → 36 haneli SessionID (5 dk timeout). Her gönderi çağrısında taze login alırız.
 
+const https = require('https')
+const { URL } = require('url')
+
+// Node yerleşik https ile POST (Electron 22 / Node 16'da global fetch yok).
+// Dönüş: { ok, status, text }
+function httpsPost(urlStr, headers, govde) {
+  return new Promise((resolve, reject) => {
+    let u
+    try { u = new URL(urlStr) } catch (e) { return reject(new Error('Geçersiz URL: ' + urlStr)) }
+    const govdeBuf = Buffer.from(govde, 'utf-8')
+    const istek = https.request({
+      hostname: u.hostname,
+      port: u.port || 443,
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: { ...headers, 'Content-Length': govdeBuf.length },
+      timeout: 30000,
+    }, (yanit) => {
+      const parcalar = []
+      yanit.on('data', (p) => parcalar.push(p))
+      yanit.on('end', () => {
+        const text = Buffer.concat(parcalar).toString('utf-8')
+        resolve({ ok: yanit.statusCode >= 200 && yanit.statusCode < 300, status: yanit.statusCode, text })
+      })
+    })
+    istek.on('timeout', () => { istek.destroy(new Error('Bağlantı zaman aşımına uğradı (30s)')) })
+    istek.on('error', (err) => reject(err))
+    istek.write(govdeBuf)
+    istek.end()
+  })
+}
+
 const SHIPMENT_URL = 'https://ws.ups.com.tr/wsCreateShipment/wsCreateShipment.asmx'
 const SHIPMENT_NS = 'https://ws.ups.com.tr/wsCreateShipment'
 const TRACKING_URL = 'https://ws.ups.com.tr/QueryPackageInfo/wsQueryPackagesInfo.asmx'
@@ -55,19 +87,15 @@ async function soapCagir(url, ns, metod, govdeIc) {
 
   let yanit
   try {
-    yanit = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/xml; charset=utf-8',
-        'SOAPAction': `${ns}/${metod}`,
-      },
-      body: zarf,
-    })
+    yanit = await httpsPost(url, {
+      'Content-Type': 'text/xml; charset=utf-8',
+      'SOAPAction': `${ns}/${metod}`,
+    }, zarf)
   } catch (err) {
     throw new Error(`UPS servisine bağlanılamadı: ${err.message}`)
   }
 
-  const metin = await yanit.text()
+  const metin = yanit.text
   if (!yanit.ok) {
     const fault = tagOku(metin, 'faultstring')
     throw new Error(`UPS servis hatası (HTTP ${yanit.status})${fault ? ': ' + fault : ''}`)
