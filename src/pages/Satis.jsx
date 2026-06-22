@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi, fisApi } from '../api/ipc'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
+import { useAuth } from '../auth/AuthContext'
+import KargoFormu from '../components/KargoFormu'
 
 const MUSTERI_BOSH = {
   ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '',
@@ -59,6 +61,12 @@ export default function Satis() {
   const [manuelIskonto, setManuelIskonto] = useState(0) // değeri ayar tipine göre % veya ₺
   const [odemeTipi, setOdemeTipi] = useState('nakit')
   const [islemde, setIslemde] = useState(false)
+
+  // Kargo (satış sonrası UPS gönderisi)
+  const { yetkiVar } = useAuth()
+  const kargoYetkisi = yetkiVar('kargo_yonet')
+  const [kargoFormAcik, setKargoFormAcik] = useState(false)
+  const [sonSatis, setSonSatis] = useState(null) // { satisId, fisNo, musteri }
 
   // Uygulama ayarları (müşteri zorunlu mu, indirim tipi)
   const { ayarlar, kaydet: ayarKaydet } = useAyarlar()
@@ -195,6 +203,8 @@ export default function Satis() {
         kalemler: sepet.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) })),
       })
       toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
+      // Kargo butonu için bu satışı ve müşterisini sakla (sepet temizlenmeden önce).
+      setSonSatis({ satisId: satis.id, fisNo: satis.fis_no, musteri: secilenMusteri })
       setSepet([]); setSecilenMusteri(null); setMusteriArama(''); setManuelIskonto(0)
       barkodRef.current?.focus()
       // Fişi yazdır (hata olursa satışı engellemesin)
@@ -466,8 +476,32 @@ export default function Satis() {
               🗑 Sepeti Temizle
             </button>
           )}
+
+          {/* Son satış için UPS kargo gönderisi */}
+          {kargoYetkisi && sonSatis && sepet.length === 0 && (
+            <button onClick={() => setKargoFormAcik(true)}
+              className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-semibold hover:bg-blue-700 text-sm transition-colors">
+              📦 Son Satış İçin UPS Kargo Gönder ({sonSatis.fisNo})
+            </button>
+          )}
         </div>
       </div>
+
+      {/* ===== UPS Kargo Modal ===== */}
+      <KargoFormu
+        acik={kargoFormAcik}
+        kapat={() => setKargoFormAcik(false)}
+        baslangic={sonSatis ? {
+          aliciAd: sonSatis.musteri ? `${sonSatis.musteri.ad} ${sonSatis.musteri.soyad || ''}`.trim() : '',
+          aliciTelefon: sonSatis.musteri?.telefon || '',
+          aliciEmail: sonSatis.musteri?.email || '',
+          aliciAdres: sonSatis.musteri?.adres || '',
+          musteriId: sonSatis.musteri?.id || null,
+          satisId: sonSatis.satisId,
+          faturaNo: sonSatis.fisNo,
+        } : null}
+        onTamam={() => setSonSatis(null)}
+      />
 
       {/* ===== Yeni Müşteri Modal ===== */}
       {musteriFormAcik && (

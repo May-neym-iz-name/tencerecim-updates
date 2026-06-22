@@ -1,0 +1,123 @@
+import { useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
+import { kargoApi, upsApi } from '../api/ipc'
+import IlIlceSecici from './IlIlceSecici'
+
+const BOS = {
+  aliciAd: '', aliciTelefon: '', aliciCep: '', aliciEmail: '', aliciAdres: '',
+  ilKodu: null, il: '', ilceKodu: null, ilce: '', postaKodu: '',
+  koliAdedi: 1, agirlik: 1, aciklama: '', servisSeviyesi: 3, odemeTipi: 2,
+  faturaNo: '', referans: '', musteriId: null, satisId: null,
+}
+
+// UPS gönderi oluşturma formu (modal). baslangic ile ön-doldurulabilir.
+// onTamam(kargo) gönderi başarıyla oluşunca çağrılır.
+export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
+  const [form, setForm] = useState(BOS)
+  const [gonderiliyor, setGonderiliyor] = useState(false)
+  const [etiketYazici, setEtiketYazici] = useState('')
+
+  useEffect(() => {
+    if (acik) {
+      setForm({ ...BOS, ...(baslangic || {}) })
+      upsApi.ayarGetir().then(a => setEtiketYazici(a?.etiket_yazici || '')).catch(() => {})
+    }
+  }, [acik, baslangic])
+
+  if (!acik) return null
+
+  function alan(k, v) { setForm(f => ({ ...f, [k]: v })) }
+
+  async function gonder(e) {
+    e.preventDefault()
+    if (!form.aliciAd.trim()) { toast.error('Alıcı adı zorunlu'); return }
+    if (!form.aliciAdres.trim()) { toast.error('Alıcı adresi zorunlu'); return }
+    if (!form.ilKodu || !form.ilceKodu) { toast.error('İl ve ilçe/semt seçin'); return }
+    if (!form.aliciTelefon.trim() && !form.aliciCep.trim()) { toast.error('Telefon veya cep numarası girin'); return }
+
+    setGonderiliyor(true)
+    try {
+      const kargo = await kargoApi.olustur(form)
+      toast.success(`✓ Kargo oluşturuldu — Takip No: ${kargo.takip_no}`)
+      // Etiketi otomatik yazdır (hata olursa gönderiyi engellemesin).
+      if (kargo.barkodPng?.length) {
+        kargoApi.etiketYazdir(kargo.barkodPng, etiketYazici || undefined)
+          .catch(err => toast.error('Etiket yazdırılamadı: ' + err.message))
+      }
+      onTamam?.(kargo)
+      kapat()
+    } catch (err) {
+      toast.error(err.message || 'Kargo oluşturulamadı')
+    } finally {
+      setGonderiliyor(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={kapat}>
+      <div className="bg-white rounded-xl w-full max-w-xl max-h-[90vh] overflow-auto p-5" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-gray-800 mb-4">📦 UPS Kargo Gönderisi</h3>
+        <form onSubmit={gonder} className="space-y-3">
+          <p className="text-sm font-medium text-gray-600">Alıcı Bilgileri</p>
+          <input value={form.aliciAd} onChange={e => alan('aliciAd', e.target.value)}
+            placeholder="Alıcı adı soyadı *" className="border rounded px-2 py-1.5 text-sm w-full" />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={form.aliciTelefon} onChange={e => alan('aliciTelefon', e.target.value)}
+              placeholder="Telefon" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={form.aliciCep} onChange={e => alan('aliciCep', e.target.value)}
+              placeholder="Cep telefonu" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+          <input value={form.aliciEmail} onChange={e => alan('aliciEmail', e.target.value)}
+            placeholder="E-posta (opsiyonel)" className="border rounded px-2 py-1.5 text-sm w-full" />
+          <textarea value={form.aliciAdres} onChange={e => alan('aliciAdres', e.target.value)}
+            placeholder="Açık adres *" rows={2} className="border rounded px-2 py-1.5 text-sm w-full" />
+          <IlIlceSecici ilKodu={form.ilKodu} ilceKodu={form.ilceKodu}
+            onChange={({ ilKodu, il, ilceKodu, ilce }) => setForm(f => ({ ...f, ilKodu, il, ilceKodu, ilce }))} />
+
+          <p className="text-sm font-medium text-gray-600 pt-2">Paket Bilgileri</p>
+          <div className="grid grid-cols-3 gap-2">
+            <label className="text-xs text-gray-500">Koli adedi
+              <input type="number" min="1" value={form.koliAdedi} onChange={e => alan('koliAdedi', Number(e.target.value))}
+                className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
+            </label>
+            <label className="text-xs text-gray-500">Ağırlık (kg)
+              <input type="number" min="0.1" step="0.1" value={form.agirlik} onChange={e => alan('agirlik', Number(e.target.value))}
+                className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
+            </label>
+            <label className="text-xs text-gray-500">Ödeme
+              <select value={form.odemeTipi} onChange={e => alan('odemeTipi', Number(e.target.value))}
+                className="border rounded px-2 py-1.5 text-sm w-full mt-0.5 bg-white">
+                <option value={2}>Gönderen öder</option>
+                <option value={1}>Alıcı öder</option>
+              </select>
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs text-gray-500">Servis
+              <select value={form.servisSeviyesi} onChange={e => alan('servisSeviyesi', Number(e.target.value))}
+                className="border rounded px-2 py-1.5 text-sm w-full mt-0.5 bg-white">
+                <option value={3}>Standart</option>
+                <option value={1}>Express Plus 09:00</option>
+                <option value={4}>Express 10:30</option>
+                <option value={5}>Express 12:00</option>
+                <option value={6}>Express Saver</option>
+              </select>
+            </label>
+            <label className="text-xs text-gray-500">Açıklama
+              <input value={form.aciklama} onChange={e => alan('aciklama', e.target.value)}
+                placeholder="Koli içeriği" className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3">
+            <button type="button" onClick={kapat} className="px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50">İptal</button>
+            <button type="submit" disabled={gonderiliyor}
+              className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+              {gonderiliyor ? 'Oluşturuluyor…' : 'Gönderi Oluştur & Etiket Bas'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi } from '../api/ipc'
+import { lokasyonApi, upsApi } from '../api/ipc'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
+import IlIlceSecici from '../components/IlIlceSecici'
 
 export default function Ayarlar() {
   const [lokasyonlar, setLokasyonlar] = useState([])
@@ -17,6 +18,28 @@ export default function Ayarlar() {
   }
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar) }, [])
+
+  // UPS kargo ayarları
+  const [ups, setUps] = useState(null)
+  const [yazicilar, setYazicilar] = useState([])
+  const [upsKaydediliyor, setUpsKaydediliyor] = useState(false)
+  useEffect(() => {
+    upsApi.ayarGetir().then(setUps).catch(() => setUps({}))
+    upsApi.yazicilar().then(setYazicilar).catch(() => {})
+  }, [])
+
+  function upsAlan(anahtar, deger) {
+    setUps(u => ({ ...u, [anahtar]: deger }))
+  }
+
+  async function upsKaydet() {
+    setUpsKaydediliyor(true)
+    try {
+      await upsApi.ayarKaydet(ups)
+      toast.success('UPS ayarları kaydedildi')
+    } catch (e) { toast.error('UPS ayarları kaydedilemedi: ' + e.message) }
+    finally { setUpsKaydediliyor(false) }
+  }
 
   async function lokasyonEkle(e) {
     e.preventDefault()
@@ -95,6 +118,66 @@ export default function Ayarlar() {
           <p className="text-xs text-gray-400">Genel indirim tipini (% / ₺) satış ekranındaki indirim alanının yanından değiştirebilirsiniz.</p>
         </div>
       </div>
+
+      {/* UPS Kargo Ayarları (yalnızca yönetici) */}
+      {yonetici && ups && (
+        <div className="bg-white rounded-xl border p-5 mb-5">
+          <h3 className="font-semibold mb-1">📦 UPS Kargo Entegrasyonu</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            UPS'in verdiği kimlik bilgileri ve gönderici (mağaza) bilgileri. Bu bilgiler yalnızca bu bilgisayarda yerel olarak saklanır.
+          </p>
+
+          <p className="text-sm font-medium text-gray-600 mb-2">UPS Hesap Bilgileri</p>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <input value={ups.musteri_kodu || ''} onChange={e => upsAlan('musteri_kodu', e.target.value)}
+              placeholder="Müşteri Kodu" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={ups.kullanici_kodu || ''} onChange={e => upsAlan('kullanici_kodu', e.target.value)}
+              placeholder="Kullanıcı Kodu" className="border rounded px-2 py-1.5 text-sm" />
+            <input type="password" value={ups.sifre || ''} onChange={e => upsAlan('sifre', e.target.value)}
+              placeholder="Şifre" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+
+          <p className="text-sm font-medium text-gray-600 mb-2">Gönderici (Mağaza) Bilgileri</p>
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <input value={ups.gonderici_ad || ''} onChange={e => upsAlan('gonderici_ad', e.target.value)}
+              placeholder="Gönderici / Firma Adı" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={ups.gonderici_yetkili || ''} onChange={e => upsAlan('gonderici_yetkili', e.target.value)}
+              placeholder="Yetkili Kişi" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+          <input value={ups.gonderici_adres || ''} onChange={e => upsAlan('gonderici_adres', e.target.value)}
+            placeholder="Açık Adres" className="border rounded px-2 py-1.5 text-sm w-full mb-2" />
+          <div className="mb-2">
+            <IlIlceSecici
+              ilKodu={ups.gonderici_il_kodu} ilceKodu={ups.gonderici_ilce_kodu}
+              onChange={({ ilKodu, il, ilceKodu, ilce }) => setUps(u => ({
+                ...u, gonderici_il_kodu: ilKodu, gonderici_il: il, gonderici_ilce_kodu: ilceKodu, gonderici_ilce: ilce,
+              }))} />
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <input value={ups.gonderici_telefon || ''} onChange={e => upsAlan('gonderici_telefon', e.target.value)}
+              placeholder="Sabit Telefon" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={ups.gonderici_cep || ''} onChange={e => upsAlan('gonderici_cep', e.target.value)}
+              placeholder="Cep Telefonu" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={ups.gonderici_email || ''} onChange={e => upsAlan('gonderici_email', e.target.value)}
+              placeholder="E-posta" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+
+          <p className="text-sm font-medium text-gray-600 mb-2">Etiket Yazıcısı</p>
+          <select value={ups.etiket_yazici || ''} onChange={e => upsAlan('etiket_yazici', e.target.value)}
+            className="border rounded px-2 py-1.5 text-sm w-full mb-1 bg-white">
+            <option value="">Yazdırırken sor (sistem diyaloğu)</option>
+            {yazicilar.map(y => <option key={y.ad} value={y.ad}>{y.aciklama}</option>)}
+          </select>
+          <p className="text-xs text-gray-400 mb-4">
+            UPS etiketi 100×150mm boyutundadır; ürün barkodu yazıcısından (45×20mm) farklı bir kargo etiketi yazıcısı/rulosu gerektirir.
+          </p>
+
+          <button onClick={upsKaydet} disabled={upsKaydediliyor}
+            className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+            {upsKaydediliyor ? 'Kaydediliyor…' : 'UPS Ayarlarını Kaydet'}
+          </button>
+        </div>
+      )}
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
         <h3 className="font-semibold text-amber-800 mb-2">⚠️ Yakında Eklenecek</h3>

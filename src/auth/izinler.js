@@ -9,6 +9,7 @@ const PERSONEL_VARSAYILAN = new Set([
   'stok_sayim',
   'musteri_goruntule',
   'musteri_duzenle',
+  'kargo_yonet',
 ])
 
 /**

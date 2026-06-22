@@ -15,6 +15,7 @@ function init() {
   createTables()
   migrate()
   seedLokasyonlar()
+  seedUpsSehirIlce()
   return db
 }
 
@@ -145,6 +146,46 @@ function createTables() {
       sayilan_miktar INTEGER,
       fark INTEGER
     );
+
+    -- UPS kargo ayarları (anahtar-değer). Kimlik bilgileri ve gönderici adresi burada saklanır.
+    -- YEREL DB *.db gitignore'da olduğu için public repoya sızmaz.
+    CREATE TABLE IF NOT EXISTS ups_ayarlar (
+      anahtar TEXT PRIMARY KEY,
+      deger TEXT
+    );
+
+    -- UPS il/ilçe (semt) kod tablosu. Districts.xlsx'ten seed edilir.
+    CREATE TABLE IF NOT EXISTS ups_sehir_ilce (
+      il_kodu INTEGER NOT NULL,
+      il TEXT NOT NULL,
+      ilce_kodu INTEGER NOT NULL,
+      ilce TEXT NOT NULL
+    );
+
+    -- Oluşturulan kargo gönderileri.
+    CREATE TABLE IF NOT EXISTS kargolar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      takip_no TEXT,
+      durum TEXT DEFAULT 'olusturuldu',
+      musteri_id INTEGER REFERENCES musteriler(id),
+      satis_id INTEGER REFERENCES satislar(id),
+      alici_ad TEXT,
+      alici_telefon TEXT,
+      alici_adres TEXT,
+      il TEXT,
+      ilce TEXT,
+      il_kodu INTEGER,
+      ilce_kodu INTEGER,
+      koli_adedi INTEGER DEFAULT 1,
+      agirlik REAL DEFAULT 1,
+      servis_seviyesi INTEGER DEFAULT 3,
+      odeme_tipi INTEGER DEFAULT 2,
+      aciklama TEXT,
+      barkod_png TEXT,
+      son_durum TEXT,
+      son_durum_tarihi TEXT,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
   `)
 }
 
@@ -171,6 +212,25 @@ function seedLokasyonlar() {
     const lok2 = db.prepare('SELECT id FROM lokasyonlar WHERE id = 2').get()
     if (lok2) db.prepare("UPDATE lokasyonlar SET ad = 'Tencerecim Gölcük' WHERE id = 2 AND ad LIKE 'Ma%aza 2%'").run()
   }
+}
+
+// UPS il/ilçe kod tablosunu bir kez seed eder (≈5600 satır). Tablo doluysa atlar.
+function seedUpsSehirIlce() {
+  const count = db.prepare('SELECT COUNT(*) as n FROM ups_sehir_ilce').get()
+  if (count.n > 0) return
+  const path = require('path')
+  const fs = require('fs')
+  const jsonYol = path.join(__dirname, '..', 'ups', 'sehir-ilce.json')
+  let kayitlar
+  try {
+    kayitlar = JSON.parse(fs.readFileSync(jsonYol, 'utf-8'))
+  } catch (err) {
+    console.error('UPS sehir-ilce.json okunamadı:', err.message)
+    return
+  }
+  const ekle = db.prepare('INSERT INTO ups_sehir_ilce (il_kodu, il, ilce_kodu, ilce) VALUES (@ilKodu, @il, @ilceKodu, @ilce)')
+  const toplu = db.transaction((satirlar) => { for (const s of satirlar) ekle.run(s) })
+  toplu(kayitlar)
 }
 
 module.exports = { init, getDb }

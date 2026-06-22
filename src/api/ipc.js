@@ -79,6 +79,24 @@ export const barkodApi = {
   yazdir: (html, yazici) => invoke('barkod:yazdir', { html, yazici }),
 }
 
+export const upsApi = {
+  ayarGetir: () => invoke('ups-ayar:getir'),
+  ayarKaydet: (veri) => invoke('ups-ayar:kaydet', veri),
+  iller: () => invoke('ups:iller'),
+  ilceler: (ilKodu) => invoke('ups:ilceler', ilKodu),
+  yazicilar: () => invoke('barkod:yazicilar'),
+}
+
+export const kargoApi = {
+  olustur: (veri) => invoke('kargo:olustur', veri),
+  listele: () => invoke('kargo:listele'),
+  etiket: (id) => invoke('kargo:etiket', id),
+  etiketYazdir: (pngler, yazici) => invoke('kargo:etiket-yazdir', { pngler, yazici }),
+  takip: (takipNo) => invoke('kargo:takip', takipNo),
+  iptal: (id) => invoke('kargo:iptal', id),
+  pickup: (veri) => invoke('kargo:pickup', veri),
+}
+
 export const authApi = {
   beniHatirlaKaydet: (email, sifre) => invoke('auth:beni-hatirla-kaydet', { email, sifre }),
   beniHatirlaGetir: () => invoke('auth:beni-hatirla-getir'),
