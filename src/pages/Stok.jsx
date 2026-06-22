@@ -13,6 +13,7 @@ export default function Stok() {
   const [arama, setArama] = useState('')
   const [dusukStok, setDusukStok] = useState(false)
   const [duzenleModal, setDuzenleModal] = useState(null)
+  const [acikLokasyonlar, setAcikLokasyonlar] = useState([]) // tıklanınca açılan mağaza id'leri
 
   // Aktif sayım (aynı anda tek mağaza): { lokasyon_id, id, kalemler:[{...,_girilen}] }
   const [aktifSayim, setAktifSayim] = useState(null)
@@ -32,6 +33,10 @@ export default function Stok() {
 
   // Sayım başlayınca barkod alanına odaklan
   useEffect(() => { if (aktifSayim) setTimeout(() => barkodRef.current?.focus(), 100) }, [aktifSayim?.id])
+
+  function lokasyonAcKapat(lokId) {
+    setAcikLokasyonlar(prev => prev.includes(lokId) ? prev.filter(id => id !== lokId) : [...prev, lokId])
+  }
 
   function magazaStoklari(lokId) {
     return stoklar.filter(s => s.lokasyon_id === lokId).filter(s =>
@@ -136,11 +141,17 @@ export default function Stok() {
       <div className="space-y-6">
         {lokasyonlar.map(lok => {
           const sayimAktif = aktifSayim?.lokasyon_id === lok.id
+          // Sayım aktifse veya arama yapılıyorsa içerik her zaman açık; aksi halde tıklanınca açılır
+          const acik = sayimAktif || arama.trim() !== '' || acikLokasyonlar.includes(lok.id)
+          const adet = magazaStoklari(lok.id).length
           return (
-            <section key={lok.id} className="bg-white rounded-xl border overflow-hidden">
-              {/* Bölüm başlığı */}
-              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b">
-                <h3 className="font-bold text-gray-800">🏪 {lok.ad}</h3>
+            <section key={lok.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              {/* Mağaza kutucuğu başlığı */}
+              <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 border-b flex-wrap">
+                <h3 className="flex items-center gap-2 font-bold text-gray-800">
+                  🏪 {lok.ad}
+                  <span className="text-xs font-normal text-gray-400">({adet} ürün)</span>
+                </h3>
                 {sayimAktif ? (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-500">
@@ -150,21 +161,29 @@ export default function Stok() {
                     <button onClick={tamamlaSayim} className="bg-green-600 text-white px-4 py-1.5 rounded-lg text-xs hover:bg-green-700 font-medium">✓ Tamamla & Güncelle</button>
                   </div>
                 ) : (
-                  sayimYetkisi && (
-                    <button onClick={() => baslatSayim(lok.id)} disabled={!!aktifSayim}
-                      className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-40">
-                      🔢 Sayım Başlat
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => lokasyonAcKapat(lok.id)}
+                      className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                        acik ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                             : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
+                      📋 Stok Durumu
                     </button>
-                  )
+                    {sayimYetkisi && (
+                      <button onClick={() => baslatSayim(lok.id)} disabled={!!aktifSayim}
+                        className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-40 font-medium">
+                        🔢 Stok Sayımı
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
-              {sayimAktif
+              {acik && (sayimAktif
                 ? <SayimTablosu aktifSayim={aktifSayim} arama={arama} vurgulanan={vurgulanan}
                     barkodInput={barkodInput} setBarkodInput={setBarkodInput} barkodOkut={barkodOkut} barkodRef={barkodRef}
                     kalemGir={kalemGir} />
                 : <StokTablosu satirlar={magazaStoklari(lok.id)} duzenleYetkisi={duzenleYetkisi}
-                    onDuzenle={s => setDuzenleModal({ ...s, yeni_miktar: s.miktar })} />}
+                    onDuzenle={s => setDuzenleModal({ ...s, yeni_miktar: s.miktar })} />)}
             </section>
           )
         })}
