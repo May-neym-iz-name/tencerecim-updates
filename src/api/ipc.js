@@ -74,6 +74,11 @@ export const fisApi = {
   yazdir: (satis_id, sessiz = false) => invoke('fis:yazdir', { satis_id, sessiz }),
 }
 
+export const barkodApi = {
+  yazicilar: () => invoke('barkod:yazicilar'),
+  yazdir: (html, yazici) => invoke('barkod:yazdir', { html, yazici }),
+}
+
 export const authApi = {
   beniHatirlaKaydet: (email, sifre) => invoke('auth:beni-hatirla-kaydet', { email, sifre }),
   beniHatirlaGetir: () => invoke('auth:beni-hatirla-getir'),

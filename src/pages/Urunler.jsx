@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi } from '../api/ipc'
+import BarkodModal from '../components/BarkodModal'
 
 const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20 }
 
@@ -42,6 +43,7 @@ export default function Urunler() {
   const [kategoriler, setKategoriler] = useState([])
   const [excelYukleniyor, setExcelYukleniyor] = useState(false)
   const [excelSonuc, setExcelSonuc] = useState(null)
+  const [barkodUrun, setBarkodUrun] = useState(null)
 
   const yukle = useCallback(async () => {
     try {
@@ -169,6 +171,7 @@ export default function Urunler() {
                 <td className="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">₺{u.satis_fiyati?.toFixed(2)}</td>
                 <td className="px-3 py-2 text-gray-500">%{u.kdv_orani}</td>
                 <td className="px-3 py-2 whitespace-nowrap">
+                  <button onClick={() => setBarkodUrun(u)} className="text-gray-600 hover:underline text-xs mr-2" title="Barkod etiketi bas">🏷️ Barkod</button>
                   <button onClick={() => handleDuzenle(u)} className="text-blue-600 hover:underline text-xs mr-2">Düzenle</button>
                   <button onClick={() => handleSil(u.id)} className="text-red-500 hover:underline text-xs">Sil</button>
                 </td>
@@ -247,6 +250,10 @@ export default function Urunler() {
             </form>
           </div>
         </div>
+      )}
+
+      {barkodUrun && (
+        <BarkodModal urun={barkodUrun} onKapat={() => setBarkodUrun(null)} />
       )}
     </div>
   )

@@ -1,6 +1,6 @@
 {
   "name": "tencerecim",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "description": "Tencerecim Mağaza Yönetim Sistemi",
   "main": "electron/main.js",
   "author": "Tencerecim",
@@ -18,6 +18,7 @@
     "@supabase/supabase-js": "^2.108.2",
     "better-sqlite3": "^9.4.3",
     "electron-updater": "^6.1.8",
+    "jsbarcode": "^3.12.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

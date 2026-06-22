@@ -101,6 +101,7 @@ const handlerModules = [
   require('./db/kategoriler'),
   require('./db/excel-import'),
   require('./fis-yazdir'),
+  require('./barkod-yazdir'),
   require('./auth'),
 ]
 
