@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react'
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
+import { uygulamaApi } from './api/ipc'
 import { AyarlarProvider } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import logo from './assets/logo.png'
@@ -31,6 +33,8 @@ function Uygulama() {
   const { profil, cikis, yetkiVar } = useAuth()
   const erisilebilir = navItems.filter(i => yetkiVar(i.yetki))
   const ilkSayfa = erisilebilir[0]?.to || '/'
+  const [surum, setSurum] = useState('')
+  useEffect(() => { uygulamaApi.surum().then(setSurum).catch(() => {}) }, [])
 
   if (erisilebilir.length === 0) {
     return (
@@ -73,6 +77,7 @@ function Uygulama() {
             <button onClick={cikis} className="text-xs text-gray-300 hover:text-red-400 transition-colors">
               ⏻ Çıkış Yap
             </button>
+            {surum && <p className="text-[10px] text-gray-500 mt-2">Sürüm v{surum}</p>}
           </div>
         </nav>
 

@@ -97,6 +97,10 @@ export const kargoApi = {
   pickup: (veri) => invoke('kargo:pickup', veri),
 }
 
+export const uygulamaApi = {
+  surum: () => invoke('app:surum'),
+}
+
 export const authApi = {
   beniHatirlaKaydet: (email, sifre) => invoke('auth:beni-hatirla-kaydet', { email, sifre }),
   beniHatirlaGetir: () => invoke('auth:beni-hatirla-getir'),
