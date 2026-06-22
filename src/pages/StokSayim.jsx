@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { stokApi, lokasyonApi } from '../api/ipc'
+import { useAuth } from '../auth/AuthContext'
 
 export default function StokSayim() {
+  const { erisilebilirLokasyonlar } = useAuth()
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [secilenLokasyon, setSecilenLokasyon] = useState('')
   const [aktifSayim, setAktifSayim] = useState(null)
   const [yukleniyor, setYukleniyor] = useState(false)
   const [arama, setArama] = useState('')
 
-  useEffect(() => { lokasyonApi.listele().then(lok => { setLokasyonlar(lok); if (lok.length) setSecilenLokasyon(lok[0].id) }) }, [])
+  useEffect(() => { lokasyonApi.listele().then(lok => { const e = erisilebilirLokasyonlar(lok); setLokasyonlar(e); if (e.length) setSecilenLokasyon(e[0].id) }) }, [])
 
   async function baslatSayim() {
     if (!secilenLokasyon) { toast.error('Lokasyon seçin'); return }

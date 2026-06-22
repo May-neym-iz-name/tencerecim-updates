@@ -63,7 +63,7 @@ export default function Satis() {
   const [islemde, setIslemde] = useState(false)
 
   // Kargo (satış sonrası UPS gönderisi)
-  const { yetkiVar } = useAuth()
+  const { yetkiVar, erisilebilirLokasyonlar, lokasyonErisim } = useAuth()
   const kargoYetkisi = yetkiVar('kargo_yonet')
   const [kargoFormAcik, setKargoFormAcik] = useState(false)
   const [sonSatis, setSonSatis] = useState(null) // { satisId, fisNo, musteri }
@@ -76,8 +76,10 @@ export default function Satis() {
   // Başlangıç yüklemesi
   useEffect(() => {
     lokasyonApi.listele().then(lok => {
-      setLokasyonlar(lok)
-      if (lok.length) setSecilenLokasyonId(lok[0].id)
+      // Yalnızca kullanıcının erişebildiği lokasyonları göster (izinli_lokasyonlar).
+      const erisilebilir = erisilebilirLokasyonlar(lok)
+      setLokasyonlar(erisilebilir)
+      if (erisilebilir.length) setSecilenLokasyonId(erisilebilir[0].id)
     })
     markaApi.listele().then(setMarkalar)
     kategoriApi.listele().then(setKategoriler)
@@ -191,6 +193,7 @@ export default function Satis() {
 
   async function satisOlustur() {
     if (!secilenLokasyonId) { toast.error('Lokasyon seçin'); return }
+    if (!lokasyonErisim(secilenLokasyonId)) { toast.error('Bu lokasyonda işlem yapma yetkiniz yok'); return }
     if (sepet.length === 0) { toast.error('Sepet boş'); return }
     if (musteriZorunlu && !secilenMusteri) { toast.error('Bu satış için müşteri seçilmesi zorunludur'); return }
     setIslemde(true)

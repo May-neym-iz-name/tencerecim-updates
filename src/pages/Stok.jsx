@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { stokApi, lokasyonApi } from '../api/ipc'
+import { useAuth } from '../auth/AuthContext'
 
 export default function Stok() {
+  const { erisilebilirLokasyonlar } = useAuth()
   const [stoklar, setStoklar] = useState([])
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [secilenLokasyon, setSecilenLokasyon] = useState('')
@@ -18,7 +20,7 @@ export default function Stok() {
   }, [secilenLokasyon, dusukStok])
 
   useEffect(() => { yukle() }, [yukle])
-  useEffect(() => { lokasyonApi.listele().then(setLokasyonlar) }, [])
+  useEffect(() => { lokasyonApi.listele().then(lok => setLokasyonlar(erisilebilirLokasyonlar(lok))) }, [])
 
   const filtrelenmis = stoklar.filter(s =>
     !arama || s.urun_adi?.toLowerCase().includes(arama.toLowerCase()) || s.barkod?.includes(arama)
