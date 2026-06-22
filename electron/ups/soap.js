@@ -212,10 +212,13 @@ async function createShipment(session, veri) {
 
 // Gönderi iptali. customerCode = UPS müşteri kodu, waybill = takip no.
 async function cancelShipment(session, customerCode, waybill) {
+  // DİKKAT: Cancel metodu WSDL'de küçük harf parametre adları kullanır
+  // (sessionId/customerCode/waybillNumber). Dokümandaki PascalCase yazım yanlış;
+  // PascalCase gönderilince servis "Token cannot be null" döndürür.
   const govde =
-    `<SessionID>${xmlKacis(session)}</SessionID>` +
-    `<CustomerCode>${xmlKacis(customerCode)}</CustomerCode>` +
-    `<WaybillNumber>${xmlKacis(waybill)}</WaybillNumber>`
+    `<sessionId>${xmlKacis(session)}</sessionId>` +
+    `<customerCode>${xmlKacis(customerCode)}</customerCode>` +
+    `<waybillNumber>${xmlKacis(waybill)}</waybillNumber>`
   const yanit = await soapCagir(SHIPMENT_URL, SHIPMENT_NS, 'Cancel_Shipment_V1', govde)
   const hataKod = tagOku(yanit, 'ErrorCode')
   if (hataKod !== '0') {

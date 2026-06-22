@@ -12,7 +12,6 @@ export default function Kargo() {
   const [kargolar, setKargolar] = useState([])
   const [formAcik, setFormAcik] = useState(false)
   const [yukleniyor, setYukleniyor] = useState(false)
-  const [pickupAcik, setPickupAcik] = useState(false)
 
   function yenile() {
     setYukleniyor(true)
@@ -55,8 +54,6 @@ export default function Kargo() {
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-2xl font-bold text-gray-800">📦 Kargo</h2>
         <div className="flex gap-2">
-          <button onClick={() => setPickupAcik(true)}
-            className="border px-4 py-2 rounded-lg text-sm hover:bg-gray-50">🚚 Kurye Çağır</button>
           <button onClick={() => setFormAcik(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ Yeni Gönderi</button>
         </div>
@@ -107,54 +104,6 @@ export default function Kargo() {
       </div>
 
       <KargoFormu acik={formAcik} kapat={() => setFormAcik(false)} onTamam={yenile} />
-      <KuryeFormu acik={pickupAcik} kapat={() => setPickupAcik(false)} />
-    </div>
-  )
-}
-
-// Kurye çağırma (on-demand pickup) modalı.
-function KuryeFormu({ acik, kapat }) {
-  // UPS kuralı: toplama tarihi bugünden SONRA olmalı → varsayılan/min yarın.
-  const yarin = new Date(Date.now() + 86400000).toISOString().slice(0, 10)
-  const [tarih, setTarih] = useState(yarin)
-  const [koliAdedi, setKoliAdedi] = useState(1)
-  const [gonderiliyor, setGonderiliyor] = useState(false)
-  if (!acik) return null
-
-  async function gonder(e) {
-    e.preventDefault()
-    setGonderiliyor(true)
-    try {
-      await kargoApi.pickup({ tarih, koliAdedi, kutular: [{ kod: 3, adet: koliAdedi }] })
-      toast.success('Kurye talebi oluşturuldu')
-      kapat()
-    } catch (err) { toast.error(err.message || 'Kurye talebi başarısız') }
-    finally { setGonderiliyor(false) }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={kapat}>
-      <div className="bg-white rounded-xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-gray-800 mb-1">🚚 Kurye Çağır</h3>
-        <p className="text-xs text-gray-400 mb-4">Mağazadan paket aldırmak için UPS'e kurye talebi gönderir. Gönderici bilgileri Ayarlar'dan alınır.</p>
-        <form onSubmit={gonder} className="space-y-3">
-          <label className="block text-xs text-gray-500">Toplama tarihi (en erken yarın)
-            <input type="date" min={yarin} value={tarih} onChange={e => setTarih(e.target.value)}
-              className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
-          </label>
-          <label className="block text-xs text-gray-500">Koli adedi
-            <input type="number" min="1" value={koliAdedi} onChange={e => setKoliAdedi(Number(e.target.value))}
-              className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
-          </label>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={kapat} className="px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50">Vazgeç</button>
-            <button type="submit" disabled={gonderiliyor}
-              className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
-              {gonderiliyor ? 'Gönderiliyor…' : 'Kurye Talebi Gönder'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   )
 }
