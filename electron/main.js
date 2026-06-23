@@ -126,6 +126,7 @@ const handlerModules = [
   require('./ups/kargo'),
   require('./ups/etiket-yazdir'),
   require('./db/ikas-ayarlar'),
+  require('./db/online-siparisler'),
   require('./ikas'),
   require('./fis-yazdir'),
   require('./barkod-yazdir'),

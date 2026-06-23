@@ -88,9 +88,8 @@ export default function Ayarlar() {
     setIkasMesgul('cek')
     try {
       const r = await ikasApi.siparisCek()
-      if (r.atlandi) toast.error('Önce online sipariş lokasyonunu seçip kaydedin.')
-      else if (r.ilkKurulum) toast.success('Senkron başlangıcı ayarlandı. Bundan sonraki siparişler çekilecek.')
-      else toast.success(`${r.islenen} yeni sipariş işlendi.`)
+      if (r.ilkKurulum) toast.success(`İlk senkron: ${r.kaydedilen} sipariş kaydedildi (stok düşülmedi).`)
+      else toast.success(`${r.kaydedilen} yeni sipariş, ${r.stokDusulen} tanesi stoktan düşüldü.`)
       await ikasDurumYenile()
     } catch (e) { toast.error('Sipariş çekme hatası: ' + e.message) }
     finally { setIkasMesgul('') }
@@ -253,24 +252,16 @@ export default function Ayarlar() {
               placeholder="Client Secret" className="border rounded px-2 py-1.5 text-sm" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">Online Sipariş Lokasyonu</label>
-              <select value={ikas.online_lokasyon_id || ''} onChange={e => ikasAlan('online_lokasyon_id', e.target.value)}
-                className="border rounded px-2 py-1.5 text-sm w-full bg-white">
-                <option value="">Seçiniz…</option>
-                {lokasyonlar.map(l => <option key={l.id} value={l.id}>{l.ad}</option>)}
-              </select>
-              <p className="text-xs text-gray-400 mt-1">Online siparişlerde stok bu lokasyondan düşülür.</p>
-            </div>
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 cursor-pointer text-sm">
-                <input type="checkbox" checked={!!ikas.otomatik_senk}
-                  onChange={e => ikasAlan('otomatik_senk', e.target.checked ? '1' : '')}
-                  className="w-4 h-4" />
-                <span className="font-medium text-gray-800">Otomatik senkronizasyon açık</span>
-              </label>
-            </div>
+          <div className="mb-4">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={!!ikas.otomatik_senk}
+                onChange={e => ikasAlan('otomatik_senk', e.target.checked ? '1' : '')}
+                className="w-4 h-4" />
+              <span className="font-medium text-gray-800">Otomatik senkronizasyon açık</span>
+            </label>
+            <p className="text-xs text-gray-400 mt-1">
+              Online siparişler, ikas'ta hangi mağazadan düştüyse yerel olarak da o mağazadan düşülür. Müşteriler ana listeye eklenir.
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2 mb-3">
@@ -298,7 +289,7 @@ export default function Ayarlar() {
               <span>Otomatik senkron: {ikasDurum.otomatik_senk ? 'Açık' : 'Kapalı'}</span>
               <span>Eşleşmiş ürün: {ikasDurum.eslesmisUrun}</span>
               <span>Eşleşmiş lokasyon: {ikasDurum.eslesmisLok}/2</span>
-              <span>İşlenen sipariş: {ikasDurum.islenenSiparis}</span>
+              <span>Kayıtlı online sipariş: {ikasDurum.onlineSiparis}</span>
               <span>Son senkron: {ikasDurum.son_siparis_senk ? new Date(ikasDurum.son_siparis_senk).toLocaleString('tr-TR') : '—'}</span>
             </div>
           )}

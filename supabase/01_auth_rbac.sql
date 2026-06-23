@@ -46,6 +46,7 @@ insert into public.yetki_kodlari (kod, ad, grup) values
   ('ayarlar_duzenle','Ayarları düzenleme','Yönetim'),
   ('excel_ice_aktar','Excel ile ürün içe aktarma','Yönetim'),
   ('ikas_yonet','ikas entegrasyonunu yönetme (senkron)','Yönetim'),
+  ('online_siparis_goruntule','Online siparişleri görüntüleme','Satış'),
   ('kullanici_yonetimi','Kullanıcı ve yetki yönetimi','Yönetim')
 on conflict (kod) do nothing;
 

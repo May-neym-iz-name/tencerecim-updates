@@ -90,43 +90,78 @@ function pushArkaPlan(urunIdler) {
     .catch(err => console.error('[ikas] arka plan stok gönderimi başarısız:', err.message))
 }
 
-// --- pull: ikas siparişleri → yerel stok -----------------------------------
+// --- pull: ikas web sitesi siparişleri → yerel kayıt + stok ----------------
 
-// son_siparis_senk'ten sonra oluşan ikas siparişlerini çeker ve her birinin
-// kalemlerini online lokasyondan düşer. İşlenen siparişleri kaydeder (idempotent).
+const ONLINE_KANAL_TIPI = 1 // salesChannel.type: 1 = web mağaza (storefront)
+
+// Sipariş çekme GraphQL sorgusu. orderedAt > gt (Timestamp, epoch-ms).
+const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
+  listOrder(sort: "orderedAt asc", orderedAt: { gt: $gt }, pagination: { page: $page, limit: $limit }) {
+    count hasNext page limit
+    data {
+      id orderNumber orderedAt status orderPaymentStatus totalFinalPrice currencyCode
+      salesChannel { type }
+      customer { firstName lastName email phone }
+      shippingAddress { city { name } district { name } addressLine1 }
+      orderLineItems { quantity finalUnitPrice stockLocationId variant { id name } }
+    }
+  }
+}`
+
+// Müşteriyi telefon ya da e-posta ile eşleştirir; yoksa ekler. musteri_id döner.
+function musteriUpsert(db, m) {
+  const tel = (m.phone || '').trim() || null
+  const email = (m.email || '').trim() || null
+  const ad = (m.firstName || '').trim()
+  const soyad = (m.lastName || '').trim()
+  if (!tel && !email && !ad) return null
+
+  let mevcut = null
+  if (tel) mevcut = db.prepare('SELECT id FROM musteriler WHERE telefon = ?').get(tel)
+  if (!mevcut && email) mevcut = db.prepare('SELECT id FROM musteriler WHERE email = ?').get(email)
+  if (mevcut) return mevcut.id
+
+  const r = db.prepare(
+    'INSERT INTO musteriler (ad, soyad, telefon, email) VALUES (?, ?, ?, ?)'
+  ).run(ad || 'Online', soyad || 'Müşteri', tel, email)
+  return r.lastInsertRowid
+}
+
+// ikas siparişlerini çeker. İlk çalıştırmada tüm geçmiş kaydedilir (stok DÜŞÜLMEZ),
+// sonraki çalıştırmalarda sadece yeni siparişler kaydedilir ve stok düşülür.
 async function pullSiparisler() {
   const db = getDb()
   const a = ayarGetir()
-  const onlineLokId = a.online_lokasyon_id
-  if (!onlineLokId) return { atlandi: true, sebep: 'online_lokasyon_secilmedi' }
 
-  // İlk çalıştırma: geçmiş siparişleri işleme, başlangıcı şimdiye sabitle.
-  let sonSenk = Number(a.son_siparis_senk || 0)
-  if (!sonSenk) {
-    ayarKaydet('son_siparis_senk', String(Date.now()))
-    return { ilkKurulum: true, islenen: 0 }
+  // ikas_lokasyon_id → yerel lokasyon_id eşlemesi (stok hangi mağazadan düşecek).
+  const lokHaritasi = {}
+  for (const l of db.prepare('SELECT id, ikas_lokasyon_id FROM lokasyonlar WHERE ikas_lokasyon_id IS NOT NULL').all()) {
+    lokHaritasi[l.ikas_lokasyon_id] = l.id
   }
 
-  const sorgu = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
-    listOrder(sort: "orderedAt asc", orderedAt: { gt: $gt }, pagination: { page: $page, limit: $limit }) {
-      count hasNext page limit
-      data { id orderNumber orderedAt status orderLineItems { quantity variant { id } } }
-    }
-  }`
+  const sonSenk = Number(a.son_siparis_senk || 0)
+  const ilkKurulum = !sonSenk
 
-  const islenmisMi = db.prepare('SELECT 1 FROM ikas_islenen_siparisler WHERE ikas_siparis_id = ?')
-  const isaretle = db.prepare('INSERT OR IGNORE INTO ikas_islenen_siparisler (ikas_siparis_id, siparis_no) VALUES (?, ?)')
+  const varExists = db.prepare('SELECT 1 FROM online_siparisler WHERE ikas_siparis_id = ?')
+  const sipEkle = db.prepare(`INSERT OR IGNORE INTO online_siparisler
+    (ikas_siparis_id, siparis_no, siparis_tarihi, durum, odeme_durumu, toplam, para_birimi,
+     musteri_id, musteri_ad, musteri_email, musteri_telefon, teslimat_il, teslimat_ilce, teslimat_adres, stok_dusuldu)
+    VALUES (@ikas_siparis_id, @siparis_no, @siparis_tarihi, @durum, @odeme_durumu, @toplam, @para_birimi,
+     @musteri_id, @musteri_ad, @musteri_email, @musteri_telefon, @teslimat_il, @teslimat_ilce, @teslimat_adres, @stok_dusuldu)`)
+  const kalemEkle = db.prepare(`INSERT INTO online_siparis_kalemleri
+    (siparis_id, urun_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
   const varyantUrun = db.prepare('SELECT id FROM urunler WHERE ikas_varyant_id = ? AND aktif = 1')
   const stokDus = db.prepare('UPDATE urun_stoklar SET miktar = MAX(0, miktar - ?) WHERE urun_id = ? AND lokasyon_id = ?')
 
   let page = 1
-  let islenen = 0
+  let kaydedilen = 0
+  let stokDusulen = 0
   let eslesmeyen = 0
   let enSonOrderedAt = sonSenk
 
-  // Sayfa döngüsü. Her sayfa kendi transaction'ında işlenir.
   for (;;) {
-    const data = await graphql(sorgu, { gt: sonSenk, page, limit: SIPARIS_LIMIT })
+    const data = await graphql(SIPARIS_SORGU, { gt: sonSenk || 0, page, limit: SIPARIS_LIMIT })
     const liste = data?.listOrder
     const siparisler = liste?.data || []
     if (!siparisler.length) break
@@ -134,18 +169,49 @@ async function pullSiparisler() {
     const partiIsle = db.transaction(() => {
       for (const sip of siparisler) {
         if (sip.orderedAt && sip.orderedAt > enSonOrderedAt) enSonOrderedAt = sip.orderedAt
-        if (islenmisMi.get(sip.id)) continue
-        if (sip.status === IPTAL_DURUMU) { isaretle.run(sip.id, sip.orderNumber); continue }
+        if (sip.salesChannel?.type !== ONLINE_KANAL_TIPI) continue // sadece web sitesi siparişleri
+        if (varExists.get(sip.id)) continue // zaten kayıtlı
+
+        const iptal = sip.status === IPTAL_DURUMU
+        const stokDusecek = !ilkKurulum && !iptal
+        const ad = `${sip.customer?.firstName || ''} ${sip.customer?.lastName || ''}`.trim()
+        const musteriId = musteriUpsert(db, sip.customer || {})
+
+        const r = sipEkle.run({
+          ikas_siparis_id: sip.id,
+          siparis_no: sip.orderNumber || null,
+          siparis_tarihi: sip.orderedAt ? new Date(sip.orderedAt).toISOString() : null,
+          durum: sip.status || null,
+          odeme_durumu: sip.orderPaymentStatus || null,
+          toplam: Number(sip.totalFinalPrice) || 0,
+          para_birimi: sip.currencyCode || 'TRY',
+          musteri_id: musteriId,
+          musteri_ad: ad || null,
+          musteri_email: sip.customer?.email || null,
+          musteri_telefon: sip.customer?.phone || null,
+          teslimat_il: sip.shippingAddress?.city?.name || null,
+          teslimat_ilce: sip.shippingAddress?.district?.name || null,
+          teslimat_adres: sip.shippingAddress?.addressLine1 || null,
+          stok_dusuldu: stokDusecek ? 1 : 0,
+        })
+        if (r.changes === 0) continue
+        const siparisId = r.lastInsertRowid
+
         for (const kalem of (sip.orderLineItems || [])) {
-          const vId = kalem?.variant?.id
+          const vId = kalem?.variant?.id || null
           const adet = Number(kalem?.quantity) || 0
-          if (!vId || !adet) continue
-          const urun = varyantUrun.get(vId)
-          if (urun) stokDus.run(adet, urun.id, onlineLokId)
-          else eslesmeyen++
+          const urun = vId ? varyantUrun.get(vId) : null
+          const lokId = lokHaritasi[kalem?.stockLocationId] || null
+          kalemEkle.run(siparisId, urun?.id || null, vId, kalem?.variant?.name || null,
+            adet, Number(kalem?.finalUnitPrice) || 0, lokId, kalem?.stockLocationId || null)
+
+          if (stokDusecek && adet) {
+            if (urun && lokId) stokDus.run(adet, urun.id, lokId)
+            else eslesmeyen++
+          }
         }
-        isaretle.run(sip.id, sip.orderNumber)
-        islenen++
+        kaydedilen++
+        if (stokDusecek) stokDusulen++
       }
     })
     partiIsle()
@@ -155,7 +221,7 @@ async function pullSiparisler() {
   }
 
   if (enSonOrderedAt > sonSenk) ayarKaydet('son_siparis_senk', String(enSonOrderedAt))
-  return { islenen, eslesmeyen }
+  return { ilkKurulum, kaydedilen, stokDusulen, eslesmeyen }
 }
 
 // --- IPC handler'ları -------------------------------------------------------
@@ -197,13 +263,12 @@ module.exports = {
     const eslesmisLok = db.prepare(
       'SELECT COUNT(*) n FROM lokasyonlar WHERE ikas_lokasyon_id IS NOT NULL'
     ).get().n
-    const islenenSiparis = db.prepare('SELECT COUNT(*) n FROM ikas_islenen_siparisler').get().n
+    const onlineSiparis = db.prepare('SELECT COUNT(*) n FROM online_siparisler').get().n
     return {
       yapilandirildi: !!(a.store_name && a.client_id && a.client_secret),
       otomatik_senk: !!a.otomatik_senk,
-      online_lokasyon_id: a.online_lokasyon_id ? Number(a.online_lokasyon_id) : null,
       son_siparis_senk: a.son_siparis_senk ? Number(a.son_siparis_senk) : null,
-      eslesmisUrun, eslesmisLok, islenenSiparis,
+      eslesmisUrun, eslesmisLok, onlineSiparis,
     }
   },
 }

@@ -194,6 +194,40 @@ function createTables() {
       islenme_tarihi TEXT DEFAULT (datetime('now','localtime'))
     );
 
+    -- ikas web sitesinden gelen siparişler (görüntüleme + müşteri saklama).
+    -- ikas_siparis_id UNIQUE: aynı sipariş iki kez kaydedilmez (idempotent çekim).
+    CREATE TABLE IF NOT EXISTS online_siparisler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ikas_siparis_id TEXT UNIQUE NOT NULL,
+      siparis_no TEXT,
+      siparis_tarihi TEXT,
+      durum TEXT,
+      odeme_durumu TEXT,
+      toplam REAL DEFAULT 0,
+      para_birimi TEXT DEFAULT 'TRY',
+      musteri_id INTEGER REFERENCES musteriler(id),
+      musteri_ad TEXT,
+      musteri_email TEXT,
+      musteri_telefon TEXT,
+      teslimat_il TEXT,
+      teslimat_ilce TEXT,
+      teslimat_adres TEXT,
+      stok_dusuldu INTEGER DEFAULT 0,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS online_siparis_kalemleri (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      siparis_id INTEGER NOT NULL REFERENCES online_siparisler(id),
+      urun_id INTEGER REFERENCES urunler(id),
+      ikas_varyant_id TEXT,
+      urun_adi TEXT,
+      miktar INTEGER DEFAULT 1,
+      birim_fiyat REAL DEFAULT 0,
+      lokasyon_id INTEGER REFERENCES lokasyonlar(id),
+      ikas_lokasyon_id TEXT
+    );
+
     -- Oluşturulan kargo gönderileri.
     CREATE TABLE IF NOT EXISTS kargolar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

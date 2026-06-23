@@ -10,6 +10,7 @@ const PERSONEL_VARSAYILAN = new Set([
   'musteri_goruntule',
   'musteri_duzenle',
   'kargo_yonet',
+  'online_siparis_goruntule',
 ])
 
 /**

@@ -107,6 +107,11 @@ export const ikasApi = {
   durum: () => invoke('ikas:durum'),
 }
 
+export const onlineSiparisApi = {
+  listele: (params) => invoke('online-siparis:listele', params),
+  getir: (id) => invoke('online-siparis:getir', id),
+}
+
 export const uygulamaApi = {
   surum: () => invoke('app:surum'),
 }

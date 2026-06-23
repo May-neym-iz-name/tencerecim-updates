@@ -14,6 +14,7 @@ import Musteriler from './pages/Musteriler.jsx'
 import Kargo from './pages/Kargo.jsx'
 import Ayarlar from './pages/Ayarlar.jsx'
 import SatisGecmisi from './pages/SatisGecmisi.jsx'
+import OnlineSiparisler from './pages/OnlineSiparisler.jsx'
 import Kullanicilar from './pages/Kullanicilar.jsx'
 
 const navItems = [
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/satis-gecmisi', label: '📋 Satış Geçmişi', yetki: 'satis_gecmisi_goruntule', el: <SatisGecmisi /> },
   { to: '/urunler', label: '📦 Ürünler', yetki: 'urun_goruntule', el: <Urunler /> },
   { to: '/stok', label: '📊 Stok', yetki: 'stok_goruntule', el: <Stok /> },
+  { to: '/online-siparisler', label: '🛍️ Online Siparişler', yetki: 'online_siparis_goruntule', el: <OnlineSiparisler /> },
   { to: '/musteriler', label: '👥 Müşteriler', yetki: 'musteri_goruntule', el: <Musteriler /> },
   { to: '/kargo', label: '📦 Kargo', yetki: 'kargo_yonet', el: <Kargo /> },
   { to: '/ayarlar', label: '⚙️ Ayarlar', yetki: 'ayarlar_duzenle', el: <Ayarlar /> },

@@ -13,6 +13,7 @@ const PERSONEL_VARSAYILAN = new Set([
   'musteri_goruntule',
   'musteri_duzenle',
   'kargo_yonet',
+  'online_siparis_goruntule',
 ])
 
 // Renderer'dan gelen aktif kullanıcı profili (rol + izinler + izinli_lokasyonlar).

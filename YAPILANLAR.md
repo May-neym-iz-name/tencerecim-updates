@@ -4,6 +4,17 @@
 
 ---
 
+## ikas — Online Siparişler + Müşteri + Lokasyon-bazlı Stok (v1.2.22)
+
+1.2.21'in genişletilmiş hali — gerçek beklentiyi karşılar:
+- **Online Siparişler ekranı**: yeni `online_siparisler`/`online_siparis_kalemleri` tabloları + `src/pages/OnlineSiparisler.jsx` sekmesi (sipariş no, tarih, müşteri, teslimat, durum, tutar, detay modalı). Yetki: `online_siparis_goruntule` (personel dahil).
+- **Müşteri saklama**: sipariş müşterisi telefon/e-posta ile eşleştirilip ana `musteriler` listesine eklenir (`musteriUpsert`).
+- **Lokasyon-bazlı stok**: online sipariş, ikas'ta hangi mağazadan düştüyse (`orderLineItem.stockLocationId`) yerel olarak da o mağazadan düşülür. Tek-lokasyon ayarı kaldırıldı. İki mağaza da otomatik eşitlenir.
+- **Geçmiş**: yalnızca web sitesi siparişleri (`salesChannel.type===1`). İlk senkronda tüm geçmiş kaydedilir ama **stok düşülmez** (sadece görüntüleme); sonraki yeni siparişler stoktan düşer. `online_siparisler.ikas_siparis_id UNIQUE` ile idempotent.
+- DB modülü: `electron/db/online-siparisler.js` (listele/getir).
+
+---
+
 ## ikas E-Ticaret Entegrasyonu (v1.2.21)
 
 İki yönlü stok senkronu, ikas Admin GraphQL API (OAuth client-credentials).
