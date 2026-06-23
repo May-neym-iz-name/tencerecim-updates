@@ -152,14 +152,33 @@ export default function OnlineSiparisler() {
     finally { setIslemMesgul('') }
   }
 
+  function senkSonucMesaji(r) {
+    const p = []
+    if (r.kaydedilen) p.push(`${r.kaydedilen} yeni`)
+    if (r.guncellenen) p.push(`${r.guncellenen} durum güncellendi`)
+    if (r.stokDusulen) p.push(`${r.stokDusulen} stoktan düşüldü`)
+    return p.length ? p.join(', ') : 'değişiklik yok'
+  }
+
   async function siparisCek() {
     setCekiliyor(true)
     try {
       const r = await ikasApi.siparisCek()
       if (r.ilkKurulum) toast.success(`İlk senkron: ${r.kaydedilen} sipariş kaydedildi (stok düşülmedi).`)
-      else toast.success(`${r.kaydedilen} yeni sipariş çekildi, ${r.stokDusulen} sipariş stoktan düşüldü.`)
+      else toast.success(`Senkron tamam: ${senkSonucMesaji(r)}.`)
       await yukle()
     } catch (e) { toast.error('Sipariş çekme hatası: ' + e.message) }
+    finally { setCekiliyor(false) }
+  }
+
+  async function gecmisCek() {
+    if (!confirm('Tüm sipariş geçmişi ikas\'tan yeniden çekilecek (eski siparişler ve durumları dahil). Stok düşülmez. Devam?')) return
+    setCekiliyor(true)
+    try {
+      const r = await ikasApi.siparisGecmisCek()
+      toast.success(`Geçmiş çekildi: ${senkSonucMesaji(r)}.`)
+      await yukle()
+    } catch (e) { toast.error('Geçmiş çekme hatası: ' + e.message) }
     finally { setCekiliyor(false) }
   }
 
@@ -170,10 +189,17 @@ export default function OnlineSiparisler() {
           <h2 className="text-2xl font-bold text-gray-800">Online Siparişler</h2>
           <p className="text-sm text-gray-500">Web sitesinden (ikas) gelen siparişler — toplam {toplam}</p>
         </div>
-        <button onClick={siparisCek} disabled={cekiliyor}
-          className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50">
-          {cekiliyor ? 'Çekiliyor…' : '🔄 Siparişleri Çek'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={gecmisCek} disabled={cekiliyor}
+            className="border border-amber-600 text-amber-700 px-3 py-2 rounded-lg text-sm hover:bg-amber-50 disabled:opacity-50"
+            title="Tüm sipariş geçmişini (eski siparişler + durumları) ikas'tan yeniden çeker. Stok düşülmez.">
+            ⏬ Tüm Geçmişi Çek
+          </button>
+          <button onClick={siparisCek} disabled={cekiliyor}
+            className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50">
+            {cekiliyor ? 'Çekiliyor…' : '🔄 Siparişleri Çek'}
+          </button>
+        </div>
       </div>
 
       <input value={arama} onChange={e => setArama(e.target.value)}
@@ -234,99 +260,139 @@ export default function OnlineSiparisler() {
       </div>
 
       {secili && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setSecili(null)}>
-          <div className="bg-white rounded-xl max-w-lg w-full max-h-[85vh] overflow-auto p-5" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold">Sipariş #{secili.siparis_no}</h3>
-              <button onClick={() => setSecili(null)} className="text-gray-400 hover:text-gray-700">✕</button>
-            </div>
-            <div className="text-sm space-y-1 mb-4">
-              <p><span className="text-gray-500">Tarih:</span> {TARIH(secili.siparis_tarihi)}</p>
-              <p><span className="text-gray-500">Müşteri:</span> {secili.musteri_ad} · {secili.musteri_telefon} · {secili.musteri_email}</p>
-              <p><span className="text-gray-500">Teslimat:</span> {[secili.teslimat_adres, secili.teslimat_ilce, secili.teslimat_il].filter(Boolean).join(', ')}</p>
-              <p>
-                <span className="text-gray-500">Ödeme:</span>{' '}
-                <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(secili.odeme_durumu)}`}>
-                  {ODEME_ETIKET[secili.odeme_durumu] || secili.odeme_durumu || '—'}
-                </span>
-                {secili.odeme_yontemi && <span className="text-gray-600"> · {secili.odeme_yontemi}</span>}
-              </p>
-              {(secili.fatura_unvan || secili.fatura_vergi_no || secili.fatura_tc) && (
-                <p><span className="text-gray-500">Fatura:</span>{' '}
-                  {[secili.fatura_unvan,
-                    secili.fatura_vergi_no && `VN: ${secili.fatura_vergi_no}`,
-                    secili.fatura_vergi_dairesi,
-                    secili.fatura_tc && `TC: ${secili.fatura_tc}`,
-                  ].filter(Boolean).join(' · ')}
-                </p>
-              )}
-              <p><span className="text-gray-500">Durum:</span> {DURUM_ETIKET[secili.durum] || secili.durum}</p>
-            </div>
-            <table className="w-full text-sm border-t">
-              <thead className="text-gray-500 text-left">
-                <tr><th className="py-2">Ürün</th><th className="py-2 text-center">Adet</th><th className="py-2">Mağaza</th><th className="py-2 text-right">Birim</th></tr>
-              </thead>
-              <tbody>
-                {(secili.kalemler || []).map(k => (
-                  <tr key={k.id} className="border-t">
-                    <td className="py-2">
-                      {k.urun_adi}
-                      {!k.urun_id && <span className="block text-[10px] text-amber-600">yerel ürün eşleşmedi</span>}
-                    </td>
-                    <td className="py-2 text-center">{k.miktar}</td>
-                    <td className="py-2">
-                      <select
-                        value={k.lokasyon_id || ''}
-                        onChange={e => kalemLokasyonDegistir(k, e.target.value)}
-                        className="border rounded px-1.5 py-1 text-xs text-gray-700 bg-white">
-                        <option value="">— Seçilmedi —</option>
-                        {lokasyonlar.map(l => (
-                          <option key={l.id} value={l.id}>{l.ad}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2 text-right">{PARA(k.birim_fiyat, secili.para_birimi)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="text-right font-bold mt-3">Toplam: {PARA(secili.toplam, secili.para_birimi)}</div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSecili(null)}>
+          <div className="bg-gray-50 rounded-2xl max-w-2xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
 
-            <div className="border-t mt-4 pt-3 flex items-center justify-between">
-              <div className="text-sm">
-                {(secili.kargolar || []).filter(k => k.durum !== 'iptal').length > 0 ? (
-                  <span className="text-emerald-700">
-                    📦 Kargo: {secili.kargolar.filter(k => k.durum !== 'iptal').map(k => k.takip_no).join(', ')}
+            {/* Başlık */}
+            <div className="flex items-start justify-between px-6 py-4 bg-white border-b">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xl font-bold text-gray-800">Sipariş #{secili.siparis_no}</h3>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${secili.durum === 'CANCELLED' ? 'bg-red-100 text-red-700' : secili.durum === 'REFUNDED' ? 'bg-purple-100 text-purple-700' : secili.durum === 'FULFILLED' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {DURUM_ETIKET[secili.durum] || secili.durum}
                   </span>
-                ) : (
-                  <span className="text-gray-400">Henüz kargo oluşturulmadı</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(secili.odeme_durumu)}`}>
+                    {ODEME_ETIKET[secili.odeme_durumu] || secili.odeme_durumu || '—'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{TARIH(secili.siparis_tarihi)}</p>
+              </div>
+              <button onClick={() => setSecili(null)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">✕</button>
+            </div>
+
+            {/* Kaydırılabilir gövde */}
+            <div className="flex-1 overflow-auto px-6 py-4 space-y-4">
+
+              {/* Bilgi kartları */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white rounded-xl border p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Müşteri</p>
+                  <p className="text-sm font-medium text-gray-800">{secili.musteri_ad || '—'}</p>
+                  {secili.musteri_telefon && <p className="text-xs text-gray-500">{secili.musteri_telefon}</p>}
+                  {secili.musteri_email && <p className="text-xs text-gray-500 break-all">{secili.musteri_email}</p>}
+                </div>
+                <div className="bg-white rounded-xl border p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Teslimat</p>
+                  <p className="text-sm text-gray-700">{secili.teslimat_adres || '—'}</p>
+                  <p className="text-xs text-gray-500">{[secili.teslimat_ilce, secili.teslimat_il].filter(Boolean).join(' / ')}</p>
+                </div>
+                <div className="bg-white rounded-xl border p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Ödeme</p>
+                  <p className="text-sm text-gray-700">{ODEME_ETIKET[secili.odeme_durumu] || secili.odeme_durumu || '—'}</p>
+                  {secili.odeme_yontemi && <p className="text-xs text-gray-500">{secili.odeme_yontemi}</p>}
+                </div>
+                {(secili.fatura_unvan || secili.fatura_vergi_no || secili.fatura_tc) && (
+                  <div className="bg-white rounded-xl border p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold mb-1">Fatura</p>
+                    {secili.fatura_unvan && <p className="text-sm text-gray-700">{secili.fatura_unvan}</p>}
+                    {secili.fatura_vergi_no && <p className="text-xs text-gray-500">VN: {secili.fatura_vergi_no} {secili.fatura_vergi_dairesi && `· ${secili.fatura_vergi_dairesi}`}</p>}
+                    {secili.fatura_tc && <p className="text-xs text-gray-500">TC: {secili.fatura_tc}</p>}
+                  </div>
                 )}
               </div>
-              <button onClick={() => kargoOlustur(secili)}
-                className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">
-                📦 Kargo Oluştur
-              </button>
+
+              {/* Ürünler */}
+              <div className="bg-white rounded-xl border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500 text-left text-xs">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Ürün</th>
+                      <th className="px-3 py-2 font-medium text-center w-14">Adet</th>
+                      <th className="px-3 py-2 font-medium w-40">Çıkış Mağazası</th>
+                      <th className="px-3 py-2 font-medium text-right w-24">Birim</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(secili.kalemler || []).map(k => (
+                      <tr key={k.id} className="border-t">
+                        <td className="px-3 py-2">
+                          {k.urun_adi}
+                          {!k.urun_id && <span className="block text-[10px] text-amber-600">⚠ yerel ürün eşleşmedi</span>}
+                        </td>
+                        <td className="px-3 py-2 text-center">{k.miktar}</td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={k.lokasyon_id || ''}
+                            onChange={e => kalemLokasyonDegistir(k, e.target.value)}
+                            className={`border rounded-lg px-2 py-1 text-xs w-full bg-white ${k.lokasyon_id ? 'text-gray-700' : 'text-amber-600 border-amber-300'}`}>
+                            <option value="">— Seçilmedi —</option>
+                            {lokasyonlar.map(l => (
+                              <option key={l.id} value={l.id}>{l.ad}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{PARA(k.birim_fiyat, secili.para_birimi)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t bg-gray-50">
+                      <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-600">Toplam</td>
+                      <td className="px-3 py-2 text-right font-bold text-gray-800 whitespace-nowrap">{PARA(secili.toplam, secili.para_birimi)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Kargo */}
+              <div className="bg-white rounded-xl border p-3 flex items-center justify-between">
+                <div className="text-sm">
+                  {(secili.kargolar || []).filter(k => k.durum !== 'iptal').length > 0 ? (
+                    <span className="text-emerald-700 font-medium">
+                      📦 Kargo: {secili.kargolar.filter(k => k.durum !== 'iptal').map(k => k.takip_no).join(', ')}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400">Henüz kargo oluşturulmadı</span>
+                  )}
+                </div>
+                <button onClick={() => kargoOlustur(secili)}
+                  className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 whitespace-nowrap">
+                  📦 Kargo Oluştur
+                </button>
+              </div>
             </div>
 
-            <div className="border-t mt-3 pt-3">
-              <p className="text-xs font-medium text-gray-500 mb-2">ikas Sipariş İşlemleri</p>
+            {/* Alt eylem çubuğu */}
+            <div className="px-6 py-3 bg-white border-t">
+              <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold mb-2">ikas Sipariş İşlemleri</p>
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => siparisTazele(secili)} disabled={!!islemMesgul}
                   className="bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-slate-700 disabled:opacity-50"
-                  title="Kalem bilgilerini ikas'tan yeniden çeker (iptal/iade için kalem ID'lerini doldurur)">
-                  🔁 Siparişi Tazele
+                  title="Durum ve kalem bilgilerini ikas'tan yeniden çeker (iptal/iade için kalem ID'lerini doldurur)">
+                  {islemMesgul === 'tazele' ? '…' : '🔁 Tazele'}
                 </button>
                 <button onClick={() => ikasKargola(secili)} disabled={!!islemMesgul}
                   className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-emerald-700 disabled:opacity-50">
-                  🚚 Kargolandı Bildir (takip no)
+                  🚚 Kargolandı Bildir
                 </button>
                 <button onClick={() => adresAc(secili)} disabled={!!islemMesgul}
                   className="bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-gray-800 disabled:opacity-50">
                   ✏️ Adres Düzenle
                 </button>
+                <div className="flex-1" />
                 <button onClick={() => ikasIptal(secili)} disabled={!!islemMesgul}
                   className="bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-orange-700 disabled:opacity-50">
-                  ✖ Siparişi İptal Et
+                  ✖ İptal Et
                 </button>
                 <button onClick={() => ikasIade(secili)} disabled={!!islemMesgul}
                   className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-red-700 disabled:opacity-50">

@@ -178,9 +178,17 @@ async function pullSiparisler() {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
   const varyantUrun = db.prepare('SELECT id FROM urunler WHERE ikas_varyant_id = ? AND aktif = 1')
   const stokDus = db.prepare('UPDATE urun_stoklar SET miktar = MAX(0, miktar - ?) WHERE urun_id = ? AND lokasyon_id = ?')
+  // Var olan siparişin durum tazeleme + iptal/iade'de stok geri ekleme.
+  const mevcutGetir = db.prepare('SELECT id, durum, odeme_durumu, stok_dusuldu FROM online_siparisler WHERE ikas_siparis_id = ?')
+  const durumGuncelle = db.prepare('UPDATE online_siparisler SET durum = ?, odeme_durumu = ? WHERE id = ?')
+  const stokGeri = db.prepare('UPDATE urun_stoklar SET miktar = miktar + ? WHERE urun_id = ? AND lokasyon_id = ?')
+  const stokSifirla = db.prepare('UPDATE online_siparisler SET stok_dusuldu = 0 WHERE id = ?')
+  const kalemlerGetir = db.prepare('SELECT urun_id, lokasyon_id, miktar FROM online_siparis_kalemleri WHERE siparis_id = ?')
+  const IADE_DURUMLARI = new Set([IPTAL_DURUMU, 'REFUNDED'])
 
   let page = 1
   let kaydedilen = 0
+  let guncellenen = 0
   let stokDusulen = 0
   let eslesmeyen = 0
   let enSonOrderedAt = sonSenk
@@ -195,7 +203,25 @@ async function pullSiparisler() {
       for (const sip of siparisler) {
         if (sip.orderedAt && sip.orderedAt > enSonOrderedAt) enSonOrderedAt = sip.orderedAt
         if (sip.salesChannel?.type !== ONLINE_KANAL_TIPI) continue // sadece web sitesi siparişleri
-        if (varExists.get(sip.id)) continue // zaten kayıtlı
+
+        // Zaten kayıtlı: yeniden ekleme ama durum/ödeme bilgisini ikas'tan tazele.
+        const mevcut = mevcutGetir.get(sip.id)
+        if (mevcut) {
+          const yeniDurum = sip.status || mevcut.durum
+          const yeniOdeme = sip.orderPaymentStatus || mevcut.odeme_durumu
+          if (yeniDurum !== mevcut.durum || yeniOdeme !== mevcut.odeme_durumu) {
+            durumGuncelle.run(yeniDurum, yeniOdeme, mevcut.id)
+            guncellenen++
+          }
+          // İkas'ta iptal/iade edildiyse ve stok düşülmüşse yerel stoğu geri ekle.
+          if (IADE_DURUMLARI.has(yeniDurum) && mevcut.stok_dusuldu) {
+            for (const k of kalemlerGetir.all(mevcut.id)) {
+              if (k.urun_id && k.lokasyon_id) stokGeri.run(Number(k.miktar) || 0, k.urun_id, k.lokasyon_id)
+            }
+            stokSifirla.run(mevcut.id)
+          }
+          continue
+        }
 
         const iptal = sip.status === IPTAL_DURUMU
         const stokDusecek = !ilkKurulum && !iptal
@@ -255,7 +281,7 @@ async function pullSiparisler() {
   }
 
   if (enSonOrderedAt > sonSenk) ayarKaydet('son_siparis_senk', String(enSonOrderedAt))
-  return { ilkKurulum, kaydedilen, stokDusulen, eslesmeyen }
+  return { ilkKurulum, kaydedilen, guncellenen, stokDusulen, eslesmeyen }
 }
 
 // Tek bir siparişin kalemlerini ikas'tan yeniden çeker ve yerel kalemleri
@@ -263,7 +289,7 @@ async function pullSiparisler() {
 // Manuel atanmış lokasyon_id korunur (varyant bazında).
 const TEK_SIPARIS_SORGU = `query Tek($f: StringFilterInput) {
   listOrder(id: $f, pagination: { page: 1, limit: 1 }) {
-    data { id status orderLineItems { id quantity finalUnitPrice stockLocationId variant { id name } } }
+    data { id status orderPaymentStatus orderLineItems { id quantity finalUnitPrice stockLocationId variant { id name } } }
   }
 }`
 
@@ -290,7 +316,23 @@ async function tazeleSiparisKalemleri(db, siparisId) {
     (siparis_id, urun_id, ikas_kalem_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 
+  // Sipariş durumu ikas'ta değişmiş olabilir (örn. iptal/iade) → tazele.
+  const mevcut = db.prepare('SELECT durum, odeme_durumu, stok_dusuldu FROM online_siparisler WHERE id = ?').get(siparisId)
+  const yeniDurum = o.status || mevcut?.durum
+  const yeniOdeme = o.orderPaymentStatus || mevcut?.odeme_durumu
+  const iadeOldu = (yeniDurum === IPTAL_DURUMU || yeniDurum === 'REFUNDED') && mevcut?.stok_dusuldu
+
   const tx = db.transaction(() => {
+    // İptal/iade olduysa ve stok düşülmüşse, mevcut kalemlerden yerel stoğu geri ekle.
+    if (iadeOldu) {
+      const stokGeri = db.prepare('UPDATE urun_stoklar SET miktar = miktar + ? WHERE urun_id = ? AND lokasyon_id = ?')
+      for (const k of db.prepare('SELECT urun_id, lokasyon_id, miktar FROM online_siparis_kalemleri WHERE siparis_id = ?').all(siparisId)) {
+        if (k.urun_id && k.lokasyon_id) stokGeri.run(Number(k.miktar) || 0, k.urun_id, k.lokasyon_id)
+      }
+    }
+    db.prepare('UPDATE online_siparisler SET durum = ?, odeme_durumu = ?, stok_dusuldu = CASE WHEN ? THEN 0 ELSE stok_dusuldu END WHERE id = ?')
+      .run(yeniDurum, yeniOdeme, iadeOldu ? 1 : 0, siparisId)
+
     db.prepare('DELETE FROM online_siparis_kalemleri WHERE siparis_id = ?').run(siparisId)
     for (const kalem of (o.orderLineItems || [])) {
       const vId = kalem?.variant?.id || null
@@ -373,6 +415,15 @@ module.exports = {
   'ikas:siparis-cek': async () => {
     const { _yetkiKontrol } = require('../yetki')
     _yetkiKontrol('ikas_yonet')
+    return pullSiparisler()
+  },
+
+  // Tüm geçmişi yeniden çeker: son_siparis_senk sıfırlanır → ilk kurulum modu
+  // (mevcut siparişler mükerrer eklenmez, eski siparişlerin durumu tazelenir, stok DÜŞÜLMEZ).
+  'ikas:siparis-gecmis-cek': async () => {
+    const { _yetkiKontrol } = require('../yetki')
+    _yetkiKontrol('ikas_yonet')
+    ayarKaydet('son_siparis_senk', '0')
     return pullSiparisler()
   },
 

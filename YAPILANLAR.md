@@ -4,6 +4,14 @@
 
 ---
 
+## Sipariş Durum Tazeleme + Geçmiş Çekme + Detay Tasarımı (v1.2.31)
+
+- **Durum güncellenmiyor bug'ı**: `pullSiparisler` `INSERT OR IGNORE` ile mevcut siparişleri atlıyordu → ikas'ta iptal/iade edilen sipariş yerelde "CREATED" kalıyordu. Artık var olan siparişlerin **durum + ödeme durumu tazeleniyor**; iptal/iade tespit edilirse ve stok düşülmüşse **yerel stok geri ekleniyor**. Manuel "🔁 Tazele" butonu da durum/stok güncelliyor (TEK_SIPARIS_SORGU'ya `orderPaymentStatus` eklendi).
+- **"⏬ Tüm Geçmişi Çek" butonu**: `son_siparis_senk` cihaza özel olduğundan, daha önce senkron yapmış PC eski siparişleri bir daha çekemiyordu. Yeni buton damgayı sıfırlayıp tüm geçmişi yeniden çeker (`ikas:siparis-gecmis-cek`; stok düşülmez, mevcutlar mükerrer eklenmez, eski durumlar tazelenir). Eski PC'lerde #... gibi kaçan siparişleri getirmek için kullanılır.
+- **Detay modalı yeniden tasarlandı**: dağınık düz metin yerine sticky başlık (durum+ödeme rozetleri), 2'li bilgi kartları (müşteri/teslimat/ödeme/fatura), düzenli ürün tablosu (tfoot toplam, çıkış mağazası dropdown vurgulu), ayrı kargo kartı ve alt eylem çubuğu.
+
+---
+
 ## ikas Sipariş İşlemleri — Şema Düzeltmeleri (v1.2.30)
 
 v1.2.29'da hata mesajları gerçek sebebi gösterince ortaya çıkan ikas şema uyumsuzlukları giderildi:

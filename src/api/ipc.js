@@ -110,6 +110,7 @@ export const ikasApi = {
   lokasyonEsle: () => invoke('ikas:lokasyon-esle'),
   stokGonder: () => invoke('ikas:stok-gonder'),
   siparisCek: () => invoke('ikas:siparis-cek'),
+  siparisGecmisCek: () => invoke('ikas:siparis-gecmis-cek'),
   durum: () => invoke('ikas:durum'),
   siparisKargola: (veri) => invoke('ikas:siparis-kargola', veri),
   siparisIptal: (veri) => invoke('ikas:siparis-iptal', veri),
