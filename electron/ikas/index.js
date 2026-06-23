@@ -324,7 +324,20 @@ function adresTemizle(adr) {
       if (g.name) out[geo].name = g.name
     }
   }
+  // ikas AddressInput 'isDefault' alanını zorunlu (Boolean!) istiyor. Sipariş
+  // adresi müşterinin varsayılan adresi olmadığı için false gönderiyoruz.
+  out.isDefault = adr.isDefault === true
   return out
+}
+
+// Bir kalemin iade/geri-yükleme için ikas stok lokasyon ID'sini bulur:
+// önce seçili yerel lokasyonun ikas eşleşmesi, yoksa kalemde kayıtlı ikas lokasyonu.
+function kalemIkasLokId(db, kalem) {
+  if (kalem.lokasyon_id) {
+    const r = db.prepare('SELECT ikas_lokasyon_id FROM lokasyonlar WHERE id = ?').get(kalem.lokasyon_id)
+    if (r?.ikas_lokasyon_id) return r.ikas_lokasyon_id
+  }
+  return kalem.ikas_lokasyon_id || null
 }
 
 // --- IPC handler'ları -------------------------------------------------------
@@ -460,12 +473,22 @@ module.exports = {
       kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
     }
     if (!kalemler.length) throw new Error('İade edilebilir kalem bulunamadı (ikas tarafında sipariş kalemi yok).')
+    // ikas iadeyi geri yüklerken hangi stok lokasyonuna ekleyeceğini bilmek ister
+    // (zorunlu alan). İlk kalemin (seçili) ikas lokasyonunu kullan.
+    const stockLocationId = kalemler.map(k => kalemIkasLokId(db, k)).find(Boolean) || null
+    if (restock && !stockLocationId) {
+      throw new Error('İade için stok lokasyonu belirlenemedi. Kalemlerin çıkış mağazasını seçin ve mağazanın ikas eşleşmesini yapın.')
+    }
     const orderRefundLines = kalemler.map(k => ({
       orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
       price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
     }))
     await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
-      input: { orderId: sip.ikas_siparis_id, orderRefundLines, refundShipping: !!refundShipping, sendNotificationToCustomer: !!bildir },
+      input: {
+        orderId: sip.ikas_siparis_id, orderRefundLines,
+        ...(stockLocationId ? { stockLocationId } : {}),
+        refundShipping: !!refundShipping, sendNotificationToCustomer: !!bildir,
+      },
     })
     const geriEkle = db.transaction(() => {
       if (restock && sip.stok_dusuldu) {

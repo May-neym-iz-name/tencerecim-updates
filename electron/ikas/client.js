@@ -72,6 +72,21 @@ async function tokenAl() {
   return tokenCache.token
 }
 
+// ikas'ın şifreli iş-kuralı hata kodlarını anlaşılır Türkçe mesaja çevirir.
+const HATA_CEVIRI = {
+  'error_messages.order.not_eligible_for_update':
+    'Sipariş bu işlem için uygun durumda değil (ödeme tamamlanmamış, zaten kargolanmış veya iptal/iade edilmiş olabilir).',
+  'error_messages.order_line.not_eligible_for_refund':
+    'Bu sipariş kalemi iadeye uygun değil (ödenmemiş, henüz işlenmemiş veya zaten iade edilmiş olabilir).',
+  'error_messages.order_line.not_eligible_for_cancel':
+    'Bu sipariş kalemi iptale uygun değil (zaten kargolanmış, iptal veya iade edilmiş olabilir).',
+}
+function cevirHata(mesaj) {
+  if (!mesaj) return mesaj
+  const anahtar = String(mesaj).trim()
+  return HATA_CEVIRI[anahtar] || mesaj
+}
+
 // GraphQL sorgusu çalıştırır; ikas hata döndürürse Error fırlatır.
 async function graphql(query, variables) {
   const token = await tokenAl()
@@ -82,7 +97,7 @@ async function graphql(query, variables) {
   )
   // GraphQL doğrulama hataları HTTP 400 ile birlikte gövdede gelebilir; mutlaka oku.
   if (json?.errors?.length) {
-    const mesaj = json.errors.map(e => e.message || JSON.stringify(e)).join('; ')
+    const mesaj = json.errors.map(e => cevirHata(e.message) || JSON.stringify(e)).join('; ')
     throw new Error('ikas: ' + mesaj)
   }
   if (status < 200 || status >= 300) {

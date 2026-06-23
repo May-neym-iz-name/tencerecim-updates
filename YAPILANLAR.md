@@ -4,6 +4,16 @@
 
 ---
 
+## ikas Sipariş İşlemleri — Şema Düzeltmeleri (v1.2.30)
+
+v1.2.29'da hata mesajları gerçek sebebi gösterince ortaya çıkan ikas şema uyumsuzlukları giderildi:
+- **Adres düzenle**: ikas `AddressInput` zorunlu `isDefault: Boolean!` istiyor → `adresTemizle()` artık `isDefault` ekliyor.
+- **İade**: `OrderRefundInput` zorunlu `stockLocationId: String!` istiyor (geri yükleme lokasyonu) → kalemin seçili çıkış mağazasının ikas lokasyonu gönderiliyor (`kalemIkasLokId`). Lokasyon belirlenemezse anlaşılır hata.
+- **Anlaşılır hata mesajları**: ikas'ın şifreli iş-kuralı kodları Türkçeye çevriliyor (`client.js` HATA_CEVIRI): `not_eligible_for_update/refund/cancel` → durumu açıklayan mesaj.
+- NOT: `not_eligible_for_*` hataları kod değil **sipariş durumu** kaynaklı (ödeme tamamlanmamış / zaten işlenmiş sipariş). Uygun durumdaki gerçek bir siparişte test edilmeli.
+
+---
+
 ## Online Sipariş İşlemleri Düzeltme + Stok Lokasyon Seçimi (v1.2.29)
 
 Online Siparişler'de iptal/iade/kargola/adres hatalarının kök nedenleri giderildi:
