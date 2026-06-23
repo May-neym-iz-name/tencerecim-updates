@@ -225,6 +225,7 @@ function createTables() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       siparis_id INTEGER NOT NULL REFERENCES online_siparisler(id),
       urun_id INTEGER REFERENCES urunler(id),
+      ikas_kalem_id TEXT,
       ikas_varyant_id TEXT,
       urun_adi TEXT,
       miktar INTEGER DEFAULT 1,
@@ -287,6 +288,8 @@ function migrate() {
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_tc TEXT") } catch {}
   // kargolar — online sipariş bağlantısı (hangi siparişin kargosu).
   try { db.exec("ALTER TABLE kargolar ADD COLUMN online_siparis_id INTEGER REFERENCES online_siparisler(id)") } catch {}
+  // online_siparis_kalemleri — ikas sipariş kalemi id'si (iptal/iade için).
+  try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN ikas_kalem_id TEXT") } catch {}
 }
 
 function seedLokasyonlar() {

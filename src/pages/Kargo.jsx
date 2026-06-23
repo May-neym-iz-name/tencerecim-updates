@@ -15,6 +15,19 @@ export default function Kargo() {
   const [kargolar, setKargolar] = useState([])
   const [formAcik, setFormAcik] = useState(false)
   const [yukleniyor, setYukleniyor] = useState(false)
+  const [filtre, setFiltre] = useState({ takip: '', musteri: '', bas: '', bit: '' })
+
+  function filtreAlan(k, v) { setFiltre(f => ({ ...f, [k]: v })) }
+  function filtreTemizle() { setFiltre({ takip: '', musteri: '', bas: '', bit: '' }) }
+
+  const gosterilen = kargolar.filter(k => {
+    if (filtre.takip && !(k.takip_no || '').toLowerCase().includes(filtre.takip.toLowerCase())) return false
+    if (filtre.musteri && !(k.alici_ad || '').toLowerCase().includes(filtre.musteri.toLowerCase())) return false
+    const gun = (k.olusturma_tarihi || '').slice(0, 10) // YYYY-MM-DD
+    if (filtre.bas && gun && gun < filtre.bas) return false
+    if (filtre.bit && gun && gun > filtre.bit) return false
+    return true
+  })
 
   function yenile() {
     setYukleniyor(true)
@@ -62,6 +75,27 @@ export default function Kargo() {
         </div>
       </div>
 
+      <div className="bg-white rounded-xl border p-3 mb-4 flex flex-wrap items-end gap-3">
+        <label className="text-xs text-gray-500">Takip No
+          <input value={filtre.takip} onChange={e => filtreAlan('takip', e.target.value)}
+            placeholder="Takip no ara" className="border rounded px-2 py-1.5 text-sm w-40 mt-0.5 block" />
+        </label>
+        <label className="text-xs text-gray-500">Müşteri / Alıcı
+          <input value={filtre.musteri} onChange={e => filtreAlan('musteri', e.target.value)}
+            placeholder="Alıcı adı ara" className="border rounded px-2 py-1.5 text-sm w-40 mt-0.5 block" />
+        </label>
+        <label className="text-xs text-gray-500">Başlangıç
+          <input type="date" value={filtre.bas} onChange={e => filtreAlan('bas', e.target.value)}
+            className="border rounded px-2 py-1.5 text-sm mt-0.5 block" />
+        </label>
+        <label className="text-xs text-gray-500">Bitiş
+          <input type="date" value={filtre.bit} onChange={e => filtreAlan('bit', e.target.value)}
+            className="border rounded px-2 py-1.5 text-sm mt-0.5 block" />
+        </label>
+        <button onClick={filtreTemizle} className="text-xs text-gray-500 hover:text-gray-800 underline pb-2">Temizle</button>
+        <span className="text-xs text-gray-400 pb-2 ml-auto">{gosterilen.length} / {kargolar.length} gönderi</span>
+      </div>
+
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600 text-left">
@@ -76,7 +110,7 @@ export default function Kargo() {
             </tr>
           </thead>
           <tbody>
-            {kargolar.map(k => (
+            {gosterilen.map(k => (
               <tr key={k.id} className="border-t hover:bg-gray-50">
                 <td className="px-3 py-2 font-mono text-xs">{k.takip_no || '—'}</td>
                 <td className="px-3 py-2">{k.alici_ad}</td>
@@ -97,9 +131,9 @@ export default function Kargo() {
                 </td>
               </tr>
             ))}
-            {kargolar.length === 0 && (
+            {gosterilen.length === 0 && (
               <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">
-                {yukleniyor ? 'Yükleniyor…' : 'Henüz kargo gönderisi yok.'}
+                {yukleniyor ? 'Yükleniyor…' : (kargolar.length ? 'Filtreye uyan gönderi yok.' : 'Henüz kargo gönderisi yok.')}
               </td></tr>
             )}
           </tbody>

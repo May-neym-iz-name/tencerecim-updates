@@ -4,6 +4,20 @@
 
 ---
 
+## ikas Sipariş İşlemleri + Ayarlar Sekmeli + Kargo Filtre (v1.2.27)
+
+- **ikas sipariş işlemleri** (Online Siparişler detayında):
+  - **Kargolandı bildir**: `fulfillOrder` — takip no + UPS firma, müşteriye bildirim. Kargo oluşturulunca UPS takip no otomatik ikas siparişine işlenir.
+  - **İptal**: `cancelOrderLine` (tüm kalemler, restock) + yerel stok geri eklenir, durum CANCELLED.
+  - **İade**: `refundOrderLine` (restock + opsiyonel kargo iadesi) — para iadesi ikas/banka tarafında kontrol edilmeli.
+  - **Adres düzenleme**: `updateOrderAddresses` — adres ikas'tan tazelenir (il/ilçe geo ID korunur), metin alanları düzenlenir.
+  - Sipariş kalemi ikas ID'si pull'da yakalanır (`online_siparis_kalemleri.ikas_kalem_id`). Yetki: `ikas_yonet`.
+- **Ayarlar sekmeli**: Mağazalar / Satış / Kargo-UPS / ikas sekmeleri (her şey alt alta değil).
+- **Kargo filtreleri**: takip no, müşteri/alıcı adı, tarih aralığı (istemci tarafı).
+- NOT: Sipariş yazma işlemleri canlı mağazada test edilemedi (güvenlik); gerçek bir siparişte doğrulanmalı.
+
+---
+
 ## Online Siparişler — Kargo Entegrasyonu + Ödeme/Fatura (v1.2.24–1.2.25)
 
 - **Ödeme bilgisi** (1.2.24): sipariş çekiminde `paymentMethods` + `orderPaymentStatus` alınır; ödeme durumu (Ödendi/Bekliyor) ve yöntemi (Havale/EFT) listede+detayda gösterilir.

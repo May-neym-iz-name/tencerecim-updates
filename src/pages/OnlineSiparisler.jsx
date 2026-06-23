@@ -33,6 +33,8 @@ export default function OnlineSiparisler() {
   const [cekiliyor, setCekiliyor] = useState(false)
   const [kargoAcik, setKargoAcik] = useState(false)
   const [kargoBaslangic, setKargoBaslangic] = useState(null)
+  const [islemMesgul, setIslemMesgul] = useState('')
+  const [adresDuzenle, setAdresDuzenle] = useState(null) // { siparis, shipping }
 
   const yukle = useCallback(async () => {
     setYukleniyor(true)
@@ -71,6 +73,62 @@ export default function OnlineSiparisler() {
       gondericiLokasyonId: ilkLok,
     })
     setKargoAcik(true)
+  }
+
+  // ikas'a "kargolandı" + takip no bildir (siparişin oluşturulmuş kargosundan).
+  async function ikasKargola(s) {
+    const takip = (s.kargolar || []).find(k => k.durum !== 'iptal' && k.takip_no)?.takip_no || s.kargo_takip_no
+    if (!takip) { toast.error('Önce bu sipariş için kargo oluşturun.'); return }
+    setIslemMesgul('kargola')
+    try {
+      await ikasApi.siparisKargola({ id: s.id, takipNo: takip, kargoFirma: 'UPS', bildir: true })
+      toast.success('ikas siparişi kargolandı olarak işaretlendi, müşteriye bildirildi.')
+      await detayAc(s.id); await yukle()
+    } catch (e) { toast.error('ikas bildirimi başarısız: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  async function ikasIptal(s) {
+    if (!confirm(`#${s.siparis_no} siparişi ikas'ta iptal edilecek ve stok geri eklenecek. Emin misiniz?`)) return
+    setIslemMesgul('iptal')
+    try {
+      await ikasApi.siparisIptal({ id: s.id, restock: true })
+      toast.success('Sipariş iptal edildi.')
+      await detayAc(s.id); await yukle()
+    } catch (e) { toast.error('İptal başarısız: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  async function ikasIade(s) {
+    if (!confirm(`#${s.siparis_no} siparişi iade edilecek (stok geri eklenir). Para iadesini ikas/banka tarafında ayrıca kontrol edin. Devam?`)) return
+    setIslemMesgul('iade')
+    try {
+      await ikasApi.siparisIade({ id: s.id, restock: true, refundShipping: false, bildir: true })
+      toast.success('İade işlendi.')
+      await detayAc(s.id); await yukle()
+    } catch (e) { toast.error('İade başarısız: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  async function adresAc(s) {
+    setIslemMesgul('adres')
+    try {
+      const { shippingAddress } = await ikasApi.siparisAdresGetir(s.id)
+      setAdresDuzenle({ siparis: s, shipping: shippingAddress || {} })
+    } catch (e) { toast.error('Adres alınamadı: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  async function adresKaydet() {
+    setIslemMesgul('adres-kaydet')
+    try {
+      await ikasApi.siparisAdres({ id: adresDuzenle.siparis.id, shippingAddress: adresDuzenle.shipping })
+      toast.success('Adres güncellendi.')
+      setAdresDuzenle(null)
+      if (secili) await detayAc(secili.id)
+      await yukle()
+    } catch (e) { toast.error('Adres güncellenemedi: ' + e.message) }
+    finally { setIslemMesgul('') }
   }
 
   async function siparisCek() {
@@ -218,13 +276,69 @@ export default function OnlineSiparisler() {
                 📦 Kargo Oluştur
               </button>
             </div>
+
+            <div className="border-t mt-3 pt-3">
+              <p className="text-xs font-medium text-gray-500 mb-2">ikas Sipariş İşlemleri</p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => ikasKargola(secili)} disabled={!!islemMesgul}
+                  className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-emerald-700 disabled:opacity-50">
+                  🚚 Kargolandı Bildir (takip no)
+                </button>
+                <button onClick={() => adresAc(secili)} disabled={!!islemMesgul}
+                  className="bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-gray-800 disabled:opacity-50">
+                  ✏️ Adres Düzenle
+                </button>
+                <button onClick={() => ikasIptal(secili)} disabled={!!islemMesgul}
+                  className="bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-orange-700 disabled:opacity-50">
+                  ✖ Siparişi İptal Et
+                </button>
+                <button onClick={() => ikasIade(secili)} disabled={!!islemMesgul}
+                  className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-red-700 disabled:opacity-50">
+                  ↩ İade Et
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adresDuzenle && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setAdresDuzenle(null)}>
+          <div className="bg-white rounded-xl max-w-md w-full p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-1">Teslimat Adresi Düzenle</h3>
+            <p className="text-xs text-gray-400 mb-3">İl/ilçe ikas'taki haliyle korunur ({adresDuzenle.shipping.city?.name} / {adresDuzenle.shipping.district?.name}). Metin alanlarını düzenleyebilirsiniz.</p>
+            {['firstName', 'lastName', 'phone', 'addressLine1', 'addressLine2', 'postalCode'].map(alan => (
+              <input key={alan} value={adresDuzenle.shipping[alan] || ''}
+                onChange={e => setAdresDuzenle(a => ({ ...a, shipping: { ...a.shipping, [alan]: e.target.value } }))}
+                placeholder={{ firstName: 'Ad', lastName: 'Soyad', phone: 'Telefon', addressLine1: 'Adres', addressLine2: 'Adres 2', postalCode: 'Posta Kodu' }[alan]}
+                className="border rounded px-2 py-1.5 text-sm w-full mb-2" />
+            ))}
+            <div className="flex justify-end gap-2 mt-2">
+              <button onClick={() => setAdresDuzenle(null)} className="px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50">İptal</button>
+              <button onClick={adresKaydet} disabled={islemMesgul === 'adres-kaydet'}
+                className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+                {islemMesgul === 'adres-kaydet' ? 'Kaydediliyor…' : 'Kaydet'}
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       <KargoFormu acik={kargoAcik} baslangic={kargoBaslangic}
         kapat={() => setKargoAcik(false)}
-        onTamam={async () => { setKargoAcik(false); if (secili) await detayAc(secili.id); await yukle() }} />
+        onTamam={async (kargo) => {
+          setKargoAcik(false)
+          // Online sipariş kargosuysa takip no'yu ikas'a bildir (kargolandı + müşteri bildirimi).
+          const sipId = kargoBaslangic?.onlineSiparisId
+          if (sipId && kargo?.takip_no) {
+            try {
+              await ikasApi.siparisKargola({ id: sipId, takipNo: kargo.takip_no, kargoFirma: 'UPS', bildir: true })
+              toast.success('Takip no ikas siparişine işlendi, müşteriye bildirildi.')
+            } catch (e) { toast.error('ikas bildirimi yapılamadı (kargo yine de oluştu): ' + e.message) }
+          }
+          if (secili) await detayAc(secili.id)
+          await yukle()
+        }} />
     </div>
   )
 }

@@ -111,6 +111,11 @@ export const ikasApi = {
   stokGonder: () => invoke('ikas:stok-gonder'),
   siparisCek: () => invoke('ikas:siparis-cek'),
   durum: () => invoke('ikas:durum'),
+  siparisKargola: (veri) => invoke('ikas:siparis-kargola', veri),
+  siparisIptal: (veri) => invoke('ikas:siparis-iptal', veri),
+  siparisIade: (veri) => invoke('ikas:siparis-iade', veri),
+  siparisAdresGetir: (id) => invoke('ikas:siparis-adres-getir', { id }),
+  siparisAdres: (veri) => invoke('ikas:siparis-adres', veri),
 }
 
 export const onlineSiparisApi = {

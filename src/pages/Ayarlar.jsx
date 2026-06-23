@@ -12,6 +12,13 @@ export default function Ayarlar() {
   const { yetkiVar } = useAuth()
   // Tutarlılık: sayfa zaten ayarlar_duzenle ile açılıyor; iç bölümler de aynı yetkiye bağlı (rol yerine).
   const yonetici = yetkiVar('ayarlar_duzenle')
+  const [sekme, setSekme] = useState('lokasyon')
+  const SEKMELER = [
+    { kod: 'lokasyon', ad: '🏬 Mağazalar' },
+    { kod: 'satis', ad: '🛒 Satış' },
+    { kod: 'kargo', ad: '📦 Kargo / UPS' },
+    { kod: 'ikas', ad: '🛍️ ikas' },
+  ]
 
   async function ayarDegistir(anahtar, deger) {
     try { await kaydet(anahtar, deger); toast.success('Ayar kaydedildi') }
@@ -132,8 +139,18 @@ export default function Ayarlar() {
 
   return (
     <div className="p-5 max-w-2xl">
-      <h2 className="text-2xl font-bold text-gray-800 mb-5">Ayarlar</h2>
+      <h2 className="text-2xl font-bold text-gray-800 mb-4">Ayarlar</h2>
 
+      <div className="flex gap-1 border-b mb-5">
+        {SEKMELER.map(s => (
+          <button key={s.kod} onClick={() => setSekme(s.kod)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${sekme === s.kod ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+            {s.ad}
+          </button>
+        ))}
+      </div>
+
+      {sekme === 'lokasyon' && (
       <div className="bg-white rounded-xl border p-5 mb-5">
         <h3 className="font-semibold mb-3">Mağaza Lokasyonları</h3>
         <div className="space-y-3 mb-4">
@@ -168,8 +185,10 @@ export default function Ayarlar() {
           <button type="submit" className="mt-2 bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">+ Ekle</button>
         </form>
       </div>
+      )}
 
       {/* Satış Ayarları (yalnızca yönetici/süper yönetici) */}
+      {sekme === 'satis' && (
       <div className="bg-white rounded-xl border p-5 mb-5">
         <h3 className="font-semibold mb-1">Satış Ayarları</h3>
         {!yonetici && <p className="text-xs text-gray-400 mb-3">Bu ayarları yalnızca yöneticiler değiştirebilir.</p>}
@@ -191,8 +210,10 @@ export default function Ayarlar() {
         </div>
       </div>
 
+      )}
+
       {/* UPS Kargo Ayarları (yalnızca yönetici) */}
-      {yonetici && ups && (
+      {sekme === 'kargo' && yonetici && ups && (
         <div className="bg-white rounded-xl border p-5 mb-5">
           <h3 className="font-semibold mb-1">📦 UPS Kargo Entegrasyonu</h3>
           <p className="text-xs text-gray-400 mb-4">
@@ -252,7 +273,7 @@ export default function Ayarlar() {
       )}
 
       {/* Mağaza Gönderici Adresleri (online sipariş kargosu için) */}
-      {yonetici && (
+      {sekme === 'kargo' && yonetici && (
         <div className="bg-white rounded-xl border p-5 mb-5">
           <h3 className="font-semibold mb-1">🏪 Mağaza Gönderici Adresleri</h3>
           <p className="text-xs text-gray-400 mb-4">
@@ -298,7 +319,7 @@ export default function Ayarlar() {
       )}
 
       {/* ikas E-Ticaret Entegrasyonu (yalnızca yönetici) */}
-      {yonetici && ikas && (
+      {sekme === 'ikas' && yonetici && ikas && (
         <div className="bg-white rounded-xl border p-5 mb-5">
           <h3 className="font-semibold mb-1">🛒 ikas E-Ticaret Entegrasyonu</h3>
           <p className="text-xs text-gray-400 mb-4">
@@ -359,14 +380,6 @@ export default function Ayarlar() {
           )}
         </div>
       )}
-
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
-        <h3 className="font-semibold text-amber-800 mb-2">⚠️ Yakında Eklenecek</h3>
-        <ul className="text-sm text-amber-700 space-y-1">
-          <li>• Supabase bulut senkronizasyonu</li>
-          <li>• Otomatik güncelleme ayarları</li>
-        </ul>
-      </div>
     </div>
   )
 }
