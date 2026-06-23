@@ -162,8 +162,12 @@ async function pullSiparisler() {
     lokHaritasi[l.ikas_lokasyon_id] = l.id
   }
 
+  // Bu cihazda geçmiş hiç çekilmediyse ilk çekim TÜM siparişleri getirir (stok
+  // düşülmez). Sonraki çekimler yalnızca yeni siparişleri getirir (stok düşülür).
   const sonSenk = Number(a.son_siparis_senk || 0)
-  const ilkKurulum = !sonSenk
+  const gecmisCekildi = String(a.gecmis_cekildi || '') === '1'
+  const ilkKurulum = !gecmisCekildi
+  const gtBaslangic = ilkKurulum ? 0 : sonSenk
 
   const varExists = db.prepare('SELECT 1 FROM online_siparisler WHERE ikas_siparis_id = ?')
   const sipEkle = db.prepare(`INSERT OR IGNORE INTO online_siparisler
@@ -194,7 +198,7 @@ async function pullSiparisler() {
   let enSonOrderedAt = sonSenk
 
   for (;;) {
-    const data = await graphql(SIPARIS_SORGU, { gt: sonSenk || 0, page, limit: SIPARIS_LIMIT })
+    const data = await graphql(SIPARIS_SORGU, { gt: gtBaslangic, page, limit: SIPARIS_LIMIT })
     const liste = data?.listOrder
     const siparisler = liste?.data || []
     if (!siparisler.length) break
@@ -281,6 +285,8 @@ async function pullSiparisler() {
   }
 
   if (enSonOrderedAt > sonSenk) ayarKaydet('son_siparis_senk', String(enSonOrderedAt))
+  // İlk (tüm geçmiş) çekim tamamlandı → işaretle; bundan sonra yalnızca yeniler gelir.
+  if (ilkKurulum) ayarKaydet('gecmis_cekildi', '1')
   return { ilkKurulum, kaydedilen, guncellenen, stokDusulen, eslesmeyen }
 }
 
@@ -424,6 +430,7 @@ module.exports = {
     const { _yetkiKontrol } = require('../yetki')
     _yetkiKontrol('ikas_yonet')
     ayarKaydet('son_siparis_senk', '0')
+    ayarKaydet('gecmis_cekildi', '')
     return pullSiparisler()
   },
 

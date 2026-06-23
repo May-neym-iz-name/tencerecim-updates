@@ -4,7 +4,7 @@
 const { getDb } = require('./database')
 
 // ikas'ta cihaza özel olan, senkronlanMAMASI gereken anahtarlar.
-const IKAS_YEREL_ANAHTARLAR = new Set(['son_siparis_senk'])
+const IKAS_YEREL_ANAHTARLAR = new Set(['son_siparis_senk', 'gecmis_cekildi'])
 
 function topla() {
   const db = getDb()

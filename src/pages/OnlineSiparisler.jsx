@@ -171,17 +171,6 @@ export default function OnlineSiparisler() {
     finally { setCekiliyor(false) }
   }
 
-  async function gecmisCek() {
-    if (!confirm('Tüm sipariş geçmişi ikas\'tan yeniden çekilecek (eski siparişler ve durumları dahil). Stok düşülmez. Devam?')) return
-    setCekiliyor(true)
-    try {
-      const r = await ikasApi.siparisGecmisCek()
-      toast.success(`Geçmiş çekildi: ${senkSonucMesaji(r)}.`)
-      await yukle()
-    } catch (e) { toast.error('Geçmiş çekme hatası: ' + e.message) }
-    finally { setCekiliyor(false) }
-  }
-
   return (
     <div className="p-5">
       <div className="flex items-center justify-between mb-4">
@@ -189,17 +178,11 @@ export default function OnlineSiparisler() {
           <h2 className="text-2xl font-bold text-gray-800">Online Siparişler</h2>
           <p className="text-sm text-gray-500">Web sitesinden (ikas) gelen siparişler — toplam {toplam}</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={gecmisCek} disabled={cekiliyor}
-            className="border border-amber-600 text-amber-700 px-3 py-2 rounded-lg text-sm hover:bg-amber-50 disabled:opacity-50"
-            title="Tüm sipariş geçmişini (eski siparişler + durumları) ikas'tan yeniden çeker. Stok düşülmez.">
-            ⏬ Tüm Geçmişi Çek
-          </button>
-          <button onClick={siparisCek} disabled={cekiliyor}
-            className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50">
-            {cekiliyor ? 'Çekiliyor…' : '🔄 Siparişleri Çek'}
-          </button>
-        </div>
+        <button onClick={siparisCek} disabled={cekiliyor}
+          className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50"
+          title="İlk çekimde tüm sipariş geçmişini getirir, sonraki çekimlerde yalnızca yeni siparişleri.">
+          {cekiliyor ? 'Çekiliyor…' : '🔄 Siparişleri Çek'}
+        </button>
       </div>
 
       <input value={arama} onChange={e => setArama(e.target.value)}

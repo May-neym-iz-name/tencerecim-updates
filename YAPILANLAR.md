@@ -4,6 +4,15 @@
 
 ---
 
+## Tek Buton "Siparişleri Çek" — İlk Seferde Tüm Geçmiş (v1.2.32)
+
+Kullanıcı isteği: tek butonla, ilk çekimde tüm geçmiş gelsin.
+- Cihaza özel `gecmis_cekildi` bayrağı eklendi (`ikas_ayarlar`; ayar senkronundan hariç). Bu PC'de geçmiş hiç çekilmemişse "Siparişleri Çek" **tüm siparişleri** getirir (gt:0, stok DÜŞÜLMEZ, durumlar tazelenir), sonra bayrağı işaretler; sonraki çekimler yalnızca yeni siparişleri getirir (stok düşülür).
+- Artık `ilkKurulum = !gecmis_cekildi` (önceden `!son_siparis_senk`'ti — bu yüzden bir kez senkronlamış PC eski siparişleri çekemiyordu).
+- İkinci "Tüm Geçmişi Çek" butonu UI'dan kaldırıldı (sadeleştirme); backend handler bayrağı da sıfırlayacak şekilde duruyor (ileride gerekirse).
+
+---
+
 ## Sipariş Durum Tazeleme + Geçmiş Çekme + Detay Tasarımı (v1.2.31)
 
 - **Durum güncellenmiyor bug'ı**: `pullSiparisler` `INSERT OR IGNORE` ile mevcut siparişleri atlıyordu → ikas'ta iptal/iade edilen sipariş yerelde "CREATED" kalıyordu. Artık var olan siparişlerin **durum + ödeme durumu tazeleniyor**; iptal/iade tespit edilirse ve stok düşülmüşse **yerel stok geri ekleniyor**. Manuel "🔁 Tazele" butonu da durum/stok güncelliyor (TEK_SIPARIS_SORGU'ya `orderPaymentStatus` eklendi).
