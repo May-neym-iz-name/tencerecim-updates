@@ -41,8 +41,11 @@ function httpsPost(urlStr, headers, govde) {
 
 const SHIPMENT_URL = 'https://ws.ups.com.tr/wsCreateShipment/wsCreateShipment.asmx'
 const SHIPMENT_NS = 'https://ws.ups.com.tr/wsCreateShipment'
+// Takip servisi: WSDL targetNamespace = wsPaketIslemSorgulamaEng/ (sonda / VAR),
+// login metodu Login_V1. Eski QueryPackageInfo/Login_Type1 değerleri UPS tarafından
+// tanınmıyordu (HTTP 500: SOAPAction tanınmadı).
 const TRACKING_URL = 'https://ws.ups.com.tr/QueryPackageInfo/wsQueryPackagesInfo.asmx'
-const TRACKING_NS = 'https://ws.ups.com.tr/QueryPackageInfo'
+const TRACKING_NS = 'https://ws.ups.com.tr/wsPaketIslemSorgulamaEng/'
 
 function xmlKacis(deger) {
   if (deger === null || deger === undefined) return ''
@@ -85,11 +88,14 @@ async function soapCagir(url, ns, metod, govdeIc) {
     `<${metod} xmlns="${ns}">${govdeIc}</${metod}>` +
     '</soap:Body></soap:Envelope>'
 
+  // SOAPAction = namespace + metod. Namespace sonda '/' içeriyorsa çift slash olmasın.
+  const soapAction = ns.endsWith('/') ? `${ns}${metod}` : `${ns}/${metod}`
+
   let yanit
   try {
     yanit = await httpsPost(url, {
       'Content-Type': 'text/xml; charset=utf-8',
-      'SOAPAction': `${ns}/${metod}`,
+      'SOAPAction': soapAction,
     }, zarf)
   } catch (err) {
     throw new Error(`UPS servisine bağlanılamadı: ${err.message}`)
@@ -279,7 +285,7 @@ async function trackingLogin({ musteriKodu, kullaniciKodu, sifre }) {
     `<CustomerNumber>${xmlKacis(musteriKodu)}</CustomerNumber>` +
     `<UserName>${xmlKacis(kullaniciKodu)}</UserName>` +
     `<Password>${xmlKacis(sifre)}</Password>`
-  const yanit = await soapCagir(TRACKING_URL, TRACKING_NS, 'Login_Type1', govde)
+  const yanit = await soapCagir(TRACKING_URL, TRACKING_NS, 'Login_V1', govde)
   const hataKod = tagOku(yanit, 'ErrorCode')
   if (hataKod !== '0') {
     throw new Error(`UPS takip girişi başarısız (kod ${hataKod})`)
