@@ -178,6 +178,22 @@ function createTables() {
       ilce TEXT NOT NULL
     );
 
+    -- ikas e-ticaret entegrasyonu ayarları (anahtar-değer): store_name, client_id,
+    -- client_secret, online_lokasyon_id (siparişlerin düşeceği yerel lokasyon),
+    -- otomatik_senk ('1'/'0'), son_siparis_senk (epoch ms; bu andan sonraki siparişler çekilir).
+    -- YEREL DB *.db gitignore'da olduğu için kimlik bilgileri public repoya sızmaz.
+    CREATE TABLE IF NOT EXISTS ikas_ayarlar (
+      anahtar TEXT PRIMARY KEY,
+      deger TEXT
+    );
+
+    -- ikas'tan çekilip stoğu yerel olarak düşülmüş siparişler (çift düşmeyi önler).
+    CREATE TABLE IF NOT EXISTS ikas_islenen_siparisler (
+      ikas_siparis_id TEXT PRIMARY KEY,
+      siparis_no TEXT,
+      islenme_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
+
     -- Oluşturulan kargo gönderileri.
     CREATE TABLE IF NOT EXISTS kargolar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,6 +1,23 @@
 # Tencerecim Mağaza Programı — Yapılanlar / Geliştirme Notları
 
-> Son güncelleme: 2026-06-21
+> Son güncelleme: 2026-06-23
+
+---
+
+## ikas E-Ticaret Entegrasyonu (v1.2.21)
+
+İki yönlü stok senkronu, ikas Admin GraphQL API (OAuth client-credentials).
+
+- **Kimlik/ayarlar**: `electron/db/ikas-ayarlar.js` (`ikas_ayarlar` anahtar-değer tablosu; secret renderer'a maskeli döner). Ayarlar > "ikas E-Ticaret Entegrasyonu" bölümünden girilir; yalnızca yerel `.db`'de saklanır.
+- **API istemcisi**: `electron/ikas/client.js` — token cache (4 saat) + `graphql()`. Endpoint: `https://api.myikas.com/api/v1/admin/graphql`, token: `https://{store}.myikas.com/api/admin/oauth/token`.
+- **Senkron çekirdeği**: `electron/ikas/index.js`
+  - **Eşleştirme yok**: ürünler Excel içe-aktarımda `ikas_urun_id`/`ikas_varyant_id` ile zaten dolu; birleştirme anahtarı `ikas_varyant_id`. Lokasyonlar ada göre otomatik eşlenir (`ikas:test`/`ikas:lokasyon-esle`).
+  - **Push (yerel→ikas)**: `saveProductStockLocations` mutation; satış/iptal/stok düzenleme/sayım sonrası arka planda (`_pushArkaPlan`, otomatik_senk açıksa). Yerel stok mutlak kaynaktır.
+  - **Pull (ikas→yerel)**: `listOrder(orderedAt:{gt:Timestamp})` polling; açılıştan 10 sn sonra + her 5 dk (`main.js`). Yeni siparişler `online_lokasyon_id`'den düşülür, `ikas_islenen_siparisler` ile idempotent. İlk kurulumda geçmiş işlenmez (başlangıç=şimdi). CANCELLED siparişler atlanır.
+- **Yetki**: `ikas_yonet` (Supabase `yetki_kodlari`'na eklendi — `supabase/01_auth_rbac.sql` yeniden çalıştırılmalı).
+- **Not**: ikas Excel'inde barkod/SKU neredeyse boş (3/360) — bu yüzden barkod eşleştirme yerine `ikas_varyant_id` kullanılır.
+
+---
 
 Bu dosya, programda şu ana kadar yapılan her şeyin kaydıdır. Yeni bir geliştirme yapıldığında buraya eklenmelidir.
 

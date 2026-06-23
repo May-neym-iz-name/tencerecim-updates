@@ -73,9 +73,29 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
+// ikas online siparişlerini periyodik çek (açılışta + her 5 dakikada bir).
+// Otomatik senkron kapalıysa pullSiparisler kendi içinde online lokasyon yoksa atlar;
+// otomatik_senk bayrağını burada da kontrol ederiz.
+const IKAS_SENK_ARALIGI_MS = 5 * 60 * 1000
+function ikasSiparisSenkBaslat() {
+  const { _pullSiparisler } = require('./ikas')
+  const { _ayarlariGetir } = require('./db/ikas-ayarlar')
+  const calistir = () => {
+    try {
+      if (!_ayarlariGetir().otomatik_senk) return
+      _pullSiparisler().catch(err => console.error('[ikas] sipariş çekme hatası:', err.message))
+    } catch (err) {
+      console.error('[ikas] sipariş senkron başlatılamadı:', err.message)
+    }
+  }
+  setTimeout(calistir, 10 * 1000) // açılıştan 10 sn sonra ilk çekim
+  setInterval(calistir, IKAS_SENK_ARALIGI_MS)
+}
+
 app.whenReady().then(() => {
   require('./db/database').init()
   createWindow()
+  ikasSiparisSenkBaslat()
   // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
 })
 
@@ -105,6 +125,8 @@ const handlerModules = [
   require('./db/ups-ayarlar'),
   require('./ups/kargo'),
   require('./ups/etiket-yazdir'),
+  require('./db/ikas-ayarlar'),
+  require('./ikas'),
   require('./fis-yazdir'),
   require('./barkod-yazdir'),
   require('./auth'),

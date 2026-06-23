@@ -1,5 +1,6 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
+const { _pushArkaPlan: ikasPush } = require('../ikas')
 
 module.exports = {
   'stok:listele': ({ lokasyon_id, dusuk_stok } = {}) => {
@@ -25,6 +26,7 @@ module.exports = {
       VALUES (?, ?, ?)
       ON CONFLICT(urun_id, lokasyon_id) DO UPDATE SET miktar = excluded.miktar
     `).run(urun_id, lokasyon_id, miktar)
+    ikasPush([urun_id])
     return { mesaj: 'Stok güncellendi', miktar }
   },
 
@@ -94,6 +96,10 @@ module.exports = {
       db.prepare("UPDATE stok_sayimlar SET durum = 'tamamlandi', bitis_tarihi = datetime('now','localtime') WHERE id = ?").run(sayim_id)
     })
     tamamla()
+    if (stogu_guncelle) {
+      const idler = db.prepare('SELECT DISTINCT urun_id FROM stok_sayim_kalemleri WHERE sayim_id = ? AND sayilan_miktar IS NOT NULL').all(sayim_id)
+      ikasPush(idler.map(k => k.urun_id))
+    }
     return { mesaj: 'Sayım tamamlandı' }
   },
 }

@@ -1,6 +1,7 @@
 const { getDb } = require('./database')
 const { satisHesapla } = require('./satis-hesapla')
 const { _yetkiKontrol: yetkiKontrol, _lokasyonKontrol: lokasyonKontrol } = require('../yetki')
+const { _pushArkaPlan: ikasPush } = require('../ikas')
 
 function bugununTarihKodu() {
   const now = new Date()
@@ -59,7 +60,10 @@ module.exports = {
       })
       return db.prepare('SELECT * FROM satislar WHERE id=?').get(satis.lastInsertRowid)
     })
-    return insertFn()
+    const sonuc = insertFn()
+    // Satılan ürünlerin güncel stoğunu ikas'a yansıt (arka plan, en iyi çaba).
+    ikasPush(kalemMeta.map(k => k.urun_id))
+    return sonuc
   },
 
   'satislar:listele': ({ lokasyon_id, baslangic, bitis, odeme_tipi, fis_no, sayfa = 1, boyut = 50 } = {}) => {
@@ -123,6 +127,9 @@ module.exports = {
       db.prepare("UPDATE satislar SET durum='iptal' WHERE id=?").run(id)
     })
     iptalFn()
+    // İade edilen ürünlerin güncel stoğunu ikas'a yansıt.
+    const kalemler = db.prepare('SELECT DISTINCT urun_id FROM satis_kalemleri WHERE satis_id=?').all(id)
+    ikasPush(kalemler.map(k => k.urun_id))
     return { mesaj: 'Satış iptal edildi' }
   },
 }

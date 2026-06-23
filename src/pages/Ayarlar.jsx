@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi, upsApi } from '../api/ipc'
+import { lokasyonApi, upsApi, ikasApi } from '../api/ipc'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import IlIlceSecici from '../components/IlIlceSecici'
@@ -40,6 +40,60 @@ export default function Ayarlar() {
       toast.success('UPS ayarları kaydedildi')
     } catch (e) { toast.error('UPS ayarları kaydedilemedi: ' + e.message) }
     finally { setUpsKaydediliyor(false) }
+  }
+
+  // ikas entegrasyonu
+  const [ikas, setIkas] = useState(null)
+  const [ikasDurum, setIkasDurum] = useState(null)
+  const [ikasMesgul, setIkasMesgul] = useState('')
+  useEffect(() => {
+    ikasApi.ayarGetir().then(setIkas).catch(() => setIkas({}))
+    ikasApi.durum().then(setIkasDurum).catch(() => {})
+  }, [])
+
+  function ikasAlan(anahtar, deger) { setIkas(i => ({ ...i, [anahtar]: deger })) }
+
+  async function ikasDurumYenile() {
+    try { setIkasDurum(await ikasApi.durum()) } catch {}
+  }
+
+  async function ikasKaydet() {
+    setIkasMesgul('kaydet')
+    try { await ikasApi.ayarKaydet(ikas); toast.success('ikas ayarları kaydedildi'); await ikasDurumYenile() }
+    catch (e) { toast.error('Kaydedilemedi: ' + e.message) }
+    finally { setIkasMesgul('') }
+  }
+
+  async function ikasTest() {
+    setIkasMesgul('test')
+    try {
+      await ikasApi.ayarKaydet(ikas) // önce gir, sonra test et
+      const r = await ikasApi.test()
+      const eslesen = r.rapor.filter(x => x.eslesti).length
+      toast.success(`Bağlantı başarılı. ${eslesen}/${r.rapor.length} lokasyon eşleşti.`)
+      await ikasDurumYenile()
+    } catch (e) { toast.error('Bağlantı/eşleşme hatası: ' + e.message) }
+    finally { setIkasMesgul('') }
+  }
+
+  async function ikasStokGonder() {
+    if (!confirm('Tüm eşleşmiş ürünlerin yerel stoğu ikas\'a yazılacak. Devam edilsin mi?')) return
+    setIkasMesgul('gonder')
+    try { const r = await ikasApi.stokGonder(); toast.success(`${r.gonderilen} stok kaydı ikas\'a gönderildi`) }
+    catch (e) { toast.error('Gönderim hatası: ' + e.message) }
+    finally { setIkasMesgul('') }
+  }
+
+  async function ikasSiparisCek() {
+    setIkasMesgul('cek')
+    try {
+      const r = await ikasApi.siparisCek()
+      if (r.atlandi) toast.error('Önce online sipariş lokasyonunu seçip kaydedin.')
+      else if (r.ilkKurulum) toast.success('Senkron başlangıcı ayarlandı. Bundan sonraki siparişler çekilecek.')
+      else toast.success(`${r.islenen} yeni sipariş işlendi.`)
+      await ikasDurumYenile()
+    } catch (e) { toast.error('Sipariş çekme hatası: ' + e.message) }
+    finally { setIkasMesgul('') }
   }
 
   async function lokasyonEkle(e) {
@@ -180,12 +234,81 @@ export default function Ayarlar() {
         </div>
       )}
 
+      {/* ikas E-Ticaret Entegrasyonu (yalnızca yönetici) */}
+      {yonetici && ikas && (
+        <div className="bg-white rounded-xl border p-5 mb-5">
+          <h3 className="font-semibold mb-1">🛒 ikas E-Ticaret Entegrasyonu</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            ikas Admin API kimlik bilgileri. Bu bilgiler yalnızca bu bilgisayarda yerel olarak saklanır.
+            Mağaza satışları ikas stoğunu günceller; ikas online siparişleri seçtiğiniz lokasyondan düşülür.
+          </p>
+
+          <p className="text-sm font-medium text-gray-600 mb-2">API Bilgileri</p>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <input value={ikas.store_name || ''} onChange={e => ikasAlan('store_name', e.target.value)}
+              placeholder="Mağaza adı (örn. resiftencerecim)" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={ikas.client_id || ''} onChange={e => ikasAlan('client_id', e.target.value)}
+              placeholder="Client ID" className="border rounded px-2 py-1.5 text-sm" />
+            <input type="password" value={ikas.client_secret || ''} onChange={e => ikasAlan('client_secret', e.target.value)}
+              placeholder="Client Secret" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Online Sipariş Lokasyonu</label>
+              <select value={ikas.online_lokasyon_id || ''} onChange={e => ikasAlan('online_lokasyon_id', e.target.value)}
+                className="border rounded px-2 py-1.5 text-sm w-full bg-white">
+                <option value="">Seçiniz…</option>
+                {lokasyonlar.map(l => <option key={l.id} value={l.id}>{l.ad}</option>)}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">Online siparişlerde stok bu lokasyondan düşülür.</p>
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                <input type="checkbox" checked={!!ikas.otomatik_senk}
+                  onChange={e => ikasAlan('otomatik_senk', e.target.checked ? '1' : '')}
+                  className="w-4 h-4" />
+                <span className="font-medium text-gray-800">Otomatik senkronizasyon açık</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button onClick={ikasKaydet} disabled={!!ikasMesgul}
+              className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+              {ikasMesgul === 'kaydet' ? 'Kaydediliyor…' : 'Ayarları Kaydet'}
+            </button>
+            <button onClick={ikasTest} disabled={!!ikasMesgul}
+              className="bg-gray-700 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800 disabled:opacity-50">
+              {ikasMesgul === 'test' ? 'Test ediliyor…' : 'Bağlantıyı Test Et & Lokasyon Eşle'}
+            </button>
+            <button onClick={ikasStokGonder} disabled={!!ikasMesgul}
+              className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
+              {ikasMesgul === 'gonder' ? 'Gönderiliyor…' : 'Tüm Stoğu ikas\'a Gönder'}
+            </button>
+            <button onClick={ikasSiparisCek} disabled={!!ikasMesgul}
+              className="bg-amber-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50">
+              {ikasMesgul === 'cek' ? 'Çekiliyor…' : 'Siparişleri Şimdi Çek'}
+            </button>
+          </div>
+
+          {ikasDurum && (
+            <div className="text-xs text-gray-500 border-t pt-3 grid grid-cols-2 gap-1">
+              <span>Durum: {ikasDurum.yapilandirildi ? '✅ Yapılandırıldı' : '⚠️ Eksik bilgi'}</span>
+              <span>Otomatik senkron: {ikasDurum.otomatik_senk ? 'Açık' : 'Kapalı'}</span>
+              <span>Eşleşmiş ürün: {ikasDurum.eslesmisUrun}</span>
+              <span>Eşleşmiş lokasyon: {ikasDurum.eslesmisLok}/2</span>
+              <span>İşlenen sipariş: {ikasDurum.islenenSiparis}</span>
+              <span>Son senkron: {ikasDurum.son_siparis_senk ? new Date(ikasDurum.son_siparis_senk).toLocaleString('tr-TR') : '—'}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
         <h3 className="font-semibold text-amber-800 mb-2">⚠️ Yakında Eklenecek</h3>
         <ul className="text-sm text-amber-700 space-y-1">
           <li>• Supabase bulut senkronizasyonu</li>
-          <li>• ikas e-ticaret entegrasyonu</li>
-          <li>• Barkod yazıcı desteği</li>
           <li>• Otomatik güncelleme ayarları</li>
         </ul>
       </div>

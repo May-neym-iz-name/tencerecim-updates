@@ -97,6 +97,16 @@ export const kargoApi = {
   pickup: (veri) => invoke('kargo:pickup', veri),
 }
 
+export const ikasApi = {
+  ayarGetir: () => invoke('ikas-ayar:getir'),
+  ayarKaydet: (veri) => invoke('ikas-ayar:kaydet', veri),
+  test: () => invoke('ikas:test'),
+  lokasyonEsle: () => invoke('ikas:lokasyon-esle'),
+  stokGonder: () => invoke('ikas:stok-gonder'),
+  siparisCek: () => invoke('ikas:siparis-cek'),
+  durum: () => invoke('ikas:durum'),
+}
+
 export const uygulamaApi = {
   surum: () => invoke('app:surum'),
 }
