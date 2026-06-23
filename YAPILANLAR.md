@@ -4,6 +4,14 @@
 
 ---
 
+## Sayfalama (tüm sekmeler) + Online Sipariş Tarih Filtresi (v1.2.35)
+
+- **Ortak sayfalama**: `src/hooks/useSayfalama.js` (istemci tarafı dilimleme) + `src/components/Sayfalama.jsx` (sayfa başına adet seçimi 25/50/100/250, aralık bilgisi, sayfa gezinme). Tüm liste sekmelerine eklendi: Ürünler, Stok (her mağaza kendi içinde), Müşteriler, Kargo, Online Siparişler. Satış Geçmişi mevcut sunucu sayfalamasına sayfa-boyutu seçimi eklendi (ortak bileşene geçirildi).
+- **Online Sipariş tarih filtresi**: başlangıç/bitiş gün filtresi (sipariş tarihine göre, istemci tarafı). "Siparişleri Çek" artık tümünü çekiyor (`boyut:0`), filtre+sayfalama istemcide.
+- Backend: `online-siparis:listele` ve `musteriler:listele` `boyut<=0` → limitsiz (tümünü döndür) desteği eklendi.
+
+---
+
 ## İptal Et — refund'a otomatik düşme (v1.2.34)
 
 ikas'ta sadece `cancelOrderLine`, `refundOrderLine`, `cancelFulfillment` var. Bazı sipariş durumlarında `cancelOrderLine` reddediliyor ama `refundOrderLine` çalışıyor (kullanıcı: ödenmemiş siparişte iade oldu, iptal olmadı).

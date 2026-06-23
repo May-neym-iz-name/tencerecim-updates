@@ -12,14 +12,16 @@ module.exports = {
     }
     const toplam = db.prepare(`SELECT COUNT(*) n FROM online_siparisler s ${where}`).get(...params).n
     // Her siparişe ilişkili (varsa) en güncel kargo takip no'sunu ekle.
+    // boyut <= 0 → tümünü döndür (istemci tarafı filtre/sayfalama için).
+    const limitsiz = !boyut || boyut <= 0
     const sorgu = `
       SELECT s.*, (
         SELECT k.takip_no FROM kargolar k
         WHERE k.online_siparis_id = s.id AND k.durum != 'iptal'
         ORDER BY k.id DESC LIMIT 1
       ) AS kargo_takip_no
-      FROM online_siparisler s ${where} ORDER BY s.siparis_tarihi DESC LIMIT ? OFFSET ?`
-    params.push(boyut, (sayfa - 1) * boyut)
+      FROM online_siparisler s ${where} ORDER BY s.siparis_tarihi DESC ${limitsiz ? '' : 'LIMIT ? OFFSET ?'}`
+    if (!limitsiz) params.push(boyut, (sayfa - 1) * boyut)
     return { toplam, siparisler: db.prepare(sorgu).all(...params) }
   },
 

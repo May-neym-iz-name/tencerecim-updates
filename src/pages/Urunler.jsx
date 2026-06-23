@@ -3,6 +3,8 @@ import toast from 'react-hot-toast'
 import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import BarkodModal from '../components/BarkodModal'
+import Sayfalama from '../components/Sayfalama'
+import { useSayfalama } from '../hooks/useSayfalama'
 
 const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20 }
 
@@ -57,6 +59,8 @@ export default function Urunler() {
       setUrunler(r.urunler); setToplam(r.toplam)
     } catch (e) { toast.error(e.message) }
   }, [arama, filtreMarka, filtreKategori])
+
+  const { dilim: sayfaUrunler, ...sayfalama } = useSayfalama(urunler, 50)
 
   const yukleYardimcilar = useCallback(async () => {
     const [m, t, k] = await Promise.all([markaApi.listele(), tedarikciApi.listele(), kategoriApi.listele()])
@@ -170,7 +174,7 @@ export default function Urunler() {
             </tr>
           </thead>
           <tbody>
-            {urunler.map(u => (
+            {sayfaUrunler.map(u => (
               <tr key={u.id} className="border-b hover:bg-gray-50">
                 <td className="px-3 py-2 font-medium max-w-xs truncate" title={u.ad}>{u.ad}</td>
                 <td className="px-3 py-2 font-mono text-xs text-gray-500">{u.barkod||'—'}</td>
@@ -197,7 +201,7 @@ export default function Urunler() {
           </tbody>
         </table>
       </div>
-      <div className="text-xs text-gray-500 mt-1.5 flex-shrink-0">Toplam: {toplam} ürün</div>
+      <Sayfalama {...sayfalama} />
 
       {/* Form Modal */}
       {formAcik && (

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { stokApi, lokasyonApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
+import Sayfalama from '../components/Sayfalama'
+import { useSayfalama } from '../hooks/useSayfalama'
 
 export default function Stok() {
   const { erisilebilirLokasyonlar, yetkiVar } = useAuth()
@@ -219,7 +221,9 @@ export default function Stok() {
 
 // Normal stok tablosu (bir mağaza için)
 function StokTablosu({ satirlar, duzenleYetkisi, onDuzenle }) {
+  const { dilim, ...sayfalama } = useSayfalama(satirlar, 50)
   return (
+    <>
     <table className="w-full text-sm">
       <thead className="bg-white border-b">
         <tr>
@@ -229,7 +233,7 @@ function StokTablosu({ satirlar, duzenleYetkisi, onDuzenle }) {
         </tr>
       </thead>
       <tbody>
-        {satirlar.map((s, i) => {
+        {dilim.map((s, i) => {
           const kritik = s.miktar <= s.minimum_stok
           return (
             <tr key={i} className={`border-b ${kritik && s.miktar === 0 ? 'bg-red-50' : kritik ? 'bg-orange-50' : 'hover:bg-gray-50'}`}>
@@ -258,6 +262,8 @@ function StokTablosu({ satirlar, duzenleYetkisi, onDuzenle }) {
         )}
       </tbody>
     </table>
+    <div className="px-2"><Sayfalama {...sayfalama} /></div>
+    </>
   )
 }
 

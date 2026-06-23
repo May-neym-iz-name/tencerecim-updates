@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import Sayfalama from '../components/Sayfalama'
 import toast from 'react-hot-toast'
 import { satisApi, lokasyonApi, fisApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
@@ -16,7 +17,7 @@ export default function SatisGecmisi() {
   const [yukleniyor, setYukleniyor] = useState(false)
 
   const bugun = new Date().toISOString().split('T')[0]
-  const [filtre, setFiltre] = useState({ lokasyon_id: '', baslangic: bugun, bitis: bugun, odeme_tipi: '', sayfa: 1 })
+  const [filtre, setFiltre] = useState({ lokasyon_id: '', baslangic: bugun, bitis: bugun, odeme_tipi: '', sayfa: 1, boyut: 50 })
   const [fisArama, setFisArama] = useState('')
 
   const yukle = useCallback(async () => {
@@ -25,7 +26,7 @@ export default function SatisGecmisi() {
       // Fiş no araması varsa tarih/lokasyon filtrelerini yok say (tüm geçmişte ara).
       const fis = fisArama.trim()
       const params = fis
-        ? { fis_no: fis, sayfa: filtre.sayfa }
+        ? { fis_no: fis, sayfa: filtre.sayfa, boyut: filtre.boyut }
         : { ...filtre, lokasyon_id: filtre.lokasyon_id || undefined, odeme_tipi: filtre.odeme_tipi || undefined }
       const [r, o] = await Promise.all([
         satisApi.listele(params),
@@ -107,7 +108,7 @@ export default function SatisGecmisi() {
             <option value="kart">Kart</option>
             <option value="havale">Havale</option>
           </select>
-          <button onClick={() => setFiltre({ lokasyon_id:'', baslangic:bugun, bitis:bugun, odeme_tipi:'', sayfa:1 })}
+          <button onClick={() => setFiltre(f => ({ lokasyon_id:'', baslangic:bugun, bitis:bugun, odeme_tipi:'', sayfa:1, boyut:f.boyut }))}
             className="text-xs text-gray-500 hover:text-red-600 border rounded-lg px-2 py-1.5">Bugüne Dön</button>
         </div>
 
@@ -150,16 +151,16 @@ export default function SatisGecmisi() {
           </table>
         </div>
 
-        {/* Sayfalama */}
-        <div className="flex items-center justify-between mt-2 flex-shrink-0">
-          <span className="text-xs text-gray-500">Toplam: {toplam} satış</span>
-          <div className="flex gap-1">
-            <button onClick={() => setFiltre(f=>({...f,sayfa:Math.max(1,f.sayfa-1)}))} disabled={filtre.sayfa<=1}
-              className="border rounded px-2 py-1 text-xs disabled:opacity-40 hover:bg-gray-50">← Önceki</button>
-            <span className="px-3 py-1 text-xs self-center">Sayfa {filtre.sayfa}</span>
-            <button onClick={() => setFiltre(f=>({...f,sayfa:f.sayfa+1}))} disabled={satislar.length<50}
-              className="border rounded px-2 py-1 text-xs disabled:opacity-40 hover:bg-gray-50">Sonraki →</button>
-          </div>
+        {/* Sayfalama (sunucu taraflı) */}
+        <div className="flex-shrink-0">
+          <Sayfalama
+            sayfa={filtre.sayfa}
+            toplamSayfa={Math.max(1, Math.ceil(toplam / filtre.boyut))}
+            boyut={filtre.boyut}
+            toplam={toplam}
+            setSayfa={(n) => setFiltre(f => ({ ...f, sayfa: n }))}
+            setBoyut={(b) => setFiltre(f => ({ ...f, boyut: Number(b) || 50, sayfa: 1 }))}
+          />
         </div>
       </div>
 

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi } from '../api/ipc'
 import KargoFormu from '../components/KargoFormu'
+import Sayfalama from '../components/Sayfalama'
+import { useSayfalama } from '../hooks/useSayfalama'
 
 const PARA = (n, b = 'TRY') =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: b || 'TRY' }).format(Number(n) || 0)
@@ -36,18 +38,30 @@ export default function OnlineSiparisler() {
   const [islemMesgul, setIslemMesgul] = useState('')
   const [adresDuzenle, setAdresDuzenle] = useState(null) // { siparis, shipping }
   const [lokasyonlar, setLokasyonlar] = useState([])
+  const [tarihBas, setTarihBas] = useState('')
+  const [tarihBit, setTarihBit] = useState('')
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
 
   const yukle = useCallback(async () => {
     setYukleniyor(true)
     try {
-      const r = await onlineSiparisApi.listele({ arama, boyut: 100 })
+      const r = await onlineSiparisApi.listele({ arama, boyut: 0 })
       setSiparisler(r.siparisler)
       setToplam(r.toplam)
     } catch (e) { toast.error('Siparişler yüklenemedi: ' + e.message) }
     finally { setYukleniyor(false) }
   }, [arama])
+
+  // Tarih filtresi (sipariş tarihine göre, gün bazında — istemci tarafı).
+  const filtreliSiparisler = siparisler.filter(s => {
+    if (!tarihBas && !tarihBit) return true
+    const gun = (s.siparis_tarihi || '').slice(0, 10) // YYYY-MM-DD
+    if (tarihBas && gun < tarihBas) return false
+    if (tarihBit && gun > tarihBit) return false
+    return true
+  })
+  const { dilim: sayfaSiparisler, ...sayfalama } = useSayfalama(filtreliSiparisler, 50)
 
   useEffect(() => { yukle() }, [yukle])
 
@@ -185,9 +199,25 @@ export default function OnlineSiparisler() {
         </button>
       </div>
 
-      <input value={arama} onChange={e => setArama(e.target.value)}
-        placeholder="Sipariş no, müşteri adı veya telefon ara…"
-        className="border rounded-lg px-3 py-2 text-sm w-full max-w-md mb-4" />
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <input value={arama} onChange={e => setArama(e.target.value)}
+          placeholder="Sipariş no, müşteri adı veya telefon ara…"
+          className="border rounded-lg px-3 py-2 text-sm w-full max-w-md" />
+        <div className="flex items-end gap-2">
+          <label className="text-xs text-gray-500">Başlangıç
+            <input type="date" value={tarihBas} onChange={e => setTarihBas(e.target.value)}
+              className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5" />
+          </label>
+          <label className="text-xs text-gray-500">Bitiş
+            <input type="date" value={tarihBit} onChange={e => setTarihBit(e.target.value)}
+              className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5" />
+          </label>
+          {(tarihBas || tarihBit) && (
+            <button onClick={() => { setTarihBas(''); setTarihBit('') }}
+              className="text-xs text-gray-500 border rounded-lg px-2 py-1.5 hover:bg-gray-50">Temizle</button>
+          )}
+        </div>
+      </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
@@ -205,12 +235,12 @@ export default function OnlineSiparisler() {
           </thead>
           <tbody>
             {yukleniyor ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
-            ) : siparisler.length === 0 ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
+            ) : filtreliSiparisler.length === 0 ? (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">
-                Henüz sipariş yok. "Siparişleri Çek" ile ikas'tan getirin.
+                {siparisler.length === 0 ? 'Henüz sipariş yok. "Siparişleri Çek" ile ikas\'tan getirin.' : 'Filtreyle eşleşen sipariş yok.'}
               </td></tr>
-            ) : siparisler.map(s => (
+            ) : sayfaSiparisler.map(s => (
               <tr key={s.id} className="border-t hover:bg-gray-50">
                 <td className="px-4 py-2.5 font-medium">{s.siparis_no}</td>
                 <td className="px-4 py-2.5 text-gray-600">{TARIH(s.siparis_tarihi)}</td>
@@ -241,6 +271,7 @@ export default function OnlineSiparisler() {
           </tbody>
         </table>
       </div>
+      <Sayfalama {...sayfalama} />
 
       {secili && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSecili(null)}>

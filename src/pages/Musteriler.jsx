@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { musteriApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
+import Sayfalama from '../components/Sayfalama'
+import { useSayfalama } from '../hooks/useSayfalama'
 
 const BOSH = { ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '', vergi_dairesi: '', unvan: '', adres: '', il: '', ilce: '', iskonto_orani: '' }
 
@@ -18,11 +20,13 @@ export default function Musteriler() {
 
   const yukle = useCallback(async () => {
     try {
-      const r = await musteriApi.listele({ arama })
+      const r = await musteriApi.listele({ arama, boyut: 0 })
       setMusteriler(r.musteriler)
       setToplam(r.toplam)
     } catch (e) { toast.error(e.message) }
   }, [arama])
+
+  const { dilim: sayfaMusteriler, ...sayfalama } = useSayfalama(musteriler, 50)
 
   useEffect(() => { yukle() }, [yukle])
 
@@ -85,7 +89,7 @@ export default function Musteriler() {
             </tr>
           </thead>
           <tbody>
-            {musteriler.map(m => (
+            {sayfaMusteriler.map(m => (
               <tr key={m.id} className="border-b hover:bg-gray-50">
                 <td className="px-4 py-2.5">
                   <span className="font-medium">{m.ad} {m.soyad}</span>
@@ -110,7 +114,7 @@ export default function Musteriler() {
             )}
           </tbody>
         </table>
-        <div className="px-4 py-2 text-xs text-gray-500 border-t bg-gray-50">Toplam: {toplam} müşteri</div>
+        <Sayfalama {...sayfalama} />
       </div>
 
       {formAcik && (

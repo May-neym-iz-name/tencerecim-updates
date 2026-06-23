@@ -3,6 +3,8 @@ import toast from 'react-hot-toast'
 import { kargoApi, upsApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
+import Sayfalama from '../components/Sayfalama'
+import { useSayfalama } from '../hooks/useSayfalama'
 
 const DURUM_RENK = {
   olusturuldu: 'bg-blue-100 text-blue-700',
@@ -28,6 +30,8 @@ export default function Kargo() {
     if (filtre.bit && gun && gun > filtre.bit) return false
     return true
   })
+
+  const { dilim: sayfaKargolar, ...sayfalama } = useSayfalama(gosterilen, 50)
 
   function yenile() {
     setYukleniyor(true)
@@ -110,7 +114,7 @@ export default function Kargo() {
             </tr>
           </thead>
           <tbody>
-            {gosterilen.map(k => (
+            {sayfaKargolar.map(k => (
               <tr key={k.id} className="border-t hover:bg-gray-50">
                 <td className="px-3 py-2 font-mono text-xs">{k.takip_no || '—'}</td>
                 <td className="px-3 py-2">{k.alici_ad}</td>
@@ -139,6 +143,7 @@ export default function Kargo() {
           </tbody>
         </table>
       </div>
+      <Sayfalama {...sayfalama} />
 
       <KargoFormu acik={formAcik} kapat={() => setFormAcik(false)} onTamam={yenile} />
     </div>

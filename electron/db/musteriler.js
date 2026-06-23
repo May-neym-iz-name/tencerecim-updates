@@ -11,8 +11,8 @@ module.exports = {
       params.push(`%${arama}%`, `%${arama}%`, `%${arama}%`, `%${arama}%`)
     }
     const toplam = db.prepare(`SELECT COUNT(*) as n FROM (${sorgu})`).get(...params).n
-    sorgu += ' ORDER BY ad, soyad LIMIT ? OFFSET ?'
-    params.push(boyut, (sayfa - 1) * boyut)
+    sorgu += ' ORDER BY ad, soyad'
+    if (boyut && boyut > 0) { sorgu += ' LIMIT ? OFFSET ?'; params.push(boyut, (sayfa - 1) * boyut) }
     return { toplam, musteriler: db.prepare(sorgu).all(...params) }
   },
 
