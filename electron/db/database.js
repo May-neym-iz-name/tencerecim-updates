@@ -233,6 +233,16 @@ function createTables() {
       ikas_lokasyon_id TEXT
     );
 
+    -- Her mağaza için ayrı UPS gönderici (çıkış) adresi. UPS hesap bilgileri
+    -- (müşteri/kullanıcı kodu, şifre) ups_ayarlar'da ortak kalır; burada sadece
+    -- gönderici adres/iletişim bilgisi mağaza bazında tutulur.
+    CREATE TABLE IF NOT EXISTS lokasyon_gonderici (
+      lokasyon_id INTEGER PRIMARY KEY REFERENCES lokasyonlar(id),
+      ad TEXT, yetkili TEXT, adres TEXT,
+      il TEXT, il_kodu INTEGER, ilce TEXT, ilce_kodu INTEGER,
+      posta_kodu TEXT, telefon TEXT, cep TEXT, email TEXT
+    );
+
     -- Oluşturulan kargo gönderileri.
     CREATE TABLE IF NOT EXISTS kargolar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,6 +285,8 @@ function migrate() {
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_vergi_no TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_vergi_dairesi TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_tc TEXT") } catch {}
+  // kargolar — online sipariş bağlantısı (hangi siparişin kargosu).
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN online_siparis_id INTEGER REFERENCES online_siparisler(id)") } catch {}
 }
 
 function seedLokasyonlar() {

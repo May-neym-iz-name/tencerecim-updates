@@ -11,7 +11,14 @@ module.exports = {
       params.push(`%${arama}%`, `%${arama}%`, `%${arama}%`)
     }
     const toplam = db.prepare(`SELECT COUNT(*) n FROM online_siparisler s ${where}`).get(...params).n
-    const sorgu = `SELECT s.* FROM online_siparisler s ${where} ORDER BY s.siparis_tarihi DESC LIMIT ? OFFSET ?`
+    // Her siparişe ilişkili (varsa) en güncel kargo takip no'sunu ekle.
+    const sorgu = `
+      SELECT s.*, (
+        SELECT k.takip_no FROM kargolar k
+        WHERE k.online_siparis_id = s.id AND k.durum != 'iptal'
+        ORDER BY k.id DESC LIMIT 1
+      ) AS kargo_takip_no
+      FROM online_siparisler s ${where} ORDER BY s.siparis_tarihi DESC LIMIT ? OFFSET ?`
     params.push(boyut, (sayfa - 1) * boyut)
     return { toplam, siparisler: db.prepare(sorgu).all(...params) }
   },
@@ -26,6 +33,9 @@ module.exports = {
       LEFT JOIN lokasyonlar l ON k.lokasyon_id = l.id
       WHERE k.siparis_id = ?
     `).all(id)
+    siparis.kargolar = db.prepare(
+      "SELECT id, takip_no, durum FROM kargolar WHERE online_siparis_id = ? ORDER BY id DESC"
+    ).all(id)
     return siparis
   },
 }

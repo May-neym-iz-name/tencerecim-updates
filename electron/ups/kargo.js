@@ -1,6 +1,7 @@
 // UPS kargo işlemleri: gönderi oluşturma, takip, iptal, kurye çağırma.
 const { getDb } = require('../db/database')
 const { _ayarlariGetir } = require('../db/ups-ayarlar')
+const { _gondericiGetir } = require('../db/lokasyon-gonderici')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const soap = require('./soap')
 
@@ -12,34 +13,39 @@ function kimlik(ayar) {
   }
 }
 
-// Ayarlardaki gönderici (mağaza) bilgilerini soap formatına çevirir.
-function gonderici(ayar) {
+// Gönderici (mağaza) bilgilerini soap formatına çevirir. Mağaza override'ı
+// (lokasyon_gonderici) verilmişse onun alanları, yoksa global ups_ayarlar kullanılır.
+function gonderici(ayar, lok) {
+  const al = (lokAlan, ayarAlan) => (lok && lok[lokAlan]) || ayar[ayarAlan]
   return {
     musteriKodu: ayar.musteri_kodu,
     gondericiHesapNo: ayar.gonderici_hesap_no || ayar.musteri_kodu,
-    gondericiAd: ayar.gonderici_ad,
-    gondericiYetkili: ayar.gonderici_yetkili,
-    gondericiAdres: ayar.gonderici_adres,
-    gondericiIlKodu: ayar.gonderici_il_kodu,
-    gondericiIlceKodu: ayar.gonderici_ilce_kodu,
-    gondericiPostaKodu: ayar.gonderici_posta_kodu,
-    gondericiTelefon: ayar.gonderici_telefon,
-    gondericiCep: ayar.gonderici_cep,
-    gondericiEmail: ayar.gonderici_email,
+    gondericiAd: al('ad', 'gonderici_ad'),
+    gondericiYetkili: al('yetkili', 'gonderici_yetkili'),
+    gondericiAdres: al('adres', 'gonderici_adres'),
+    gondericiIlKodu: al('il_kodu', 'gonderici_il_kodu'),
+    gondericiIlceKodu: al('ilce_kodu', 'gonderici_ilce_kodu'),
+    gondericiPostaKodu: al('posta_kodu', 'gonderici_posta_kodu'),
+    gondericiTelefon: al('telefon', 'gonderici_telefon'),
+    gondericiCep: al('cep', 'gonderici_cep'),
+    gondericiEmail: al('email', 'gonderici_email'),
   }
 }
 
-function gondericiKontrol(ayar) {
+// Gönderici bilgisini doğrular. lok verilmişse mağaza gönderici alanlarını kontrol eder.
+function gondericiKontrol(ayar, lok) {
   const eksik = []
   if (!ayar.musteri_kodu) eksik.push('Müşteri Kodu')
   if (!ayar.kullanici_kodu) eksik.push('Kullanıcı Kodu')
   if (!ayar.sifre) eksik.push('Şifre')
-  if (!ayar.gonderici_ad) eksik.push('Gönderici Adı')
-  if (!ayar.gonderici_adres) eksik.push('Gönderici Adresi')
-  if (!ayar.gonderici_il_kodu) eksik.push('Gönderici İl')
-  if (!ayar.gonderici_ilce_kodu) eksik.push('Gönderici İlçe')
+  const g = gonderici(ayar, lok)
+  if (!g.gondericiAd) eksik.push('Gönderici Adı')
+  if (!g.gondericiAdres) eksik.push('Gönderici Adresi')
+  if (!g.gondericiIlKodu) eksik.push('Gönderici İl')
+  if (!g.gondericiIlceKodu) eksik.push('Gönderici İlçe')
   if (eksik.length) {
-    throw new Error('UPS ayarları eksik: ' + eksik.join(', ') + '. Ayarlar > UPS Kargo bölümünden tamamlayın.')
+    const nereden = lok ? 'Seçilen mağazanın gönderici adresi eksik. Ayarlar > Mağaza Gönderici Adresleri' : 'Ayarlar > UPS Kargo'
+    throw new Error('UPS gönderici bilgisi eksik: ' + eksik.join(', ') + '. ' + nereden + ' bölümünden tamamlayın.')
   }
 }
 
@@ -48,10 +54,12 @@ module.exports = {
   'kargo:olustur': async (veri) => {
     yetkiKontrol('kargo_yonet')
     const ayar = _ayarlariGetir()
-    gondericiKontrol(ayar)
+    // Gönderici mağaza seçildiyse o mağazanın gönderici adresini kullan.
+    const lok = veri.gondericiLokasyonId ? _gondericiGetir(veri.gondericiLokasyonId) : null
+    gondericiKontrol(ayar, lok)
 
     const istek = {
-      ...gonderici(ayar),
+      ...gonderici(ayar, lok),
       aliciAd: veri.aliciAd,
       aliciYetkili: veri.aliciYetkili,
       aliciAdres: veri.aliciAdres,
@@ -79,12 +87,13 @@ module.exports = {
 
     const db = getDb()
     const ekle = db.prepare(`INSERT INTO kargolar
-      (takip_no, durum, musteri_id, satis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png)
-      VALUES (@takip_no, 'olusturuldu', @musteri_id, @satis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png)`)
+      (takip_no, durum, musteri_id, satis_id, online_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png)
+      VALUES (@takip_no, 'olusturuldu', @musteri_id, @satis_id, @online_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png)`)
     const r = ekle.run({
       takip_no: sonuc.shipmentNo,
       musteri_id: veri.musteriId || null,
       satis_id: veri.satisId || null,
+      online_siparis_id: veri.onlineSiparisId || null,
       alici_ad: veri.aliciAd,
       alici_telefon: veri.aliciTelefon || veri.aliciCep || '',
       alici_adres: veri.aliciAdres,

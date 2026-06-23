@@ -4,6 +4,17 @@
 
 ---
 
+## Online Siparişler — Kargo Entegrasyonu + Ödeme/Fatura (v1.2.24–1.2.25)
+
+- **Ödeme bilgisi** (1.2.24): sipariş çekiminde `paymentMethods` + `orderPaymentStatus` alınır; ödeme durumu (Ödendi/Bekliyor) ve yöntemi (Havale/EFT) listede+detayda gösterilir.
+- **Müşteri adres+fatura** (1.2.24): `musteriUpsert` teslimat adresi (adres/il/ilçe) ve fatura (ünvan/vergi no/vergi dairesi/TC) bilgisini ana `musteriler` kaydına yazar; mevcut müşterinin boş alanları doldurulur.
+- **Kargo entegrasyonu** (1.2.25): Online Siparişler detayında "Kargo Oluştur" → `KargoFormu` siparişten ön-doldurulur (alıcı, adres, il/ilçe ad→UPS kodu `ups:il-ilce-bul` ile). `odemeTipi=2` (gönderici öder).
+  - **Mağaza-bazlı gönderici**: yeni `lokasyon_gonderici` tablosu + Ayarlar'da her mağaza için ayrı çıkış adresi. `kargo:olustur` `gondericiLokasyonId` ile o mağazanın adresini kullanır (UPS hesabı ortak). Modül: `electron/db/lokasyon-gonderici.js`.
+  - `kargolar.online_siparis_id` ile kargo-sipariş bağlantısı; takip no listede ve detayda görünür.
+- Node 16 (Electron 22) fetch düzeltmesi: `electron/ikas/client.js` `https` modülü kullanır (1.2.23).
+
+---
+
 ## ikas — Online Siparişler + Müşteri + Lokasyon-bazlı Stok (v1.2.22)
 
 1.2.21'in genişletilmiş hali — gerçek beklentiyi karşılar:

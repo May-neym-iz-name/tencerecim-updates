@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { kargoApi, upsApi } from '../api/ipc'
+import { kargoApi, upsApi, lokasyonApi } from '../api/ipc'
 import IlIlceSecici from './IlIlceSecici'
 
 const BOS = {
@@ -8,6 +8,7 @@ const BOS = {
   ilKodu: null, il: '', ilceKodu: null, ilce: '', postaKodu: '',
   koliAdedi: 1, agirlik: 1, aciklama: '', servisSeviyesi: 3, odemeTipi: 2,
   faturaNo: '', referans: '', musteriId: null, satisId: null,
+  gondericiLokasyonId: null, onlineSiparisId: null,
 }
 
 // UPS gönderi oluşturma formu (modal). baslangic ile ön-doldurulabilir.
@@ -16,11 +17,13 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
   const [form, setForm] = useState(BOS)
   const [gonderiliyor, setGonderiliyor] = useState(false)
   const [etiketYazici, setEtiketYazici] = useState('')
+  const [magazalar, setMagazalar] = useState([])
 
   useEffect(() => {
     if (acik) {
       setForm({ ...BOS, ...(baslangic || {}) })
       upsApi.ayarGetir().then(a => setEtiketYazici(a?.etiket_yazici || '')).catch(() => {})
+      lokasyonApi.listele().then(setMagazalar).catch(() => {})
     }
   }, [acik, baslangic])
 
@@ -58,6 +61,17 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
       <div className="bg-white rounded-xl w-full max-w-xl max-h-[90vh] overflow-auto p-5" onClick={e => e.stopPropagation()}>
         <h3 className="text-lg font-bold text-gray-800 mb-4">📦 UPS Kargo Gönderisi</h3>
         <form onSubmit={gonder} className="space-y-3">
+          {magazalar.length > 0 && (
+            <label className="block text-sm">
+              <span className="font-medium text-gray-600">Gönderici Mağaza</span>
+              <select value={form.gondericiLokasyonId || ''} onChange={e => alan('gondericiLokasyonId', e.target.value ? Number(e.target.value) : null)}
+                className="border rounded px-2 py-1.5 text-sm w-full mt-1 bg-white">
+                <option value="">Varsayılan (Ayarlar'daki gönderici)</option>
+                {magazalar.map(m => <option key={m.id} value={m.id}>{m.ad}</option>)}
+              </select>
+            </label>
+          )}
+
           <p className="text-sm font-medium text-gray-600">Alıcı Bilgileri</p>
           <input value={form.aliciAd} onChange={e => alan('aliciAd', e.target.value)}
             placeholder="Alıcı adı soyadı *" className="border rounded px-2 py-1.5 text-sm w-full" />

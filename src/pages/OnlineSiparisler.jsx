@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { onlineSiparisApi, ikasApi } from '../api/ipc'
+import { onlineSiparisApi, ikasApi, lokasyonGondericiApi } from '../api/ipc'
+import KargoFormu from '../components/KargoFormu'
 
 const PARA = (n, b = 'TRY') =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: b || 'TRY' }).format(Number(n) || 0)
@@ -30,6 +31,8 @@ export default function OnlineSiparisler() {
   const [yukleniyor, setYukleniyor] = useState(false)
   const [secili, setSecili] = useState(null)
   const [cekiliyor, setCekiliyor] = useState(false)
+  const [kargoAcik, setKargoAcik] = useState(false)
+  const [kargoBaslangic, setKargoBaslangic] = useState(null)
 
   const yukle = useCallback(async () => {
     setYukleniyor(true)
@@ -46,6 +49,28 @@ export default function OnlineSiparisler() {
   async function detayAc(id) {
     try { setSecili(await onlineSiparisApi.getir(id)) }
     catch (e) { toast.error('Detay açılamadı: ' + e.message) }
+  }
+
+  async function kargoOlustur(s) {
+    // Teslimat il/ilçe adını UPS koduna çevir (bulunamazsa kullanıcı formdan seçer).
+    let ilIlce = { ilKodu: null, il: s.teslimat_il || '', ilceKodu: null, ilce: s.teslimat_ilce || '' }
+    try { ilIlce = await lokasyonGondericiApi.ilIlceBul(s.teslimat_il, s.teslimat_ilce) } catch {}
+    // Varsayılan gönderici mağaza: kalemlerin düştüğü ilk lokasyon.
+    const ilkLok = (s.kalemler || []).find(k => k.lokasyon_id)?.lokasyon_id || null
+    setKargoBaslangic({
+      aliciAd: s.musteri_ad || '',
+      aliciTelefon: s.musteri_telefon || '',
+      aliciEmail: s.musteri_email || '',
+      aliciAdres: s.teslimat_adres || '',
+      ilKodu: ilIlce.ilKodu, il: ilIlce.il, ilceKodu: ilIlce.ilceKodu, ilce: ilIlce.ilce,
+      odemeTipi: 2, // gönderici öder (ücretsiz kargo)
+      aciklama: `Online sipariş #${s.siparis_no}`,
+      referans: s.siparis_no || '',
+      musteriId: s.musteri_id || null,
+      onlineSiparisId: s.id,
+      gondericiLokasyonId: ilkLok,
+    })
+    setKargoAcik(true)
   }
 
   async function siparisCek() {
@@ -120,6 +145,7 @@ export default function OnlineSiparisler() {
                 </td>
                 <td className="px-4 py-2.5 text-right font-medium">{PARA(s.toplam, s.para_birimi)}</td>
                 <td className="px-4 py-2.5 text-right">
+                  {s.kargo_takip_no && <span className="block text-[10px] text-emerald-600 mb-0.5" title="Kargo takip no">📦 {s.kargo_takip_no}</span>}
                   <button onClick={() => detayAc(s.id)} className="text-blue-600 hover:underline text-xs">Detay</button>
                 </td>
               </tr>
@@ -176,9 +202,29 @@ export default function OnlineSiparisler() {
               </tbody>
             </table>
             <div className="text-right font-bold mt-3">Toplam: {PARA(secili.toplam, secili.para_birimi)}</div>
+
+            <div className="border-t mt-4 pt-3 flex items-center justify-between">
+              <div className="text-sm">
+                {(secili.kargolar || []).filter(k => k.durum !== 'iptal').length > 0 ? (
+                  <span className="text-emerald-700">
+                    📦 Kargo: {secili.kargolar.filter(k => k.durum !== 'iptal').map(k => k.takip_no).join(', ')}
+                  </span>
+                ) : (
+                  <span className="text-gray-400">Henüz kargo oluşturulmadı</span>
+                )}
+              </div>
+              <button onClick={() => kargoOlustur(secili)}
+                className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700">
+                📦 Kargo Oluştur
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      <KargoFormu acik={kargoAcik} baslangic={kargoBaslangic}
+        kapat={() => setKargoAcik(false)}
+        onTamam={async () => { setKargoAcik(false); if (secili) await detayAc(secili.id); await yukle() }} />
     </div>
   )
 }

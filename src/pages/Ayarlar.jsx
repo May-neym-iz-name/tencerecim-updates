@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi, upsApi, ikasApi } from '../api/ipc'
+import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi } from '../api/ipc'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import IlIlceSecici from '../components/IlIlceSecici'
@@ -40,6 +40,24 @@ export default function Ayarlar() {
       toast.success('UPS ayarları kaydedildi')
     } catch (e) { toast.error('UPS ayarları kaydedilemedi: ' + e.message) }
     finally { setUpsKaydediliyor(false) }
+  }
+
+  // Mağaza-bazlı UPS gönderici adresleri
+  const [gondericiler, setGondericiler] = useState({})
+  const [gondericiMesgul, setGondericiMesgul] = useState(null)
+  useEffect(() => { lokasyonGondericiApi.getir().then(setGondericiler).catch(() => {}) }, [])
+
+  function gondericiAlan(lokId, anahtar, deger) {
+    setGondericiler(g => ({ ...g, [lokId]: { ...(g[lokId] || {}), [anahtar]: deger } }))
+  }
+
+  async function gondericiKaydet(lokId) {
+    setGondericiMesgul(lokId)
+    try {
+      await lokasyonGondericiApi.kaydet({ lokasyon_id: lokId, ...(gondericiler[lokId] || {}) })
+      toast.success('Mağaza gönderici adresi kaydedildi')
+    } catch (e) { toast.error('Kaydedilemedi: ' + e.message) }
+    finally { setGondericiMesgul(null) }
   }
 
   // ikas entegrasyonu
@@ -230,6 +248,52 @@ export default function Ayarlar() {
             className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
             {upsKaydediliyor ? 'Kaydediliyor…' : 'UPS Ayarlarını Kaydet'}
           </button>
+        </div>
+      )}
+
+      {/* Mağaza Gönderici Adresleri (online sipariş kargosu için) */}
+      {yonetici && (
+        <div className="bg-white rounded-xl border p-5 mb-5">
+          <h3 className="font-semibold mb-1">🏪 Mağaza Gönderici Adresleri</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            Online sipariş kargosu oluştururken "gönderici mağaza" seçildiğinde kullanılır. UPS hesap bilgileri ortak,
+            sadece çıkış adresi mağazaya göre değişir. Boş bırakılırsa yukarıdaki genel UPS gönderici adresi kullanılır.
+          </p>
+          <div className="space-y-4">
+            {lokasyonlar.map(lok => {
+              const g = gondericiler[lok.id] || {}
+              return (
+                <div key={lok.id} className="border rounded-lg p-3 bg-gray-50">
+                  <p className="text-sm font-medium text-gray-700 mb-2">{lok.ad}</p>
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <input value={g.ad || ''} onChange={e => gondericiAlan(lok.id, 'ad', e.target.value)}
+                      placeholder="Gönderici / Firma Adı" className="border rounded px-2 py-1.5 text-sm" />
+                    <input value={g.yetkili || ''} onChange={e => gondericiAlan(lok.id, 'yetkili', e.target.value)}
+                      placeholder="Yetkili Kişi" className="border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                  <input value={g.adres || ''} onChange={e => gondericiAlan(lok.id, 'adres', e.target.value)}
+                    placeholder="Açık Adres" className="border rounded px-2 py-1.5 text-sm w-full mb-2" />
+                  <div className="mb-2">
+                    <IlIlceSecici ilKodu={g.il_kodu} ilceKodu={g.ilce_kodu}
+                      onChange={({ ilKodu, il, ilceKodu, ilce }) =>
+                        setGondericiler(gs => ({ ...gs, [lok.id]: { ...(gs[lok.id] || {}), il_kodu: ilKodu, il, ilce_kodu: ilceKodu, ilce } }))} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    <input value={g.telefon || ''} onChange={e => gondericiAlan(lok.id, 'telefon', e.target.value)}
+                      placeholder="Sabit Telefon" className="border rounded px-2 py-1.5 text-sm" />
+                    <input value={g.cep || ''} onChange={e => gondericiAlan(lok.id, 'cep', e.target.value)}
+                      placeholder="Cep Telefonu" className="border rounded px-2 py-1.5 text-sm" />
+                    <input value={g.email || ''} onChange={e => gondericiAlan(lok.id, 'email', e.target.value)}
+                      placeholder="E-posta" className="border rounded px-2 py-1.5 text-sm" />
+                  </div>
+                  <button onClick={() => gondericiKaydet(lok.id)} disabled={gondericiMesgul === lok.id}
+                    className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+                    {gondericiMesgul === lok.id ? 'Kaydediliyor…' : `${lok.ad} Gönderici Adresini Kaydet`}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

@@ -87,6 +87,12 @@ export const upsApi = {
   yazicilar: () => invoke('barkod:yazicilar'),
 }
 
+export const lokasyonGondericiApi = {
+  getir: () => invoke('lokasyon-gonderici:getir'),
+  kaydet: (veri) => invoke('lokasyon-gonderici:kaydet', veri),
+  ilIlceBul: (il, ilce) => invoke('ups:il-ilce-bul', { il, ilce }),
+}
+
 export const kargoApi = {
   olustur: (veri) => invoke('kargo:olustur', veri),
   listele: () => invoke('kargo:listele'),
