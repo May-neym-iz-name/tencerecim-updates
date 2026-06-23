@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { onlineSiparisApi, ikasApi, lokasyonGondericiApi } from '../api/ipc'
+import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi } from '../api/ipc'
 import KargoFormu from '../components/KargoFormu'
 
 const PARA = (n, b = 'TRY') =>
@@ -35,6 +35,9 @@ export default function OnlineSiparisler() {
   const [kargoBaslangic, setKargoBaslangic] = useState(null)
   const [islemMesgul, setIslemMesgul] = useState('')
   const [adresDuzenle, setAdresDuzenle] = useState(null) // { siparis, shipping }
+  const [lokasyonlar, setLokasyonlar] = useState([])
+
+  useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
 
   const yukle = useCallback(async () => {
     setYukleniyor(true)
@@ -128,6 +131,24 @@ export default function OnlineSiparisler() {
       if (secili) await detayAc(secili.id)
       await yukle()
     } catch (e) { toast.error('Adres güncellenemedi: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  async function kalemLokasyonDegistir(kalem, lokasyonId) {
+    try {
+      await onlineSiparisApi.kalemLokasyon(kalem.id, lokasyonId ? Number(lokasyonId) : null)
+      toast.success('Çıkış mağazası güncellendi.')
+      if (secili) await detayAc(secili.id)
+    } catch (e) { toast.error('Mağaza değiştirilemedi: ' + e.message) }
+  }
+
+  async function siparisTazele(s) {
+    setIslemMesgul('tazele')
+    try {
+      const r = await ikasApi.siparisTazele(s.id)
+      toast.success(`Sipariş tazelendi (${r.kalemSayisi} kalem).`)
+      await detayAc(s.id)
+    } catch (e) { toast.error('Tazeleme başarısız: ' + e.message) }
     finally { setIslemMesgul('') }
   }
 
@@ -253,7 +274,17 @@ export default function OnlineSiparisler() {
                       {!k.urun_id && <span className="block text-[10px] text-amber-600">yerel ürün eşleşmedi</span>}
                     </td>
                     <td className="py-2 text-center">{k.miktar}</td>
-                    <td className="py-2 text-gray-600">{k.lokasyon_adi || '—'}</td>
+                    <td className="py-2">
+                      <select
+                        value={k.lokasyon_id || ''}
+                        onChange={e => kalemLokasyonDegistir(k, e.target.value)}
+                        className="border rounded px-1.5 py-1 text-xs text-gray-700 bg-white">
+                        <option value="">— Seçilmedi —</option>
+                        {lokasyonlar.map(l => (
+                          <option key={l.id} value={l.id}>{l.ad}</option>
+                        ))}
+                      </select>
+                    </td>
                     <td className="py-2 text-right">{PARA(k.birim_fiyat, secili.para_birimi)}</td>
                   </tr>
                 ))}
@@ -280,6 +311,11 @@ export default function OnlineSiparisler() {
             <div className="border-t mt-3 pt-3">
               <p className="text-xs font-medium text-gray-500 mb-2">ikas Sipariş İşlemleri</p>
               <div className="flex flex-wrap gap-2">
+                <button onClick={() => siparisTazele(secili)} disabled={!!islemMesgul}
+                  className="bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-slate-700 disabled:opacity-50"
+                  title="Kalem bilgilerini ikas'tan yeniden çeker (iptal/iade için kalem ID'lerini doldurur)">
+                  🔁 Siparişi Tazele
+                </button>
                 <button onClick={() => ikasKargola(secili)} disabled={!!islemMesgul}
                   className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-emerald-700 disabled:opacity-50">
                   🚚 Kargolandı Bildir (takip no)

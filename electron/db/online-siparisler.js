@@ -23,6 +23,45 @@ module.exports = {
     return { toplam, siparisler: db.prepare(sorgu).all(...params) }
   },
 
+  // Bir sipariş kaleminin çıkış (stok) lokasyonunu değiştirir. Sipariş stoktan
+  // düşülmüşse, eski lokasyona stok geri eklenir, yeni lokasyondan düşülür.
+  'online-siparis:kalem-lokasyon': ({ kalemId, lokasyonId }) => {
+    const db = getDb()
+    const kalem = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE id = ?').get(kalemId)
+    if (!kalem) throw new Error('Sipariş kalemi bulunamadı')
+    const yeniLok = lokasyonId ? Number(lokasyonId) : null
+    if (kalem.lokasyon_id === yeniLok) return { ok: true, degisti: false }
+
+    const sip = db.prepare('SELECT stok_dusuldu FROM online_siparisler WHERE id = ?').get(kalem.siparis_id)
+    const stokDusuldu = !!sip?.stok_dusuldu
+    const adet = Number(kalem.miktar) || 0
+
+    const tx = db.transaction(() => {
+      if (stokDusuldu && kalem.urun_id && adet) {
+        // Eski lokasyona geri ekle.
+        if (kalem.lokasyon_id) {
+          db.prepare('UPDATE urun_stoklar SET miktar = miktar + ? WHERE urun_id = ? AND lokasyon_id = ?')
+            .run(adet, kalem.urun_id, kalem.lokasyon_id)
+        }
+        // Yeni lokasyondan düş (satır yoksa oluştur).
+        if (yeniLok) {
+          db.prepare(`INSERT INTO urun_stoklar (urun_id, lokasyon_id, miktar)
+            VALUES (?, ?, 0) ON CONFLICT(urun_id, lokasyon_id) DO NOTHING`).run(kalem.urun_id, yeniLok)
+          db.prepare('UPDATE urun_stoklar SET miktar = MAX(0, miktar - ?) WHERE urun_id = ? AND lokasyon_id = ?')
+            .run(adet, kalem.urun_id, yeniLok)
+        }
+      }
+      db.prepare('UPDATE online_siparis_kalemleri SET lokasyon_id = ? WHERE id = ?').run(yeniLok, kalemId)
+    })
+    tx()
+
+    // Yeni lokasyon stoğu değiştiyse ikas'a arka planda push et.
+    if (stokDusuldu && kalem.urun_id) {
+      try { require('../ikas')._pushArkaPlan([kalem.urun_id]) } catch {}
+    }
+    return { ok: true, degisti: true }
+  },
+
   'online-siparis:getir': (id) => {
     const db = getDb()
     const siparis = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)

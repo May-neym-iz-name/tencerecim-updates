@@ -4,6 +4,17 @@
 
 ---
 
+## Online Sipariş İşlemleri Düzeltme + Stok Lokasyon Seçimi (v1.2.29)
+
+Online Siparişler'de iptal/iade/kargola/adres hatalarının kök nedenleri giderildi:
+- **Kalem ID eksik (iptal/iade)**: `ikas_kalem_id` kolonu sonradan eklendiği için eski siparişlerde NULL'dı; "Siparişleri Çek" idempotent olduğundan backfill etmiyordu. Çözüm: `tazeleSiparisKalemleri()` — tek siparişin kalemlerini ikas'tan yeniden çekip kurar (manuel lokasyon atamasını korur). İptal/iade/kargola, kalem ID yoksa **otomatik tazeler**. Ayrıca manuel "🔁 Siparişi Tazele" butonu eklendi (`ikas:siparis-tazele`).
+- **HTTP 400 gizli hata**: `client.js` artık GraphQL hata gövdesini 400'de de okuyup gerçek ikas mesajını gösteriyor (önce yutuyordu).
+- **fulfillOrder/updateOrderAddresses sağlamlaştırma**: null `trackingLink` gönderilmiyor; adres input'u `adresTemizle()` ile temizleniyor (boş scalar'lar atılır, geo nesneleri `{id,name}`'e indirilir).
+- **Stok lokasyon seçimi**: Sipariş detayında her kalem için çıkış mağazası dropdown'ı. `online-siparis:kalem-lokasyon` lokasyonu değiştirir; sipariş stoktan düşülmüşse eski lokasyona geri ekler, yeni lokasyondan düşer + ikas'a push eder.
+- NOT: Yazma işlemleri (kargola/adres) canlı test edilmedi; kalan 400 olursa artık gerçek ikas hata mesajı görünecek.
+
+---
+
 ## Ayar Senkronu — PC'ler arası (v1.2.28)
 
 Ayarlar artık Supabase üzerinden PC'ler arası senkronlanır (büyük veri DEĞİL).

@@ -116,11 +116,13 @@ export const ikasApi = {
   siparisIade: (veri) => invoke('ikas:siparis-iade', veri),
   siparisAdresGetir: (id) => invoke('ikas:siparis-adres-getir', { id }),
   siparisAdres: (veri) => invoke('ikas:siparis-adres', veri),
+  siparisTazele: (id) => invoke('ikas:siparis-tazele', { id }),
 }
 
 export const onlineSiparisApi = {
   listele: (params) => invoke('online-siparis:listele', params),
   getir: (id) => invoke('online-siparis:getir', id),
+  kalemLokasyon: (kalemId, lokasyonId) => invoke('online-siparis:kalem-lokasyon', { kalemId, lokasyonId }),
 }
 
 export const uygulamaApi = {

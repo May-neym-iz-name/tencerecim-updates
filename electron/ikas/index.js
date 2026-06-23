@@ -258,6 +258,75 @@ async function pullSiparisler() {
   return { ilkKurulum, kaydedilen, stokDusulen, eslesmeyen }
 }
 
+// Tek bir siparişin kalemlerini ikas'tan yeniden çeker ve yerel kalemleri
+// yeniden kurar (özellikle eski siparişlerde eksik olan ikas_kalem_id'yi doldurur).
+// Manuel atanmış lokasyon_id korunur (varyant bazında).
+const TEK_SIPARIS_SORGU = `query Tek($f: StringFilterInput) {
+  listOrder(id: $f, pagination: { page: 1, limit: 1 }) {
+    data { id status orderLineItems { id quantity finalUnitPrice stockLocationId variant { id name } } }
+  }
+}`
+
+async function tazeleSiparisKalemleri(db, siparisId) {
+  const sip = db.prepare('SELECT id, ikas_siparis_id FROM online_siparisler WHERE id = ?').get(siparisId)
+  if (!sip) throw new Error('Sipariş bulunamadı')
+  const data = await graphql(TEK_SIPARIS_SORGU, { f: { eq: sip.ikas_siparis_id } })
+  const o = data?.listOrder?.data?.[0]
+  if (!o) throw new Error('Sipariş ikas tarafında bulunamadı')
+
+  const lokHaritasi = {}
+  for (const l of db.prepare('SELECT id, ikas_lokasyon_id FROM lokasyonlar WHERE ikas_lokasyon_id IS NOT NULL').all()) {
+    lokHaritasi[l.ikas_lokasyon_id] = l.id
+  }
+  const varyantUrun = db.prepare('SELECT id FROM urunler WHERE ikas_varyant_id = ? AND aktif = 1')
+
+  // Mevcut manuel lokasyon atamalarını koru (varyant → lokasyon_id).
+  const oncekiLok = {}
+  for (const k of db.prepare('SELECT ikas_varyant_id, lokasyon_id FROM online_siparis_kalemleri WHERE siparis_id = ?').all(siparisId)) {
+    if (k.ikas_varyant_id && k.lokasyon_id) oncekiLok[k.ikas_varyant_id] = k.lokasyon_id
+  }
+
+  const kalemEkle = db.prepare(`INSERT INTO online_siparis_kalemleri
+    (siparis_id, urun_id, ikas_kalem_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM online_siparis_kalemleri WHERE siparis_id = ?').run(siparisId)
+    for (const kalem of (o.orderLineItems || [])) {
+      const vId = kalem?.variant?.id || null
+      const urun = vId ? varyantUrun.get(vId) : null
+      const lokId = (vId && oncekiLok[vId]) || lokHaritasi[kalem?.stockLocationId] || null
+      kalemEkle.run(siparisId, urun?.id || null, kalem?.id || null, vId, kalem?.variant?.name || null,
+        Number(kalem?.quantity) || 0, Number(kalem?.finalUnitPrice) || 0, lokId, kalem?.stockLocationId || null)
+    }
+  })
+  tx()
+  return o.orderLineItems?.length || 0
+}
+
+// ikas adres input'unu temizler: __typename ve GraphQL'in kabul etmediği alanları
+// atar, geo nesnelerini (city/district/country) yalnız {id, name} olarak bırakır,
+// null/boş scalar alanları gönderme (ikas 400 dönebilir).
+function adresTemizle(adr) {
+  if (!adr || typeof adr !== 'object') return adr
+  const SCALAR = ['firstName', 'lastName', 'phone', 'addressLine1', 'addressLine2',
+    'postalCode', 'company', 'taxNumber', 'taxOffice', 'identityNumber']
+  const out = {}
+  for (const k of SCALAR) {
+    const v = adr[k]
+    if (v != null && String(v).trim() !== '') out[k] = String(v)
+  }
+  for (const geo of ['city', 'district', 'country']) {
+    const g = adr[geo]
+    if (g && (g.id || g.name)) {
+      out[geo] = {}
+      if (g.id) out[geo].id = g.id
+      if (g.name) out[geo].name = g.name
+    }
+  }
+  return out
+}
+
 // --- IPC handler'ları -------------------------------------------------------
 
 module.exports = {
@@ -278,6 +347,13 @@ module.exports = {
     const { _yetkiKontrol } = require('../yetki')
     _yetkiKontrol('ikas_yonet')
     return pushUrunStok(null)
+  },
+
+  // Tek bir siparişin kalemlerini ikas'tan tazeler (eksik kalem ID'leri doldurur).
+  'ikas:siparis-tazele': async ({ id }) => {
+    const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
+    const adet = await tazeleSiparisKalemleri(getDb(), id)
+    return { ok: true, kalemSayisi: adet }
   },
 
   // ikas siparişlerini manuel çeker.
@@ -315,18 +391,25 @@ module.exports = {
     const sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     if (!sip) throw new Error('Sipariş bulunamadı')
     if (!takipNo) throw new Error('Takip numarası gerekli')
-    const lines = db.prepare('SELECT ikas_kalem_id, miktar FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
-      .map(k => ({ orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1 }))
+    let kalemSql = db.prepare('SELECT ikas_kalem_id, miktar FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL')
+    let lines = kalemSql.all(id).map(k => ({ orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1 }))
+    if (!lines.length) {
+      // Eski sipariş: kalem ID eksik olabilir → ikas'tan tazele.
+      await tazeleSiparisKalemleri(db, id)
+      lines = kalemSql.all(id).map(k => ({ orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1 }))
+    }
+    // trackingInfoDetail: null/boş alanları gönderme (ikas 400 verebilir).
+    const trackingInfoDetail = {
+      trackingNumber: String(takipNo),
+      cargoCompany: kargoFirma || 'UPS',
+      isSendNotification: !!bildir,
+    }
+    if (trackingLink) trackingInfoDetail.trackingLink = trackingLink
     const input = {
       orderId: sip.ikas_siparis_id,
       markAsReadyForShipment: true,
       sendNotificationToCustomer: !!bildir,
-      trackingInfoDetail: {
-        trackingNumber: String(takipNo),
-        cargoCompany: kargoFirma,
-        trackingLink: trackingLink || null,
-        isSendNotification: !!bildir,
-      },
+      trackingInfoDetail,
       ...(lines.length ? { lines } : {}),
     }
     await graphql('mutation F($input: FulFillOrderInput!){ fulfillOrder(input:$input){ id } }', { input })
@@ -338,10 +421,15 @@ module.exports = {
   'ikas:siparis-iptal': async ({ id, restock = true }) => {
     const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
     const db = getDb()
-    const sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
+    let sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     if (!sip) throw new Error('Sipariş bulunamadı')
-    const kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
-    if (!kalemler.length) throw new Error('İptal edilebilir kalem bulunamadı (kalem ID eksik; siparişi yeniden çekin)')
+    let kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
+    if (!kalemler.length) {
+      // Eski sipariş: kalem ID eksik olabilir → ikas'tan tazeleyip tekrar dene.
+      await tazeleSiparisKalemleri(db, id)
+      kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
+    }
+    if (!kalemler.length) throw new Error('İptal edilebilir kalem bulunamadı (ikas tarafında sipariş kalemi yok).')
     const orderLineItems = kalemler.map(k => ({
       orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
       price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
@@ -364,10 +452,14 @@ module.exports = {
   'ikas:siparis-iade': async ({ id, restock = true, refundShipping = false, bildir = true }) => {
     const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
     const db = getDb()
-    const sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
+    let sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     if (!sip) throw new Error('Sipariş bulunamadı')
-    const kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
-    if (!kalemler.length) throw new Error('İade edilebilir kalem bulunamadı (siparişi yeniden çekin)')
+    let kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
+    if (!kalemler.length) {
+      await tazeleSiparisKalemleri(db, id)
+      kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
+    }
+    if (!kalemler.length) throw new Error('İade edilebilir kalem bulunamadı (ikas tarafında sipariş kalemi yok).')
     const orderRefundLines = kalemler.map(k => ({
       orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
       price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
@@ -408,8 +500,8 @@ module.exports = {
     const sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     if (!sip) throw new Error('Sipariş bulunamadı')
     const input = { orderId: sip.ikas_siparis_id }
-    if (shippingAddress) input.shippingAddress = shippingAddress
-    if (billingAddress) input.billingAddress = billingAddress
+    if (shippingAddress) input.shippingAddress = adresTemizle(shippingAddress)
+    if (billingAddress) input.billingAddress = adresTemizle(billingAddress)
     await graphql('mutation U($input: UpdateOrderAddressesInput!){ updateOrderAddresses(input:$input){ id } }', { input })
     // Yerel teslimat alanlarını güncelle.
     if (shippingAddress) {

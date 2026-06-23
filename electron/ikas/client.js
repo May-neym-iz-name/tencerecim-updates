@@ -80,8 +80,15 @@ async function graphql(query, variables) {
     { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
     JSON.stringify({ query, variables }),
   )
-  if (status < 200 || status >= 300) throw new Error(`ikas API hatası (HTTP ${status})`)
-  if (json?.errors?.length) throw new Error('ikas: ' + json.errors.map(e => e.message).join('; '))
+  // GraphQL doğrulama hataları HTTP 400 ile birlikte gövdede gelebilir; mutlaka oku.
+  if (json?.errors?.length) {
+    const mesaj = json.errors.map(e => e.message || JSON.stringify(e)).join('; ')
+    throw new Error('ikas: ' + mesaj)
+  }
+  if (status < 200 || status >= 300) {
+    const ek = json ? ' — ' + JSON.stringify(json).slice(0, 300) : ''
+    throw new Error(`ikas API hatası (HTTP ${status})${ek}`)
+  }
   return json?.data
 }
 
