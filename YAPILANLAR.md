@@ -4,6 +4,17 @@
 
 ---
 
+## Ayar Senkronu — PC'ler arası (v1.2.28)
+
+Ayarlar artık Supabase üzerinden PC'ler arası senkronlanır (büyük veri DEĞİL).
+- Supabase tablosu `uygulama_ayarlar` (anahtar-değer jsonb, ~5 satır → şişmez): `supabase/04_ayar_senk.sql` çalıştırılmalı.
+- Senkronlanan: UPS ayarları, ikas kimlik+otomatik_senk (son_siparis_senk hariç — cihaza özel), mağaza gönderici adresleri, lokasyon↔ikas eşleşmesi, genel app ayarları (müşteri zorunlu vb.).
+- Akış: girişte `buluttanAl()` (App.jsx) → yerel'e uygula; ayar kaydedince `bulutaYukle()` (Ayarlar.jsx) → son-yazan kazanır.
+- Modüller: `electron/db/ayar-senk.js` (topla/uygula), `src/lib/ayarSenk.js` (Supabase ↔ yerel).
+- NOT: Ürün/satış/stok/sipariş/kargo KAYITLARI senkronlanmaz (Supabase'i şişirmemek için); bunlar hâlâ PC-yerel.
+
+---
+
 ## ikas Sipariş İşlemleri + Ayarlar Sekmeli + Kargo Filtre (v1.2.27)
 
 - **ikas sipariş işlemleri** (Online Siparişler detayında):

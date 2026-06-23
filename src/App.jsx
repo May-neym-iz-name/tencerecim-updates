@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { uygulamaApi } from './api/ipc'
+import { buluttanAl } from './lib/ayarSenk'
 import { AyarlarProvider } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import logo from './assets/logo.png'
@@ -37,6 +38,8 @@ function Uygulama() {
   const ilkSayfa = erisilebilir[0]?.to || '/'
   const [surum, setSurum] = useState('')
   useEffect(() => { uygulamaApi.surum().then(setSurum).catch(() => {}) }, [])
+  // Girişten sonra ayarları buluttan çek (PC'ler arası senkron).
+  useEffect(() => { buluttanAl().catch(err => console.error('Ayar senkron (çekme):', err.message)) }, [])
 
   if (erisilebilir.length === 0) {
     return (

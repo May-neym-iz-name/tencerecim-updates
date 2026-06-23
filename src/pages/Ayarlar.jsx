@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi } from '../api/ipc'
+import { bulutaYukle } from '../lib/ayarSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import IlIlceSecici from '../components/IlIlceSecici'
@@ -20,9 +21,19 @@ export default function Ayarlar() {
     { kod: 'ikas', ad: '🛍️ ikas' },
   ]
 
+  // Ayar kaydı sonrası buluta sessizce yükler (PC'ler arası senkron).
+  function bulutaYukleSessiz() {
+    bulutaYukle().catch(e => toast.error('Bulut senkronu başarısız: ' + e.message))
+  }
+
   async function ayarDegistir(anahtar, deger) {
-    try { await kaydet(anahtar, deger); toast.success('Ayar kaydedildi') }
-    catch (e) { toast.error('Ayar kaydedilemedi: ' + e.message) }
+    try {
+      await kaydet(anahtar, deger)
+      // localStorage'ın güncel olduğundan emin ol, sonra buluta yükle.
+      try { localStorage.setItem('tencerecim_ayarlar', JSON.stringify({ ...ayarlar, [anahtar]: deger })) } catch { /* yok say */ }
+      bulutaYukleSessiz()
+      toast.success('Ayar kaydedildi')
+    } catch (e) { toast.error('Ayar kaydedilemedi: ' + e.message) }
   }
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar) }, [])
@@ -44,6 +55,7 @@ export default function Ayarlar() {
     setUpsKaydediliyor(true)
     try {
       await upsApi.ayarKaydet(ups)
+      bulutaYukleSessiz()
       toast.success('UPS ayarları kaydedildi')
     } catch (e) { toast.error('UPS ayarları kaydedilemedi: ' + e.message) }
     finally { setUpsKaydediliyor(false) }
@@ -62,6 +74,7 @@ export default function Ayarlar() {
     setGondericiMesgul(lokId)
     try {
       await lokasyonGondericiApi.kaydet({ lokasyon_id: lokId, ...(gondericiler[lokId] || {}) })
+      bulutaYukleSessiz()
       toast.success('Mağaza gönderici adresi kaydedildi')
     } catch (e) { toast.error('Kaydedilemedi: ' + e.message) }
     finally { setGondericiMesgul(null) }
@@ -84,7 +97,7 @@ export default function Ayarlar() {
 
   async function ikasKaydet() {
     setIkasMesgul('kaydet')
-    try { await ikasApi.ayarKaydet(ikas); toast.success('ikas ayarları kaydedildi'); await ikasDurumYenile() }
+    try { await ikasApi.ayarKaydet(ikas); bulutaYukleSessiz(); toast.success('ikas ayarları kaydedildi'); await ikasDurumYenile() }
     catch (e) { toast.error('Kaydedilemedi: ' + e.message) }
     finally { setIkasMesgul('') }
   }
@@ -96,6 +109,7 @@ export default function Ayarlar() {
       const r = await ikasApi.test()
       const eslesen = r.rapor.filter(x => x.eslesti).length
       toast.success(`Bağlantı başarılı. ${eslesen}/${r.rapor.length} lokasyon eşleşti.`)
+      bulutaYukleSessiz() // lokasyon eşleşmesi senkronlansın
       await ikasDurumYenile()
     } catch (e) { toast.error('Bağlantı/eşleşme hatası: ' + e.message) }
     finally { setIkasMesgul('') }
