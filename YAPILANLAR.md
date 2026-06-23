@@ -4,6 +4,14 @@
 
 ---
 
+## İptal Et — refund'a otomatik düşme (v1.2.34)
+
+ikas'ta sadece `cancelOrderLine`, `refundOrderLine`, `cancelFulfillment` var. Bazı sipariş durumlarında `cancelOrderLine` reddediliyor ama `refundOrderLine` çalışıyor (kullanıcı: ödenmemiş siparişte iade oldu, iptal olmadı).
+- "İptal Et" artık önce `cancelOrderLine` deniyor; ikas reddederse otomatik `refundOrderLine`'a düşüyor (restock korunur). Böylece buton her durumda iptal+stok iadesi yapıyor.
+- restock isteniyor ama stok lokasyonu yoksa refund'a düşmeden asıl cancel hatasını gösterir.
+
+---
+
 ## İptal/İade Fiyat Uyuşmazlığı Düzeltmesi (v1.2.33)
 
 İptal/iade ödenmemiş temiz siparişte bile çalışmıyordu. Kök neden: ikas'ta bazı siparişlerde `finalUnitPrice` **null** geliyor (gerçek fiyat `price`/`finalPrice` alanında), bu yüzden pull yereldeki `birim_fiyat`'ı **0** kaydediyordu. İptal/iade ikas'a `price: 0` gönderince ikas gerçek fiyatla (örn. 1100) uyuşmadığı için işlemi reddediyordu.

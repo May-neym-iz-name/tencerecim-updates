@@ -514,8 +514,26 @@ module.exports = {
       orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
       price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
     }))
-    await graphql('mutation C($input: CancelOrderLineInput!){ cancelOrderLine(input:$input){ id } }',
-      { input: { orderId: sip.ikas_siparis_id, orderLineItems } })
+    // Önce cancelOrderLine dene; ikas kabul etmezse (bazı sipariş durumlarında
+    // cancel reddediliyor ama refund çalışıyor) refundOrderLine'a düş.
+    try {
+      await graphql('mutation C($input: CancelOrderLineInput!){ cancelOrderLine(input:$input){ id } }',
+        { input: { orderId: sip.ikas_siparis_id, orderLineItems } })
+    } catch (cancelErr) {
+      const stockLocationId = kalemler.map(k => kalemIkasLokId(db, k)).find(Boolean) || null
+      if (restock && !stockLocationId) throw cancelErr // refund stok lokasyonu olmadan yapılamaz → asıl hatayı göster
+      const orderRefundLines = kalemler.map(k => ({
+        orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
+        price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
+      }))
+      await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
+        input: {
+          orderId: sip.ikas_siparis_id, orderRefundLines,
+          ...(stockLocationId ? { stockLocationId } : {}),
+          refundShipping: false, sendNotificationToCustomer: false,
+        },
+      })
+    }
     // Yerel: durum iptal + (stok düşülmüşse ve restock isteniyorsa) stoğu geri ekle.
     const geriEkle = db.transaction(() => {
       if (restock && sip.stok_dusuldu) {
