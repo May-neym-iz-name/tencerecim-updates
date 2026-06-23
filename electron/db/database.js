@@ -205,6 +205,7 @@ function createTables() {
       odeme_durumu TEXT,
       toplam REAL DEFAULT 0,
       para_birimi TEXT DEFAULT 'TRY',
+      odeme_yontemi TEXT,
       musteri_id INTEGER REFERENCES musteriler(id),
       musteri_ad TEXT,
       musteri_email TEXT,
@@ -212,6 +213,10 @@ function createTables() {
       teslimat_il TEXT,
       teslimat_ilce TEXT,
       teslimat_adres TEXT,
+      fatura_unvan TEXT,
+      fatura_vergi_no TEXT,
+      fatura_vergi_dairesi TEXT,
+      fatura_tc TEXT,
       stok_dusuldu INTEGER DEFAULT 0,
       olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
     );
@@ -264,6 +269,12 @@ function migrate() {
   try { db.exec("ALTER TABLE urunler ADD COLUMN kategori_id INTEGER REFERENCES kategoriler(id)") } catch {}
   try { db.exec("ALTER TABLE urunler ADD COLUMN tedarikci_id INTEGER REFERENCES tedarikciler(id)") } catch {}
   try { db.exec("ALTER TABLE urunler ADD COLUMN ikas_varyant_id TEXT") } catch {}
+  // online_siparisler — ödeme yöntemi + fatura alanları (sonradan eklendi).
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN odeme_yontemi TEXT") } catch {}
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_unvan TEXT") } catch {}
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_vergi_no TEXT") } catch {}
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_vergi_dairesi TEXT") } catch {}
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_tc TEXT") } catch {}
 }
 
 function seedLokasyonlar() {

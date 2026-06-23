@@ -101,29 +101,52 @@ const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
     data {
       id orderNumber orderedAt status orderPaymentStatus totalFinalPrice currencyCode
       salesChannel { type }
+      paymentMethods { type paymentGatewayName }
       customer { firstName lastName email phone }
-      shippingAddress { city { name } district { name } addressLine1 }
+      shippingAddress { city { name } district { name } addressLine1 postalCode phone }
+      billingAddress { company taxNumber taxOffice identityNumber }
       orderLineItems { quantity finalUnitPrice stockLocationId variant { id name } }
     }
   }
 }`
 
-// Müşteriyi telefon ya da e-posta ile eşleştirir; yoksa ekler. musteri_id döner.
-function musteriUpsert(db, m) {
-  const tel = (m.phone || '').trim() || null
-  const email = (m.email || '').trim() || null
-  const ad = (m.firstName || '').trim()
-  const soyad = (m.lastName || '').trim()
+// Müşteriyi telefon ya da e-posta ile eşleştirir; yoksa ekler. Mevcut müşterinin
+// boş alanlarını siparişten gelen bilgiyle tamamlar (var olanları ezmez).
+// shipping: teslimat adresi (adres/il/ilçe), billing: fatura (vergi/ünvan/TC). musteri_id döner.
+function musteriUpsert(db, customer, shipping, billing) {
+  const tel = (customer.phone || shipping?.phone || '').trim() || null
+  const email = (customer.email || '').trim() || null
+  const ad = (customer.firstName || '').trim()
+  const soyad = (customer.lastName || '').trim()
   if (!tel && !email && !ad) return null
+
+  const adres = (shipping?.addressLine1 || '').trim() || null
+  const il = (shipping?.city?.name || '').trim() || null
+  const ilce = (shipping?.district?.name || '').trim() || null
+  const unvan = (billing?.company || '').trim() || null
+  const vergiNo = (billing?.taxNumber || '').trim() || null
+  const vergiDairesi = (billing?.taxOffice || '').trim() || null
+  const tc = (billing?.identityNumber || '').trim() || null
 
   let mevcut = null
   if (tel) mevcut = db.prepare('SELECT id FROM musteriler WHERE telefon = ?').get(tel)
   if (!mevcut && email) mevcut = db.prepare('SELECT id FROM musteriler WHERE email = ?').get(email)
-  if (mevcut) return mevcut.id
 
-  const r = db.prepare(
-    'INSERT INTO musteriler (ad, soyad, telefon, email) VALUES (?, ?, ?, ?)'
-  ).run(ad || 'Online', soyad || 'Müşteri', tel, email)
+  if (mevcut) {
+    // Yalnızca boş alanları doldur (manuel girilmiş veriyi koru).
+    db.prepare(`UPDATE musteriler SET
+      email = COALESCE(NULLIF(email,''), ?), adres = COALESCE(NULLIF(adres,''), ?),
+      il = COALESCE(NULLIF(il,''), ?), ilce = COALESCE(NULLIF(ilce,''), ?),
+      unvan = COALESCE(NULLIF(unvan,''), ?), vergi_no = COALESCE(NULLIF(vergi_no,''), ?),
+      vergi_dairesi = COALESCE(NULLIF(vergi_dairesi,''), ?), tc_kimlik = COALESCE(NULLIF(tc_kimlik,''), ?)
+      WHERE id = ?`).run(email, adres, il, ilce, unvan, vergiNo, vergiDairesi, tc, mevcut.id)
+    return mevcut.id
+  }
+
+  const r = db.prepare(`INSERT INTO musteriler
+    (ad, soyad, telefon, email, adres, il, ilce, unvan, vergi_no, vergi_dairesi, tc_kimlik)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(ad || 'Online', soyad || 'Müşteri', tel, email, adres, il, ilce, unvan, vergiNo, vergiDairesi, tc)
   return r.lastInsertRowid
 }
 
@@ -144,10 +167,12 @@ async function pullSiparisler() {
 
   const varExists = db.prepare('SELECT 1 FROM online_siparisler WHERE ikas_siparis_id = ?')
   const sipEkle = db.prepare(`INSERT OR IGNORE INTO online_siparisler
-    (ikas_siparis_id, siparis_no, siparis_tarihi, durum, odeme_durumu, toplam, para_birimi,
-     musteri_id, musteri_ad, musteri_email, musteri_telefon, teslimat_il, teslimat_ilce, teslimat_adres, stok_dusuldu)
-    VALUES (@ikas_siparis_id, @siparis_no, @siparis_tarihi, @durum, @odeme_durumu, @toplam, @para_birimi,
-     @musteri_id, @musteri_ad, @musteri_email, @musteri_telefon, @teslimat_il, @teslimat_ilce, @teslimat_adres, @stok_dusuldu)`)
+    (ikas_siparis_id, siparis_no, siparis_tarihi, durum, odeme_durumu, odeme_yontemi, toplam, para_birimi,
+     musteri_id, musteri_ad, musteri_email, musteri_telefon, teslimat_il, teslimat_ilce, teslimat_adres,
+     fatura_unvan, fatura_vergi_no, fatura_vergi_dairesi, fatura_tc, stok_dusuldu)
+    VALUES (@ikas_siparis_id, @siparis_no, @siparis_tarihi, @durum, @odeme_durumu, @odeme_yontemi, @toplam, @para_birimi,
+     @musteri_id, @musteri_ad, @musteri_email, @musteri_telefon, @teslimat_il, @teslimat_ilce, @teslimat_adres,
+     @fatura_unvan, @fatura_vergi_no, @fatura_vergi_dairesi, @fatura_tc, @stok_dusuldu)`)
   const kalemEkle = db.prepare(`INSERT INTO online_siparis_kalemleri
     (siparis_id, urun_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -175,7 +200,11 @@ async function pullSiparisler() {
         const iptal = sip.status === IPTAL_DURUMU
         const stokDusecek = !ilkKurulum && !iptal
         const ad = `${sip.customer?.firstName || ''} ${sip.customer?.lastName || ''}`.trim()
-        const musteriId = musteriUpsert(db, sip.customer || {})
+        const billing = sip.billingAddress || {}
+        const musteriId = musteriUpsert(db, sip.customer || {}, sip.shippingAddress, billing)
+        // Ödeme yöntemi: birden çok olabilir; gateway adlarını birleştir ("Havale / EFT").
+        const odemeYontemi = (sip.paymentMethods || [])
+          .map(p => p.paymentGatewayName || p.type).filter(Boolean).join(', ') || null
 
         const r = sipEkle.run({
           ikas_siparis_id: sip.id,
@@ -183,15 +212,20 @@ async function pullSiparisler() {
           siparis_tarihi: sip.orderedAt ? new Date(sip.orderedAt).toISOString() : null,
           durum: sip.status || null,
           odeme_durumu: sip.orderPaymentStatus || null,
+          odeme_yontemi: odemeYontemi,
           toplam: Number(sip.totalFinalPrice) || 0,
           para_birimi: sip.currencyCode || 'TRY',
           musteri_id: musteriId,
           musteri_ad: ad || null,
           musteri_email: sip.customer?.email || null,
-          musteri_telefon: sip.customer?.phone || null,
+          musteri_telefon: sip.customer?.phone || sip.shippingAddress?.phone || null,
           teslimat_il: sip.shippingAddress?.city?.name || null,
           teslimat_ilce: sip.shippingAddress?.district?.name || null,
           teslimat_adres: sip.shippingAddress?.addressLine1 || null,
+          fatura_unvan: billing.company || null,
+          fatura_vergi_no: billing.taxNumber || null,
+          fatura_vergi_dairesi: billing.taxOffice || null,
+          fatura_tc: billing.identityNumber || null,
           stok_dusuldu: stokDusecek ? 1 : 0,
         })
         if (r.changes === 0) continue

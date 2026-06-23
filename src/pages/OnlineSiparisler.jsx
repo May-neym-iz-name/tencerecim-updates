@@ -15,6 +15,14 @@ const DURUM_ETIKET = {
   PARTIALLY_FULFILLED: 'Kısmen Hazırlandı',
 }
 
+const ODEME_ETIKET = {
+  PAID: 'Ödendi', PENDING: 'Bekliyor', WAITING: 'Bekliyor', PARTIALLY_PAID: 'Kısmen Ödendi',
+  REFUNDED: 'İade Edildi', PARTIALLY_REFUNDED: 'Kısmen İade', FAILED: 'Başarısız', CANCELLED: 'İptal',
+}
+const odemeRengi = (d) => d === 'PAID' ? 'bg-emerald-100 text-emerald-700'
+  : (d === 'REFUNDED' || d === 'FAILED' || d === 'CANCELLED') ? 'bg-red-100 text-red-700'
+  : 'bg-amber-100 text-amber-700'
+
 export default function OnlineSiparisler() {
   const [siparisler, setSiparisler] = useState([])
   const [toplam, setToplam] = useState(0)
@@ -76,6 +84,7 @@ export default function OnlineSiparisler() {
               <th className="px-4 py-2.5 font-medium">Tarih</th>
               <th className="px-4 py-2.5 font-medium">Müşteri</th>
               <th className="px-4 py-2.5 font-medium">Teslimat</th>
+              <th className="px-4 py-2.5 font-medium">Ödeme</th>
               <th className="px-4 py-2.5 font-medium">Durum</th>
               <th className="px-4 py-2.5 font-medium text-right">Tutar</th>
               <th className="px-4 py-2.5"></th>
@@ -85,7 +94,7 @@ export default function OnlineSiparisler() {
             {yukleniyor ? (
               <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
             ) : siparisler.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                 Henüz sipariş yok. "Siparişleri Çek" ile ikas'tan getirin.
               </td></tr>
             ) : siparisler.map(s => (
@@ -97,6 +106,12 @@ export default function OnlineSiparisler() {
                   <div className="text-xs text-gray-400">{s.musteri_telefon}</div>
                 </td>
                 <td className="px-4 py-2.5 text-gray-600 text-xs">{[s.teslimat_ilce, s.teslimat_il].filter(Boolean).join(' / ') || '—'}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(s.odeme_durumu)}`}>
+                    {ODEME_ETIKET[s.odeme_durumu] || s.odeme_durumu || '—'}
+                  </span>
+                  {s.odeme_yontemi && <span className="block text-[10px] text-gray-400 mt-0.5">{s.odeme_yontemi}</span>}
+                </td>
                 <td className="px-4 py-2.5">
                   <span className={`text-xs px-2 py-0.5 rounded-full ${s.durum === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
                     {DURUM_ETIKET[s.durum] || s.durum}
@@ -124,6 +139,22 @@ export default function OnlineSiparisler() {
               <p><span className="text-gray-500">Tarih:</span> {TARIH(secili.siparis_tarihi)}</p>
               <p><span className="text-gray-500">Müşteri:</span> {secili.musteri_ad} · {secili.musteri_telefon} · {secili.musteri_email}</p>
               <p><span className="text-gray-500">Teslimat:</span> {[secili.teslimat_adres, secili.teslimat_ilce, secili.teslimat_il].filter(Boolean).join(', ')}</p>
+              <p>
+                <span className="text-gray-500">Ödeme:</span>{' '}
+                <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(secili.odeme_durumu)}`}>
+                  {ODEME_ETIKET[secili.odeme_durumu] || secili.odeme_durumu || '—'}
+                </span>
+                {secili.odeme_yontemi && <span className="text-gray-600"> · {secili.odeme_yontemi}</span>}
+              </p>
+              {(secili.fatura_unvan || secili.fatura_vergi_no || secili.fatura_tc) && (
+                <p><span className="text-gray-500">Fatura:</span>{' '}
+                  {[secili.fatura_unvan,
+                    secili.fatura_vergi_no && `VN: ${secili.fatura_vergi_no}`,
+                    secili.fatura_vergi_dairesi,
+                    secili.fatura_tc && `TC: ${secili.fatura_tc}`,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              )}
               <p><span className="text-gray-500">Durum:</span> {DURUM_ETIKET[secili.durum] || secili.durum}</p>
             </div>
             <table className="w-full text-sm border-t">
