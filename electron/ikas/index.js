@@ -94,6 +94,16 @@ function pushArkaPlan(urunIdler) {
 
 const ONLINE_KANAL_TIPI = 1 // salesChannel.type: 1 = web mağaza (storefront)
 
+// Kalem birim fiyatı: finalUnitPrice bazen null gelir → price, yoksa finalPrice/adet.
+// İptal/iade ikas'a gerçek fiyatı göndermek zorunda (fiyat uyuşmazlığı reddedilir).
+function birimFiyatHesapla(kalem) {
+  const adet = Number(kalem?.quantity) || 1
+  if (kalem?.finalUnitPrice != null) return Number(kalem.finalUnitPrice) || 0
+  if (kalem?.price != null) return Number(kalem.price) || 0
+  if (kalem?.finalPrice != null) return (Number(kalem.finalPrice) || 0) / adet
+  return 0
+}
+
 // Sipariş çekme GraphQL sorgusu. orderedAt > gt (Timestamp, epoch-ms).
 const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
   listOrder(sort: "orderedAt asc", orderedAt: { gt: $gt }, pagination: { page: $page, limit: $limit }) {
@@ -105,7 +115,7 @@ const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
       customer { firstName lastName email phone }
       shippingAddress { city { name } district { name } addressLine1 postalCode phone }
       billingAddress { company taxNumber taxOffice identityNumber }
-      orderLineItems { id quantity finalUnitPrice stockLocationId variant { id name } }
+      orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } }
     }
   }
 }`
@@ -267,7 +277,7 @@ async function pullSiparisler() {
           const urun = vId ? varyantUrun.get(vId) : null
           const lokId = lokHaritasi[kalem?.stockLocationId] || null
           kalemEkle.run(siparisId, urun?.id || null, kalem?.id || null, vId, kalem?.variant?.name || null,
-            adet, Number(kalem?.finalUnitPrice) || 0, lokId, kalem?.stockLocationId || null)
+            adet, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null)
 
           if (stokDusecek && adet) {
             if (urun && lokId) stokDus.run(adet, urun.id, lokId)
@@ -295,7 +305,7 @@ async function pullSiparisler() {
 // Manuel atanmış lokasyon_id korunur (varyant bazında).
 const TEK_SIPARIS_SORGU = `query Tek($f: StringFilterInput) {
   listOrder(id: $f, pagination: { page: 1, limit: 1 }) {
-    data { id status orderPaymentStatus orderLineItems { id quantity finalUnitPrice stockLocationId variant { id name } } }
+    data { id status orderPaymentStatus orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } } }
   }
 }`
 
@@ -345,7 +355,7 @@ async function tazeleSiparisKalemleri(db, siparisId) {
       const urun = vId ? varyantUrun.get(vId) : null
       const lokId = (vId && oncekiLok[vId]) || lokHaritasi[kalem?.stockLocationId] || null
       kalemEkle.run(siparisId, urun?.id || null, kalem?.id || null, vId, kalem?.variant?.name || null,
-        Number(kalem?.quantity) || 0, Number(kalem?.finalUnitPrice) || 0, lokId, kalem?.stockLocationId || null)
+        Number(kalem?.quantity) || 0, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null)
     }
   })
   tx()
@@ -494,12 +504,11 @@ module.exports = {
     const db = getDb()
     let sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     if (!sip) throw new Error('Sipariş bulunamadı')
-    let kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
-    if (!kalemler.length) {
-      // Eski sipariş: kalem ID eksik olabilir → ikas'tan tazeleyip tekrar dene.
-      await tazeleSiparisKalemleri(db, id)
-      kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
-    }
+    // Kalem ID ve birim fiyatları ikas'tan tazele (yereldeki fiyat 0/eski olabilir;
+    // ikas iptalde fiyat uyuşmazlığını reddeder).
+    await tazeleSiparisKalemleri(db, id)
+    sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
+    const kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
     if (!kalemler.length) throw new Error('İptal edilebilir kalem bulunamadı (ikas tarafında sipariş kalemi yok).')
     const orderLineItems = kalemler.map(k => ({
       orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
@@ -525,11 +534,10 @@ module.exports = {
     const db = getDb()
     let sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     if (!sip) throw new Error('Sipariş bulunamadı')
-    let kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
-    if (!kalemler.length) {
-      await tazeleSiparisKalemleri(db, id)
-      kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
-    }
+    // Kalem ID ve birim fiyatları ikas'tan tazele (fiyat uyuşmazlığı iadeyi reddeder).
+    await tazeleSiparisKalemleri(db, id)
+    sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
+    const kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
     if (!kalemler.length) throw new Error('İade edilebilir kalem bulunamadı (ikas tarafında sipariş kalemi yok).')
     // ikas iadeyi geri yüklerken hangi stok lokasyonuna ekleyeceğini bilmek ister
     // (zorunlu alan). İlk kalemin (seçili) ikas lokasyonunu kullan.

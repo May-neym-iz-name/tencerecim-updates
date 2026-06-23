@@ -4,6 +4,15 @@
 
 ---
 
+## İptal/İade Fiyat Uyuşmazlığı Düzeltmesi (v1.2.33)
+
+İptal/iade ödenmemiş temiz siparişte bile çalışmıyordu. Kök neden: ikas'ta bazı siparişlerde `finalUnitPrice` **null** geliyor (gerçek fiyat `price`/`finalPrice` alanında), bu yüzden pull yereldeki `birim_fiyat`'ı **0** kaydediyordu. İptal/iade ikas'a `price: 0` gönderince ikas gerçek fiyatla (örn. 1100) uyuşmadığı için işlemi reddediyordu.
+- `birimFiyatHesapla()` eklendi: `finalUnitPrice ?? price ?? finalPrice/adet`. Pull + tazele bunu kullanıyor; sorgulara `price finalPrice` eklendi.
+- İptal/iade artık işlemden önce **her zaman ikas'tan tazeliyor** (güncel kalem ID + doğru fiyat), böylece yereldeki eski/sıfır fiyat sorun çıkarmıyor.
+- (Teşhis: canlı sipariş #6471373222 ikas'ta CREATED/WAITING ama finalUnitPrice=null, price=1100 → yerel birim_fiyat=0'dı.)
+
+---
+
 ## Tek Buton "Siparişleri Çek" — İlk Seferde Tüm Geçmiş (v1.2.32)
 
 Kullanıcı isteği: tek butonla, ilk çekimde tüm geçmiş gelsin.
