@@ -523,30 +523,11 @@ module.exports = {
       orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
       price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
     }))
-    // Önce cancelOrderLine dene. Reddedilirse (ödenmiş siparişlerde) refundOrderLine'a
-    // düş; o da olmazsa HER İKİ gerçek hatayı göster (iptal hatası gizlenmesin).
-    try {
-      await graphql('mutation C($input: CancelOrderLineInput!){ cancelOrderLine(input:$input){ id } }',
-        { input: { orderId: sip.ikas_siparis_id, orderLineItems } })
-    } catch (cancelErr) {
-      const stockLocationId = kalemler.map(k => kalemIkasLokId(db, k)).find(Boolean) || null
-      if (restock && !stockLocationId) throw cancelErr
-      const orderRefundLines = kalemler.map(k => ({
-        orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
-        price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
-      }))
-      try {
-        await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
-          input: {
-            orderId: sip.ikas_siparis_id, orderRefundLines,
-            ...(stockLocationId ? { stockLocationId } : {}),
-            refundShipping: false, sendNotificationToCustomer: false,
-          },
-        })
-      } catch (refundErr) {
-        throw new Error(`İptal reddedildi (${cancelErr.message}); iade denemesi de başarısız (${refundErr.message})`)
-      }
-    }
+    // SADECE iptal et. Eskiden cancel reddedilince sessizce refundOrderLine'a düşülüyordu
+    // — bu "İptal Et" diyene İADE yapıyordu (farklı finansal işlem). Artık iade'ye düşmüyoruz;
+    // cancel reddedilirse gerçek ikas hatası gösterilir. İade için ayrı "İade Et" butonu var.
+    await graphql('mutation C($input: CancelOrderLineInput!){ cancelOrderLine(input:$input){ id } }',
+      { input: { orderId: sip.ikas_siparis_id, orderLineItems } })
     // Yerel: durum iptal + (stok düşülmüşse ve restock isteniyorsa) stoğu geri ekle.
     const geriEkle = db.transaction(() => {
       if (restock && sip.stok_dusuldu) {
