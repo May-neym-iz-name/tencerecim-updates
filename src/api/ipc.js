@@ -129,7 +129,6 @@ export const onlineSiparisApi = {
 export const raporApi = {
   ozet: (params) => invoke('raporlar:ozet', params),
   enCokUrunler: (params) => invoke('raporlar:en-cok-urunler', params),
-  urunKombinasyonlari: (params) => invoke('raporlar:urun-kombinasyonlari', params),
   musteriSadakat: (params) => invoke('raporlar:musteri-sadakat', params),
   zamanSerisi: (params) => invoke('raporlar:zaman-serisi', params),
   kategoriKirilim: (params) => invoke('raporlar:kategori-kirilim', params),

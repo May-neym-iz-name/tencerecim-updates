@@ -48,35 +48,44 @@ function kalemlerCte(f = {}) {
   const params = []
 
   // Mağaza içi kalemler. tutar = satır neti (sk.toplam). satis_anahtar kaynak
-  // ön ekiyle benzersiz: 'M'<id> / 'W'<id> (kombinasyon self-join'i için).
+  // ön ekiyle benzersiz: 'M'<id> / 'W'<id> (işlem sayısı DISTINCT sayımı için).
   let magaza = `
     SELECT 'magaza' AS kaynak, 'M' || s.id AS satis_anahtar,
            substr(s.tarih,1,10) AS gun,
            s.lokasyon_id, s.musteri_id,
            sk.urun_id, COALESCE(u.ad, '(silinmiş ürün)') AS urun_adi,
-           u.marka_id, u.marka, u.kategori_id, u.kategori,
+           u.marka_id, COALESCE(mk.ad, u.marka) AS marka,
+           u.kategori_id, COALESCE(kt.ad, u.kategori) AS kategori,
            sk.miktar AS adet, sk.toplam AS tutar
     FROM satis_kalemleri sk
     JOIN satislar s ON sk.satis_id = s.id
     LEFT JOIN urunler u ON sk.urun_id = u.id
+    LEFT JOIN markalar mk ON u.marka_id = mk.id
+    LEFT JOIN kategoriler kt ON u.kategori_id = kt.id
     WHERE s.durum = 'tamamlandi'`
   const magazaParams = []
   if (baslangic) { magaza += ' AND substr(s.tarih,1,10) >= ?'; magazaParams.push(baslangic) }
   if (bitis) { magaza += ' AND substr(s.tarih,1,10) <= ?'; magazaParams.push(bitis) }
   if (lokasyon_id) { magaza += ' AND s.lokasyon_id = ?'; magazaParams.push(Number(lokasyon_id)) }
 
-  // Web kalemleri. tutar = birim_fiyat * miktar. Yerel ürün eşleşmemişse
-  // (urun_id NULL) ad/marka/kategori için kalemin urun_adi'na düşülür.
+  // Web kalemleri. tutar = birim_fiyat * miktar. Eski senkronlanan siparişlerde
+  // birim_fiyat 0 kaydedilmiş olabilir (finalUnitPrice null bug'ı, v1.2.33'te
+  // düzeltildi) → 0 ise eşleşen ürünün güncel satış fiyatına düşülür. Yerel ürün
+  // eşleşmemişse (urun_id NULL) ad/marka/kategori için kalemin urun_adi'na düşülür.
   let web = `
     SELECT 'web' AS kaynak, 'W' || os.id AS satis_anahtar,
            substr(os.siparis_tarihi,1,10) AS gun,
            ok.lokasyon_id, os.musteri_id,
            ok.urun_id, COALESCE(u.ad, ok.urun_adi, '(isimsiz)') AS urun_adi,
-           u.marka_id, u.marka, u.kategori_id, u.kategori,
-           ok.miktar AS adet, (ok.birim_fiyat * ok.miktar) AS tutar
+           u.marka_id, COALESCE(mk.ad, u.marka) AS marka,
+           u.kategori_id, COALESCE(kt.ad, u.kategori) AS kategori,
+           ok.miktar AS adet,
+           (CASE WHEN ok.birim_fiyat > 0 THEN ok.birim_fiyat ELSE COALESCE(u.satis_fiyati, 0) END) * ok.miktar AS tutar
     FROM online_siparis_kalemleri ok
     JOIN online_siparisler os ON ok.siparis_id = os.id
     LEFT JOIN urunler u ON ok.urun_id = u.id
+    LEFT JOIN markalar mk ON u.marka_id = mk.id
+    LEFT JOIN kategoriler kt ON u.kategori_id = kt.id
     WHERE ${webDurumKosulu(webDurum)}`
   const webParams = []
   if (baslangic) { web += ' AND substr(os.siparis_tarihi,1,10) >= ?'; webParams.push(baslangic) }
@@ -136,27 +145,6 @@ module.exports = {
       FROM kalemler
       GROUP BY anahtar
       ORDER BY ${sutun} DESC, adet DESC
-      LIMIT ?`).all(...params, limit)
-    return satirlar
-  },
-
-  // En çok birlikte alınan ürün ikilileri (market sepeti). Aynı işlemdeki
-  // farklı ürünleri eşler; urun_id NULL kalemler (eşleşmemiş) hariç tutulur.
-  'raporlar:urun-kombinasyonlari': (f = {}) => {
-    yetkiKontrol('rapor_goruntule')
-    const db = getDb()
-    const { cte, params } = kalemlerCte(f)
-    const limit = limitGuvenli(f.limit)
-    const satirlar = db.prepare(`${cte}
-      SELECT a.urun_id AS urun1_id, MAX(a.urun_adi) AS urun1,
-             b.urun_id AS urun2_id, MAX(b.urun_adi) AS urun2,
-             COUNT(DISTINCT a.satis_anahtar) AS birlikte_sayisi
-      FROM kalemler a
-      JOIN kalemler b
-        ON a.satis_anahtar = b.satis_anahtar AND a.urun_id < b.urun_id
-      WHERE a.urun_id IS NOT NULL AND b.urun_id IS NOT NULL
-      GROUP BY a.urun_id, b.urun_id
-      ORDER BY birlikte_sayisi DESC
       LIMIT ?`).all(...params, limit)
     return satirlar
   },

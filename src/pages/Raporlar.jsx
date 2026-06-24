@@ -30,7 +30,6 @@ const TARIH_KISAYOLLARI = [
 const SEKMELER = [
   { id: 'ozet', ad: 'Özet' },
   { id: 'urunler', ad: 'En Çok Ürünler' },
-  { id: 'kombinasyon', ad: 'Kombinasyonlar' },
   { id: 'musteri', ad: 'Müşteriler' },
   { id: 'zaman', ad: 'Zaman Trendi' },
   { id: 'kategori', ad: 'Kategori' },
@@ -94,7 +93,6 @@ export default function Raporlar() {
       try {
         let r = []
         if (sekme === 'urunler') r = await raporApi.enCokUrunler({ ...filtre, siralama: urunSiralama, limit: 25 })
-        else if (sekme === 'kombinasyon') r = await raporApi.urunKombinasyonlari({ ...filtre, limit: 25 })
         else if (sekme === 'musteri') r = await raporApi.musteriSadakat({ ...filtre, limit: 25 })
         else if (sekme === 'zaman') r = await raporApi.zamanSerisi({ ...filtre, granularite })
         else if (sekme === 'kategori') r = await raporApi.kategoriKirilim(filtre)
@@ -192,7 +190,6 @@ export default function Raporlar() {
         {sekme !== 'ozet' && !yukleniyor && (
           <>
             {sekme === 'urunler' && <UrunlerSekmesi veri={veri} siralama={urunSiralama} setSiralama={setUrunSiralama} />}
-            {sekme === 'kombinasyon' && <KombinasyonSekmesi veri={veri} />}
             {sekme === 'musteri' && <MusteriSekmesi veri={veri} />}
             {sekme === 'zaman' && <ZamanSekmesi veri={veri} granularite={granularite} setGranularite={setGranularite} />}
             {sekme === 'kategori' && <PastaSekmesi veri={veri} etiketAlan="kategori" />}
@@ -258,20 +255,13 @@ function UrunlerSekmesi({ veri, siralama, setSiralama }) {
           <Bar dataKey="deger" name={siralama === 'ciro' ? 'Ciro' : 'Adet'} fill="#d97706" radius={[0, 4, 4, 0]} />
         </BarChart>
       </ResponsiveContainer>
-      <Tablo basliklar={['#', 'Ürün', 'Mağaza', 'Web', 'Toplam Adet', 'Ciro']}
-        satirlar={veri.map((u, i) => [i + 1, u.urun_adi, SAYI(u.magaza_adet), SAYI(u.web_adet), SAYI(u.adet), PARA(u.ciro)])} />
-    </div>
-  )
-}
-
-function KombinasyonSekmesi({ veri }) {
-  if (!veri.length) return <Bos />
-  return (
-    <div>
-      <h3 className="text-sm font-semibold text-gray-700 mb-1">Birlikte Alınan Ürünler</h3>
-      <p className="text-xs text-gray-400 mb-3">Aynı satış/siparişte birlikte satın alınan ürün ikilileri (market sepeti analizi).</p>
-      <Tablo basliklar={['#', 'Ürün 1', 'Ürün 2', 'Birlikte Alınma']}
-        satirlar={veri.map((k, i) => [i + 1, k.urun1, k.urun2, SAYI(k.birlikte_sayisi) + ' kez'])} />
+      <SiraliTablo veri={veri} kolonlar={[
+        { baslik: 'Ürün', hucre: u => u.urun_adi, deger: u => u.urun_adi },
+        { baslik: 'Mağaza', sagda: true, hucre: u => SAYI(u.magaza_adet), deger: u => u.magaza_adet },
+        { baslik: 'Web', sagda: true, hucre: u => SAYI(u.web_adet), deger: u => u.web_adet },
+        { baslik: 'Toplam Adet', sagda: true, hucre: u => SAYI(u.adet), deger: u => u.adet },
+        { baslik: 'Ciro', sagda: true, hucre: u => PARA(u.ciro), deger: u => u.ciro },
+      ]} />
     </div>
   )
 }
@@ -281,8 +271,12 @@ function MusteriSekmesi({ veri }) {
   return (
     <div>
       <h3 className="text-sm font-semibold text-gray-700 mb-3">En Sadık Müşteriler</h3>
-      <Tablo basliklar={['#', 'Müşteri', 'Telefon', 'Sipariş Sayısı', 'Toplam Harcama']}
-        satirlar={veri.map((m, i) => [i + 1, m.musteri_adi, m.telefon || '—', SAYI(m.islem_sayisi), PARA(m.toplam_harcama)])} />
+      <SiraliTablo veri={veri} kolonlar={[
+        { baslik: 'Müşteri', hucre: m => m.musteri_adi, deger: m => m.musteri_adi },
+        { baslik: 'Telefon', hucre: m => m.telefon || '—' },
+        { baslik: 'Sipariş Sayısı', sagda: true, hucre: m => SAYI(m.islem_sayisi), deger: m => m.islem_sayisi },
+        { baslik: 'Toplam Harcama', sagda: true, hucre: m => PARA(m.toplam_harcama), deger: m => m.toplam_harcama },
+      ]} />
     </div>
   )
 }
@@ -331,27 +325,61 @@ function PastaSekmesi({ veri, etiketAlan }) {
           <Tooltip formatter={(v) => PARA(v)} />
         </PieChart>
       </ResponsiveContainer>
-      <Tablo basliklar={[etiketAlan === 'kategori' ? 'Kategori' : 'Marka', 'Adet', 'Ciro']}
-        satirlar={veri.map(d => [d[etiketAlan], SAYI(d.adet), PARA(d.ciro)])} />
+      <SiraliTablo veri={veri} numarali={false} kolonlar={[
+        { baslik: etiketAlan === 'kategori' ? 'Kategori' : 'Marka', hucre: d => d[etiketAlan] ?? '—', deger: d => d[etiketAlan] ?? '' },
+        { baslik: 'Adet', sagda: true, hucre: d => SAYI(d.adet), deger: d => d.adet },
+        { baslik: 'Ciro', sagda: true, hucre: d => PARA(d.ciro), deger: d => d.ciro },
+      ]} />
     </div>
   )
 }
 
-// Basit, salt-okunur tablo. Sayısal sütunlar (ilk dışındakiler) sağa yaslanır.
-function Tablo({ basliklar, satirlar }) {
+// Sıralanabilir, salt-okunur tablo. kolonlar: { baslik, hucre:(row)=>düğüm,
+// deger?:(row)=>sıralama anahtarı (varsa sütun tıklanabilir), sagda?:bool }.
+// Başlığa ilk tıklama artan, ikinci tıklama azalan sıralar; yeni sütun artanla başlar.
+function SiraliTablo({ kolonlar, veri, numarali = true }) {
+  const [sira, setSira] = useState({ idx: null, yon: 'asc' })
+
+  const siraliVeri = useMemo(() => {
+    if (sira.idx == null || !kolonlar[sira.idx]?.deger) return veri
+    const deger = kolonlar[sira.idx].deger
+    const carpan = sira.yon === 'asc' ? 1 : -1
+    return [...veri].sort((a, b) => {
+      const av = deger(a), bv = deger(b)
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * carpan
+      return String(av).localeCompare(String(bv), 'tr') * carpan
+    })
+  }, [veri, sira, kolonlar])
+
+  function basligaTikla(idx) {
+    if (!kolonlar[idx].deger) return
+    setSira(s => s.idx === idx ? { idx, yon: s.yon === 'asc' ? 'desc' : 'asc' } : { idx, yon: 'asc' })
+  }
+
   return (
     <div className="overflow-x-auto mt-4">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 text-gray-500 text-left text-xs">
-          <tr>{basliklar.map((b, i) => (
-            <th key={i} className={`px-3 py-2 font-medium ${i >= 2 ? 'text-right' : ''}`}>{b}</th>
-          ))}</tr>
+          <tr>
+            {numarali && <th className="px-3 py-2 font-medium w-10">#</th>}
+            {kolonlar.map((k, i) => {
+              const aktif = sira.idx === i
+              const tiklanabilir = !!k.deger
+              return (
+                <th key={k.baslik} onClick={() => basligaTikla(i)}
+                  className={`px-3 py-2 font-medium ${k.sagda ? 'text-right' : ''} ${tiklanabilir ? 'cursor-pointer select-none hover:text-gray-700' : ''}`}>
+                  {k.baslik}{aktif ? (sira.yon === 'asc' ? ' ▲' : ' ▼') : (tiklanabilir ? ' ↕' : '')}
+                </th>
+              )
+            })}
+          </tr>
         </thead>
         <tbody>
-          {satirlar.map((satir, r) => (
+          {siraliVeri.map((row, r) => (
             <tr key={r} className="border-t hover:bg-gray-50">
-              {satir.map((h, c) => (
-                <td key={c} className={`px-3 py-2 ${c >= 2 ? 'text-right whitespace-nowrap' : ''} ${c === 0 ? 'text-gray-400 w-10' : ''}`}>{h}</td>
+              {numarali && <td className="px-3 py-2 text-gray-400 w-10">{r + 1}</td>}
+              {kolonlar.map(k => (
+                <td key={k.baslik} className={`px-3 py-2 ${k.sagda ? 'text-right whitespace-nowrap' : ''}`}>{k.hucre(row)}</td>
               ))}
             </tr>
           ))}
