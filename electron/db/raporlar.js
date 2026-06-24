@@ -149,6 +149,27 @@ module.exports = {
     return satirlar
   },
 
+  // Satılmayan ürünler — seçilen dönem/kaynak/lokasyon filtresinde hiç satışı
+  // olmayan aktif ürünler. (Tarih aralığı geniş tutulursa "hiç satılmamış" olur.)
+  'raporlar:satilmayan-urunler': (f = {}) => {
+    yetkiKontrol('rapor_goruntule')
+    const db = getDb()
+    const { cte, params } = kalemlerCte(f)
+    // NOT IN alt sorgusunda NULL olmamalı (NOT IN NULL ile yanlış sonuç verir).
+    const satirlar = db.prepare(`${cte}
+      SELECT u.id, u.ad AS urun_adi, u.barkod, u.sku, u.satis_fiyati,
+             COALESCE(mk.ad, u.marka) AS marka,
+             COALESCE(kt.ad, u.kategori) AS kategori,
+             (SELECT COALESCE(SUM(st.miktar), 0) FROM urun_stoklar st WHERE st.urun_id = u.id) AS stok
+      FROM urunler u
+      LEFT JOIN markalar mk ON u.marka_id = mk.id
+      LEFT JOIN kategoriler kt ON u.kategori_id = kt.id
+      WHERE u.aktif = 1
+        AND u.id NOT IN (SELECT DISTINCT urun_id FROM kalemler WHERE urun_id IS NOT NULL)
+      ORDER BY u.ad COLLATE NOCASE ASC`).all(...params)
+    return satirlar
+  },
+
   // Müşteri sadakati — müşteri başına işlem sayısı + toplam harcama.
   // Misafir (musteri_id NULL) işlemler hariç tutulur.
   'raporlar:musteri-sadakat': (f = {}) => {

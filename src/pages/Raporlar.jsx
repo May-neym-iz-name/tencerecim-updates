@@ -32,6 +32,7 @@ const TARIH_KISAYOLLARI = [
 const SEKMELER = [
   { id: 'ozet', ad: 'Özet' },
   { id: 'urunler', ad: 'En Çok Ürünler' },
+  { id: 'satilmayan', ad: 'Satılmayan Ürünler' },
   { id: 'musteri', ad: 'Müşteriler' },
   { id: 'zaman', ad: 'Zaman Trendi' },
   { id: 'kategori', ad: 'Kategori' },
@@ -95,6 +96,7 @@ export default function Raporlar() {
       try {
         let r = []
         if (sekme === 'urunler') r = await raporApi.enCokUrunler({ ...filtre, siralama: urunSiralama, limit: 2000 })
+        else if (sekme === 'satilmayan') r = await raporApi.satilmayanUrunler(filtre)
         else if (sekme === 'musteri') r = await raporApi.musteriSadakat({ ...filtre, limit: 2000 })
         else if (sekme === 'zaman') r = await raporApi.zamanSerisi({ ...filtre, granularite })
         else if (sekme === 'kategori') r = await raporApi.kategoriKirilim(filtre)
@@ -192,6 +194,7 @@ export default function Raporlar() {
         {sekme !== 'ozet' && !yukleniyor && (
           <>
             {sekme === 'urunler' && <UrunlerSekmesi veri={veri} siralama={urunSiralama} setSiralama={setUrunSiralama} />}
+            {sekme === 'satilmayan' && <SatilmayanSekmesi veri={veri} />}
             {sekme === 'musteri' && <MusteriSekmesi veri={veri} />}
             {sekme === 'zaman' && <ZamanSekmesi veri={veri} granularite={granularite} setGranularite={setGranularite} />}
             {sekme === 'kategori' && <PastaSekmesi veri={veri} etiketAlan="kategori" />}
@@ -264,6 +267,30 @@ function UrunlerSekmesi({ veri, siralama, setSiralama }) {
         { baslik: 'Toplam Adet', sagda: true, hucre: u => SAYI(u.adet), deger: u => u.adet },
         { baslik: 'Ciro', sagda: true, hucre: u => PARA(u.ciro), deger: u => u.ciro },
       ]} />
+    </div>
+  )
+}
+
+function SatilmayanSekmesi({ veri }) {
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-gray-700 mb-1">Satılmayan Ürünler</h3>
+      <p className="text-xs text-gray-400 mb-1">
+        Seçilen tarih aralığı / kaynak / lokasyon filtresinde <strong>hiç satışı olmayan</strong> aktif ürünler.
+        "Hiç satılmamış" ürünler için tarih aralığını genişletin (ör. Bu yıl).
+      </p>
+      {!veri.length ? (
+        <p className="text-center text-gray-400 py-12">Bu filtrede satılmayan ürün yok — hepsi satmış. 🎉</p>
+      ) : (
+        <SiraliTablo veri={veri} kolonlar={[
+          { baslik: 'Ürün', hucre: u => u.urun_adi, deger: u => u.urun_adi },
+          { baslik: 'Barkod / SKU', hucre: u => u.barkod || u.sku || '—' },
+          { baslik: 'Marka', hucre: u => u.marka || '—', deger: u => u.marka || '' },
+          { baslik: 'Kategori', hucre: u => u.kategori || '—', deger: u => u.kategori || '' },
+          { baslik: 'Stok', sagda: true, hucre: u => SAYI(u.stok), deger: u => u.stok },
+          { baslik: 'Satış Fiyatı', sagda: true, hucre: u => PARA(u.satis_fiyati), deger: u => u.satis_fiyati },
+        ]} />
+      )}
     </div>
   )
 }
