@@ -80,6 +80,10 @@ const HATA_CEVIRI = {
     'Bu sipariş kalemi iadeye uygun değil (ödenmemiş, henüz işlenmemiş veya zaten iade edilmiş olabilir).',
   'error_messages.order_line.not_eligible_for_cancel':
     'Bu sipariş kalemi iptale uygun değil (zaten kargolanmış, iptal veya iade edilmiş olabilir).',
+  'error_messages.order.refund_order_payment_error':
+    'Bu siparişin ödemesi (havale/manuel) otomatik iade edilemediği için uygulamadan iptal EDİLEMİYOR. ' +
+    'Bu tür siparişleri ikas panelinden iptal edin (parayı gerekiyorsa elle iade edersiniz). ' +
+    'Alternatif: "İade Et" bu siparişte çalışır ama durum "İade Edildi" olarak görünür.',
 }
 function cevirHata(mesaj) {
   if (!mesaj) return mesaj
