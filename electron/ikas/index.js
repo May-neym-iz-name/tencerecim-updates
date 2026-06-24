@@ -5,7 +5,7 @@ const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
 
 const PUSH_PARTI = 50      // saveProductStockLocations parti boyutu
-const SIPARIS_LIMIT = 50   // listOrder sayfa boyutu
+const SIPARIS_LIMIT = 200  // listOrder sayfa boyutu (ikas tavanı 200 — daha az istek)
 const IPTAL_DURUMU = 'CANCELLED'
 
 // --- yardımcılar -----------------------------------------------------------
