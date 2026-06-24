@@ -403,19 +403,6 @@ function kalemIkasLokId(db, kalem) {
   return kalem.ikas_lokasyon_id || null
 }
 
-// Siparişin ödeme ağ geçidi id'sini ikas'tan çeker (refundOrderLine için ZORUNLU).
-// En yüksek tutarlı ödeme yöntemini seçer; ödeme yoksa null (iade yapılamaz).
-async function odemeGatewayId(ikasSiparisId) {
-  const data = await graphql(
-    `query G($f: StringFilterInput){ listOrder(id:$f, pagination:{page:1,limit:1}){ data { paymentMethods { paymentGatewayId price } } } }`,
-    { f: { eq: ikasSiparisId } },
-  )
-  const pm = (data?.listOrder?.data?.[0]?.paymentMethods || []).filter(p => p?.paymentGatewayId)
-  if (!pm.length) return null
-  pm.sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0))
-  return pm[0].paymentGatewayId
-}
-
 // --- IPC handler'ları -------------------------------------------------------
 
 module.exports = {
@@ -531,27 +518,27 @@ module.exports = {
     sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     const kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
     if (!kalemler.length) throw new Error('İptal edilebilir kalem bulunamadı (ikas tarafında sipariş kalemi yok).')
-    // CancelOrderLineItemInput şeması: yalnızca orderLineItemId/quantity/restockItems (price YOK).
+    // CANLI ŞEMA: CancelOrderLineItemInput.price ZORUNLU (Float!).
     const orderLineItems = kalemler.map(k => ({
-      orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1, restockItems: !!restock,
+      orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
+      price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
     }))
-    // Önce cancelOrderLine dene (ödenmemiş/işlenmemiş siparişler için doğru yol).
-    // Cancel reddedilirse (ödenmiş siparişlerde) refundOrderLine'a düş — ama refund
-    // ödeme gerektirir; ödeme yoksa asıl cancel hatasını göster (yanıltıcı iade hatası değil).
+    // Önce cancelOrderLine dene. Reddedilirse (ödenmiş siparişlerde) refundOrderLine'a
+    // düş; o da olmazsa HER İKİ gerçek hatayı göster (iptal hatası gizlenmesin).
     try {
       await graphql('mutation C($input: CancelOrderLineInput!){ cancelOrderLine(input:$input){ id } }',
         { input: { orderId: sip.ikas_siparis_id, orderLineItems } })
     } catch (cancelErr) {
       const stockLocationId = kalemler.map(k => kalemIkasLokId(db, k)).find(Boolean) || null
-      const gatewayId = await odemeGatewayId(sip.ikas_siparis_id).catch(() => null)
-      if (!gatewayId || (restock && !stockLocationId)) throw cancelErr // iade yapılamaz → asıl iptal hatasını göster
+      if (restock && !stockLocationId) throw cancelErr
       const orderRefundLines = kalemler.map(k => ({
-        orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1, restockItems: !!restock,
+        orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
+        price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
       }))
       try {
         await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
           input: {
-            orderId: sip.ikas_siparis_id, orderRefundLines, paymentGatewayId: gatewayId,
+            orderId: sip.ikas_siparis_id, orderRefundLines,
             ...(stockLocationId ? { stockLocationId } : {}),
             refundShipping: false, sendNotificationToCustomer: false,
           },
@@ -589,18 +576,16 @@ module.exports = {
     if (restock && !stockLocationId) {
       throw new Error('İade için stok lokasyonu belirlenemedi. Kalemlerin çıkış mağazasını seçin ve mağazanın ikas eşleşmesini yapın.')
     }
-    // OrderRefundInput.paymentGatewayId ZORUNLU — hangi ödeme ağ geçidinden iade edileceği.
-    const gatewayId = await odemeGatewayId(sip.ikas_siparis_id)
-    if (!gatewayId) {
-      throw new Error('İade yapılamadı: siparişin ödeme ağ geçidi bulunamadı (ödeme alınmamış olabilir). Ödenmemiş siparişi "İptal Et" ile iptal edin.')
-    }
-    // OrderRefundLineInput şeması: orderLineItemId/quantity/restockItems (price YOK; tutarı ikas hesaplar).
+    // CANLI ŞEMA: OrderRefundLineInput.price ZORUNLU (Float!). OrderRefundInput'ta
+    // paymentGatewayId YOK. Tutar uyuşmazlığını önlemek için birim fiyatlar yukarıda
+    // tazeleSiparisKalemleri ile ikas'tan tazelendi.
     const orderRefundLines = kalemler.map(k => ({
-      orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1, restockItems: !!restock,
+      orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
+      price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
     }))
     await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
       input: {
-        orderId: sip.ikas_siparis_id, orderRefundLines, paymentGatewayId: gatewayId,
+        orderId: sip.ikas_siparis_id, orderRefundLines,
         ...(stockLocationId ? { stockLocationId } : {}),
         refundShipping: !!refundShipping, sendNotificationToCustomer: !!bildir,
       },

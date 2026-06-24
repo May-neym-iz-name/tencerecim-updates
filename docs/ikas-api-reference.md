@@ -298,9 +298,13 @@ input CancelOrderLineItemInput {    # NOTE: no `price` field
 - `cancelFulfillment` — reverse a fulfillment
 - `updateOrderAddresses` — modify billing/shipping addresses
 
-**Notes / gotchas (VERIFIED 2026-06 against type-definition pages):**
-- `OrderRefundInput.paymentGatewayId` is **required** — the refund must specify which payment gateway to refund through. Source it from the order's payment data (paymentMethods/transactions).
-- Neither `OrderRefundLineInput` nor `CancelOrderLineItemInput` has a `price` field — sending one is rejected by schema validation. (Our app historically sent `price`; confirm current behavior with a live test — see audit notes.)
+**⚠️ DOC PAGES WERE WRONG — corrected by LIVE API error (2026-06):**
+- The type-definition pages claimed `OrderRefundInput.paymentGatewayId` is required and that the line inputs have no `price`. **The live GraphQL API says the opposite:**
+  - `CancelOrderLineItemInput.price: Float!` is **REQUIRED**.
+  - `OrderRefundLineInput.price: Float!` is **REQUIRED**.
+  - `OrderRefundInput` has **NO `paymentGatewayId` field** (sending it → "Field paymentGatewayId is not defined by type OrderRefundInput").
+- Lesson: trust the live API/Playground over the doc pages; the published type-definition pages can be stale/inaccurate.
+- So the correct line input is `{ orderLineItemId, quantity, price, restockItems }` for BOTH cancel and refund; price must be the real per-unit price (refresh via the single-order query, since stored `birim_fiyat` may be 0 on old data).
 - Always read back the returned `Order` to confirm new `orderPackageStatus`.
 
 ---
