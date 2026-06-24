@@ -104,12 +104,14 @@ function birimFiyatHesapla(kalem) {
   return 0
 }
 
-// Sipariş çekme GraphQL sorgusu. orderedAt > gt (Timestamp, epoch-ms).
+// Sipariş çekme GraphQL sorgusu. updatedAt > gt (Timestamp, epoch-ms).
+// İmleç updatedAt: durumu sonradan değişen (kargoya hazır, teslim edildi...)
+// siparişler de yeniden gelir; orderedAt imleci ile durum güncellenmiyordu.
 const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
-  listOrder(sort: "orderedAt asc", orderedAt: { gt: $gt }, pagination: { page: $page, limit: $limit }) {
+  listOrder(sort: "updatedAt asc", updatedAt: { gt: $gt }, pagination: { page: $page, limit: $limit }) {
     count hasNext page limit
     data {
-      id orderNumber orderedAt status orderPaymentStatus totalFinalPrice currencyCode
+      id orderNumber orderedAt updatedAt status orderPaymentStatus orderPackageStatus totalFinalPrice currencyCode
       salesChannel { type }
       paymentMethods { type paymentGatewayName }
       customer { firstName lastName email phone }
@@ -181,10 +183,10 @@ async function pullSiparisler() {
 
   const varExists = db.prepare('SELECT 1 FROM online_siparisler WHERE ikas_siparis_id = ?')
   const sipEkle = db.prepare(`INSERT OR IGNORE INTO online_siparisler
-    (ikas_siparis_id, siparis_no, siparis_tarihi, durum, odeme_durumu, odeme_yontemi, toplam, para_birimi,
+    (ikas_siparis_id, siparis_no, siparis_tarihi, durum, odeme_durumu, kargo_durumu, odeme_yontemi, toplam, para_birimi,
      musteri_id, musteri_ad, musteri_email, musteri_telefon, teslimat_il, teslimat_ilce, teslimat_adres,
      fatura_unvan, fatura_vergi_no, fatura_vergi_dairesi, fatura_tc, stok_dusuldu)
-    VALUES (@ikas_siparis_id, @siparis_no, @siparis_tarihi, @durum, @odeme_durumu, @odeme_yontemi, @toplam, @para_birimi,
+    VALUES (@ikas_siparis_id, @siparis_no, @siparis_tarihi, @durum, @odeme_durumu, @kargo_durumu, @odeme_yontemi, @toplam, @para_birimi,
      @musteri_id, @musteri_ad, @musteri_email, @musteri_telefon, @teslimat_il, @teslimat_ilce, @teslimat_adres,
      @fatura_unvan, @fatura_vergi_no, @fatura_vergi_dairesi, @fatura_tc, @stok_dusuldu)`)
   const kalemEkle = db.prepare(`INSERT INTO online_siparis_kalemleri
@@ -193,8 +195,8 @@ async function pullSiparisler() {
   const varyantUrun = db.prepare('SELECT id FROM urunler WHERE ikas_varyant_id = ? AND aktif = 1')
   const stokDus = db.prepare('UPDATE urun_stoklar SET miktar = MAX(0, miktar - ?) WHERE urun_id = ? AND lokasyon_id = ?')
   // Var olan siparişin durum tazeleme + iptal/iade'de stok geri ekleme.
-  const mevcutGetir = db.prepare('SELECT id, durum, odeme_durumu, stok_dusuldu FROM online_siparisler WHERE ikas_siparis_id = ?')
-  const durumGuncelle = db.prepare('UPDATE online_siparisler SET durum = ?, odeme_durumu = ? WHERE id = ?')
+  const mevcutGetir = db.prepare('SELECT id, durum, odeme_durumu, kargo_durumu, stok_dusuldu FROM online_siparisler WHERE ikas_siparis_id = ?')
+  const durumGuncelle = db.prepare('UPDATE online_siparisler SET durum = ?, odeme_durumu = ?, kargo_durumu = ? WHERE id = ?')
   const stokGeri = db.prepare('UPDATE urun_stoklar SET miktar = miktar + ? WHERE urun_id = ? AND lokasyon_id = ?')
   const stokSifirla = db.prepare('UPDATE online_siparisler SET stok_dusuldu = 0 WHERE id = ?')
   const kalemlerGetir = db.prepare('SELECT urun_id, lokasyon_id, miktar FROM online_siparis_kalemleri WHERE siparis_id = ?')
@@ -205,7 +207,7 @@ async function pullSiparisler() {
   let guncellenen = 0
   let stokDusulen = 0
   let eslesmeyen = 0
-  let enSonOrderedAt = sonSenk
+  let enSonUpdatedAt = sonSenk
 
   for (;;) {
     const data = await graphql(SIPARIS_SORGU, { gt: gtBaslangic, page, limit: SIPARIS_LIMIT })
@@ -215,7 +217,7 @@ async function pullSiparisler() {
 
     const partiIsle = db.transaction(() => {
       for (const sip of siparisler) {
-        if (sip.orderedAt && sip.orderedAt > enSonOrderedAt) enSonOrderedAt = sip.orderedAt
+        if (sip.updatedAt && sip.updatedAt > enSonUpdatedAt) enSonUpdatedAt = sip.updatedAt
         if (sip.salesChannel?.type !== ONLINE_KANAL_TIPI) continue // sadece web sitesi siparişleri
 
         // Zaten kayıtlı: yeniden ekleme ama durum/ödeme bilgisini ikas'tan tazele.
@@ -223,8 +225,9 @@ async function pullSiparisler() {
         if (mevcut) {
           const yeniDurum = sip.status || mevcut.durum
           const yeniOdeme = sip.orderPaymentStatus || mevcut.odeme_durumu
-          if (yeniDurum !== mevcut.durum || yeniOdeme !== mevcut.odeme_durumu) {
-            durumGuncelle.run(yeniDurum, yeniOdeme, mevcut.id)
+          const yeniKargo = sip.orderPackageStatus || mevcut.kargo_durumu
+          if (yeniDurum !== mevcut.durum || yeniOdeme !== mevcut.odeme_durumu || yeniKargo !== mevcut.kargo_durumu) {
+            durumGuncelle.run(yeniDurum, yeniOdeme, yeniKargo, mevcut.id)
             guncellenen++
           }
           // İkas'ta iptal/iade edildiyse ve stok düşülmüşse yerel stoğu geri ekle.
@@ -252,6 +255,7 @@ async function pullSiparisler() {
           siparis_tarihi: sip.orderedAt ? new Date(sip.orderedAt).toISOString() : null,
           durum: sip.status || null,
           odeme_durumu: sip.orderPaymentStatus || null,
+          kargo_durumu: sip.orderPackageStatus || null,
           odeme_yontemi: odemeYontemi,
           toplam: Number(sip.totalFinalPrice) || 0,
           para_birimi: sip.currencyCode || 'TRY',
@@ -294,7 +298,7 @@ async function pullSiparisler() {
     page++
   }
 
-  if (enSonOrderedAt > sonSenk) ayarKaydet('son_siparis_senk', String(enSonOrderedAt))
+  if (enSonUpdatedAt > sonSenk) ayarKaydet('son_siparis_senk', String(enSonUpdatedAt))
   // İlk (tüm geçmiş) çekim tamamlandı → işaretle; bundan sonra yalnızca yeniler gelir.
   if (ilkKurulum) ayarKaydet('gecmis_cekildi', '1')
   return { ilkKurulum, kaydedilen, guncellenen, stokDusulen, eslesmeyen }
@@ -305,7 +309,7 @@ async function pullSiparisler() {
 // Manuel atanmış lokasyon_id korunur (varyant bazında).
 const TEK_SIPARIS_SORGU = `query Tek($f: StringFilterInput) {
   listOrder(id: $f, pagination: { page: 1, limit: 1 }) {
-    data { id status orderPaymentStatus orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } } }
+    data { id status orderPaymentStatus orderPackageStatus orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } } }
   }
 }`
 
@@ -333,9 +337,10 @@ async function tazeleSiparisKalemleri(db, siparisId) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 
   // Sipariş durumu ikas'ta değişmiş olabilir (örn. iptal/iade) → tazele.
-  const mevcut = db.prepare('SELECT durum, odeme_durumu, stok_dusuldu FROM online_siparisler WHERE id = ?').get(siparisId)
+  const mevcut = db.prepare('SELECT durum, odeme_durumu, kargo_durumu, stok_dusuldu FROM online_siparisler WHERE id = ?').get(siparisId)
   const yeniDurum = o.status || mevcut?.durum
   const yeniOdeme = o.orderPaymentStatus || mevcut?.odeme_durumu
+  const yeniKargo = o.orderPackageStatus || mevcut?.kargo_durumu
   const iadeOldu = (yeniDurum === IPTAL_DURUMU || yeniDurum === 'REFUNDED') && mevcut?.stok_dusuldu
 
   const tx = db.transaction(() => {
@@ -346,8 +351,8 @@ async function tazeleSiparisKalemleri(db, siparisId) {
         if (k.urun_id && k.lokasyon_id) stokGeri.run(Number(k.miktar) || 0, k.urun_id, k.lokasyon_id)
       }
     }
-    db.prepare('UPDATE online_siparisler SET durum = ?, odeme_durumu = ?, stok_dusuldu = CASE WHEN ? THEN 0 ELSE stok_dusuldu END WHERE id = ?')
-      .run(yeniDurum, yeniOdeme, iadeOldu ? 1 : 0, siparisId)
+    db.prepare('UPDATE online_siparisler SET durum = ?, odeme_durumu = ?, kargo_durumu = ?, stok_dusuldu = CASE WHEN ? THEN 0 ELSE stok_dusuldu END WHERE id = ?')
+      .run(yeniDurum, yeniOdeme, yeniKargo, iadeOldu ? 1 : 0, siparisId)
 
     db.prepare('DELETE FROM online_siparis_kalemleri WHERE siparis_id = ?').run(siparisId)
     for (const kalem of (o.orderLineItems || [])) {
@@ -494,7 +499,8 @@ module.exports = {
       ...(lines.length ? { lines } : {}),
     }
     await graphql('mutation F($input: FulFillOrderInput!){ fulfillOrder(input:$input){ id } }', { input })
-    db.prepare("UPDATE online_siparisler SET durum = 'FULFILLED' WHERE id = ?").run(id)
+    // markAsReadyForShipment → paket durumu "Kargoya Hazır" olur (sonraki çekimde teyit edilir).
+    db.prepare("UPDATE online_siparisler SET durum = 'FULFILLED', kargo_durumu = 'READY_FOR_SHIPMENT' WHERE id = ?").run(id)
     return { ok: true }
   },
 

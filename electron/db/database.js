@@ -203,6 +203,7 @@ function createTables() {
       siparis_tarihi TEXT,
       durum TEXT,
       odeme_durumu TEXT,
+      kargo_durumu TEXT,
       toplam REAL DEFAULT 0,
       para_birimi TEXT DEFAULT 'TRY',
       odeme_yontemi TEXT,
@@ -286,6 +287,8 @@ function migrate() {
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_vergi_no TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_vergi_dairesi TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN fatura_tc TEXT") } catch {}
+  // online_siparisler — ikas kargo/paket durumu (orderPackageStatus: kargoya hazır, teslim edildi vb.).
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_durumu TEXT") } catch {}
   // kargolar — online sipariş bağlantısı (hangi siparişin kargosu).
   try { db.exec("ALTER TABLE kargolar ADD COLUMN online_siparis_id INTEGER REFERENCES online_siparisler(id)") } catch {}
   // online_siparis_kalemleri — ikas sipariş kalemi id'si (iptal/iade için).

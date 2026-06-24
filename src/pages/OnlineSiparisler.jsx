@@ -26,6 +26,21 @@ const odemeRengi = (d) => d === 'PAID' ? 'bg-emerald-100 text-emerald-700'
   : (d === 'REFUNDED' || d === 'FAILED' || d === 'CANCELLED') ? 'bg-red-100 text-red-700'
   : 'bg-amber-100 text-amber-700'
 
+// ikas orderPackageStatus (kargo/paket durumu) — "Kargoya Hazır", "Teslim Edildi" buradan gelir.
+const KARGO_ETIKET = {
+  UNFULFILLED: 'Hazırlanmadı', FULFILLED: 'Hazırlandı', PARTIALLY_FULFILLED: 'Kısmen Hazırlandı',
+  READY_FOR_SHIPMENT: 'Kargoya Hazır', PARTIALLY_READY_FOR_SHIPMENT: 'Kısmen Kargoya Hazır',
+  READY_FOR_PICK_UP: 'Teslim Almaya Hazır',
+  DELIVERED: 'Teslim Edildi', PARTIALLY_DELIVERED: 'Kısmen Teslim', UNABLE_TO_DELIVER: 'Teslim Edilemedi',
+  CANCELLED: 'İptal', PARTIALLY_CANCELLED: 'Kısmen İptal', CANCEL_REQUESTED: 'İptal Talebi', CANCEL_REJECTED: 'İptal Reddedildi',
+  REFUNDED: 'İade Edildi', PARTIALLY_REFUNDED: 'Kısmen İade', REFUND_REQUESTED: 'İade Talebi',
+  REFUND_REQUEST_ACCEPTED: 'İade Kabul', REFUND_REJECTED: 'İade Reddedildi',
+}
+const kargoRengi = (d) => (d === 'DELIVERED' || d === 'READY_FOR_PICK_UP') ? 'bg-emerald-100 text-emerald-700'
+  : (d === 'READY_FOR_SHIPMENT' || d === 'FULFILLED' || d === 'PARTIALLY_FULFILLED' || d === 'PARTIALLY_READY_FOR_SHIPMENT' || d === 'PARTIALLY_DELIVERED') ? 'bg-blue-100 text-blue-700'
+  : (d === 'CANCELLED' || d === 'REFUNDED' || d === 'UNABLE_TO_DELIVER' || d === 'PARTIALLY_CANCELLED') ? 'bg-red-100 text-red-700'
+  : 'bg-gray-100 text-gray-600'
+
 export default function OnlineSiparisler() {
   const [siparisler, setSiparisler] = useState([])
   const [toplam, setToplam] = useState(0)
@@ -42,6 +57,7 @@ export default function OnlineSiparisler() {
   const [tarihBit, setTarihBit] = useState('')
   const [odemeFiltre, setOdemeFiltre] = useState('')
   const [durumFiltre, setDurumFiltre] = useState('')
+  const [kargoFiltre, setKargoFiltre] = useState('')
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
 
@@ -64,12 +80,14 @@ export default function OnlineSiparisler() {
     }
     if (odemeFiltre && s.odeme_durumu !== odemeFiltre) return false
     if (durumFiltre && s.durum !== durumFiltre) return false
+    if (kargoFiltre && s.kargo_durumu !== kargoFiltre) return false
     return true
   })
 
-  // Mevcut siparişlerde geçen ödeme/sipariş durumlarını filtre seçeneği olarak sun.
+  // Mevcut siparişlerde geçen ödeme/sipariş/kargo durumlarını filtre seçeneği olarak sun.
   const odemeSecenekleri = [...new Set(siparisler.map(s => s.odeme_durumu).filter(Boolean))]
   const durumSecenekleri = [...new Set(siparisler.map(s => s.durum).filter(Boolean))]
+  const kargoSecenekleri = [...new Set(siparisler.map(s => s.kargo_durumu).filter(Boolean))]
   const { dilim: sayfaSiparisler, ...sayfalama } = useSayfalama(filtreliSiparisler, 50)
 
   useEffect(() => { yukle() }, [yukle])
@@ -194,6 +212,19 @@ export default function OnlineSiparisler() {
     finally { setCekiliyor(false) }
   }
 
+  // Tüm sipariş geçmişini yeniden çeker → mevcut siparişlerin durum/ödeme/kargo
+  // bilgisini ikas'taki güncel haliyle geri doldurur (stok düşülmez, güvenli).
+  async function durumlariYenile() {
+    if (!confirm('Tüm siparişlerin durumu (kargoya hazır / teslim edildi vb.) ikas\'tan yeniden çekilecek. Bu işlem biraz sürebilir, stok düşülmez. Devam edilsin mi?')) return
+    setCekiliyor(true)
+    try {
+      const r = await ikasApi.siparisGecmisCek()
+      toast.success(`Durumlar yenilendi: ${senkSonucMesaji(r)}.`)
+      await yukle()
+    } catch (e) { toast.error('Durum yenileme hatası: ' + e.message) }
+    finally { setCekiliyor(false) }
+  }
+
   return (
     <div className="p-5">
       <div className="flex items-center justify-between mb-4">
@@ -201,11 +232,18 @@ export default function OnlineSiparisler() {
           <h2 className="text-2xl font-bold text-gray-800">Online Siparişler</h2>
           <p className="text-sm text-gray-500">Web sitesinden (ikas) gelen siparişler — toplam {toplam}</p>
         </div>
-        <button onClick={siparisCek} disabled={cekiliyor}
-          className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50"
-          title="İlk çekimde tüm sipariş geçmişini getirir, sonraki çekimlerde yalnızca yeni siparişleri.">
-          {cekiliyor ? 'Çekiliyor…' : '🔄 Siparişleri Çek'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={durumlariYenile} disabled={cekiliyor}
+            className="border border-amber-600 text-amber-700 px-4 py-2 rounded-lg text-sm hover:bg-amber-50 disabled:opacity-50"
+            title="Tüm siparişlerin durum/ödeme/kargo bilgisini ikas'tan yeniden çeker (stok düşülmez).">
+            ♻️ Durumları Yenile
+          </button>
+          <button onClick={siparisCek} disabled={cekiliyor}
+            className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50"
+            title="İlk çekimde tüm sipariş geçmişini getirir, sonraki çekimlerde yalnızca yeni/güncellenen siparişleri.">
+            {cekiliyor ? 'Çekiliyor…' : '🔄 Siparişleri Çek'}
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 mb-4">
@@ -239,8 +277,17 @@ export default function OnlineSiparisler() {
               ))}
             </select>
           </label>
-          {(tarihBas || tarihBit || odemeFiltre || durumFiltre) && (
-            <button onClick={() => { setTarihBas(''); setTarihBit(''); setOdemeFiltre(''); setDurumFiltre('') }}
+          <label className="text-xs text-gray-500">Kargo Durumu
+            <select value={kargoFiltre} onChange={e => setKargoFiltre(e.target.value)}
+              className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5 bg-white">
+              <option value="">Tümü</option>
+              {kargoSecenekleri.map(d => (
+                <option key={d} value={d}>{KARGO_ETIKET[d] || d}</option>
+              ))}
+            </select>
+          </label>
+          {(tarihBas || tarihBit || odemeFiltre || durumFiltre || kargoFiltre) && (
+            <button onClick={() => { setTarihBas(''); setTarihBit(''); setOdemeFiltre(''); setDurumFiltre(''); setKargoFiltre('') }}
               className="text-xs text-gray-500 border rounded-lg px-2 py-1.5 hover:bg-gray-50">Temizle</button>
           )}
         </div>
@@ -256,15 +303,16 @@ export default function OnlineSiparisler() {
               <th className="px-4 py-2.5 font-medium">Teslimat</th>
               <th className="px-4 py-2.5 font-medium">Ödeme</th>
               <th className="px-4 py-2.5 font-medium">Durum</th>
+              <th className="px-4 py-2.5 font-medium">Kargo</th>
               <th className="px-4 py-2.5 font-medium text-right">Tutar</th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
             {yukleniyor ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
             ) : filtreliSiparisler.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">
                 {siparisler.length === 0 ? 'Henüz sipariş yok. "Siparişleri Çek" ile ikas\'tan getirin.' : 'Filtreyle eşleşen sipariş yok.'}
               </td></tr>
             ) : sayfaSiparisler.map(s => (
@@ -287,6 +335,11 @@ export default function OnlineSiparisler() {
                     {DURUM_ETIKET[s.durum] || s.durum}
                   </span>
                   {!s.stok_dusuldu && <span className="block text-[10px] text-gray-400 mt-0.5">stok düşülmedi</span>}
+                </td>
+                <td className="px-4 py-2.5">
+                  {s.kargo_durumu
+                    ? <span className={`text-xs px-2 py-0.5 rounded-full ${kargoRengi(s.kargo_durumu)}`}>{KARGO_ETIKET[s.kargo_durumu] || s.kargo_durumu}</span>
+                    : <span className="text-xs text-gray-300">—</span>}
                 </td>
                 <td className="px-4 py-2.5 text-right font-medium">{PARA(s.toplam, s.para_birimi)}</td>
                 <td className="px-4 py-2.5 text-right">
@@ -315,6 +368,11 @@ export default function OnlineSiparisler() {
                   <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(secili.odeme_durumu)}`}>
                     {ODEME_ETIKET[secili.odeme_durumu] || secili.odeme_durumu || '—'}
                   </span>
+                  {secili.kargo_durumu && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${kargoRengi(secili.kargo_durumu)}`}>
+                      {KARGO_ETIKET[secili.kargo_durumu] || secili.kargo_durumu}
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-gray-400 mt-1">{TARIH(secili.siparis_tarihi)}</p>
               </div>
