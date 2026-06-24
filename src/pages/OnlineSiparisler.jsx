@@ -40,6 +40,8 @@ export default function OnlineSiparisler() {
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [tarihBas, setTarihBas] = useState('')
   const [tarihBit, setTarihBit] = useState('')
+  const [odemeFiltre, setOdemeFiltre] = useState('')
+  const [durumFiltre, setDurumFiltre] = useState('')
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
 
@@ -53,14 +55,21 @@ export default function OnlineSiparisler() {
     finally { setYukleniyor(false) }
   }, [arama])
 
-  // Tarih filtresi (sipariş tarihine göre, gün bazında — istemci tarafı).
+  // Tarih + ödeme + durum filtreleri (istemci tarafı).
   const filtreliSiparisler = siparisler.filter(s => {
-    if (!tarihBas && !tarihBit) return true
-    const gun = (s.siparis_tarihi || '').slice(0, 10) // YYYY-MM-DD
-    if (tarihBas && gun < tarihBas) return false
-    if (tarihBit && gun > tarihBit) return false
+    if (tarihBas || tarihBit) {
+      const gun = (s.siparis_tarihi || '').slice(0, 10) // YYYY-MM-DD
+      if (tarihBas && gun < tarihBas) return false
+      if (tarihBit && gun > tarihBit) return false
+    }
+    if (odemeFiltre && s.odeme_durumu !== odemeFiltre) return false
+    if (durumFiltre && s.durum !== durumFiltre) return false
     return true
   })
+
+  // Mevcut siparişlerde geçen ödeme/sipariş durumlarını filtre seçeneği olarak sun.
+  const odemeSecenekleri = [...new Set(siparisler.map(s => s.odeme_durumu).filter(Boolean))]
+  const durumSecenekleri = [...new Set(siparisler.map(s => s.durum).filter(Boolean))]
   const { dilim: sayfaSiparisler, ...sayfalama } = useSayfalama(filtreliSiparisler, 50)
 
   useEffect(() => { yukle() }, [yukle])
@@ -203,7 +212,7 @@ export default function OnlineSiparisler() {
         <input value={arama} onChange={e => setArama(e.target.value)}
           placeholder="Sipariş no, müşteri adı veya telefon ara…"
           className="border rounded-lg px-3 py-2 text-sm w-full max-w-md" />
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs text-gray-500">Başlangıç
             <input type="date" value={tarihBas} onChange={e => setTarihBas(e.target.value)}
               className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5" />
@@ -212,8 +221,26 @@ export default function OnlineSiparisler() {
             <input type="date" value={tarihBit} onChange={e => setTarihBit(e.target.value)}
               className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5" />
           </label>
-          {(tarihBas || tarihBit) && (
-            <button onClick={() => { setTarihBas(''); setTarihBit('') }}
+          <label className="text-xs text-gray-500">Ödeme Durumu
+            <select value={odemeFiltre} onChange={e => setOdemeFiltre(e.target.value)}
+              className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5 bg-white">
+              <option value="">Tümü</option>
+              {odemeSecenekleri.map(d => (
+                <option key={d} value={d}>{ODEME_ETIKET[d] || d}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-gray-500">Sipariş Durumu
+            <select value={durumFiltre} onChange={e => setDurumFiltre(e.target.value)}
+              className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5 bg-white">
+              <option value="">Tümü</option>
+              {durumSecenekleri.map(d => (
+                <option key={d} value={d}>{DURUM_ETIKET[d] || d}</option>
+              ))}
+            </select>
+          </label>
+          {(tarihBas || tarihBit || odemeFiltre || durumFiltre) && (
+            <button onClick={() => { setTarihBas(''); setTarihBit(''); setOdemeFiltre(''); setDurumFiltre('') }}
               className="text-xs text-gray-500 border rounded-lg px-2 py-1.5 hover:bg-gray-50">Temizle</button>
           )}
         </div>
