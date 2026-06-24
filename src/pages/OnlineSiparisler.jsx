@@ -13,14 +13,19 @@ const TARIH = (iso) => {
   try { return new Date(iso).toLocaleString('tr-TR') } catch { return iso }
 }
 
+// Order status (OrderStatusEnum) — sipariş yaşam döngüsü. "Hazırlandı/Kargoya hazır/
+// Teslim edildi" burada DEĞİL, orderPackageStatus'tadır (bkz. KARGO_ETIKET).
 const DURUM_ETIKET = {
-  CREATED: 'Oluşturuldu', FULFILLED: 'Hazırlandı', CANCELLED: 'İptal',
-  PARTIALLY_FULFILLED: 'Kısmen Hazırlandı',
+  CREATED: 'Oluşturuldu', DRAFT: 'Taslak', CANCELLED: 'İptal', PARTIALLY_CANCELLED: 'Kısmen İptal',
+  REFUNDED: 'İade Edildi', PARTIALLY_REFUNDED: 'Kısmen İade',
+  REFUND_REQUESTED: 'İade Talebi', REFUND_REJECTED: 'İade Reddedildi',
+  WAITING_UPSELL_ACTION: 'Upsell Bekliyor',
 }
 
+// OrderPaymentStatusEnum — yalnızca 4 değer: PAID, WAITING, PARTIALLY_PAID, FAILED.
+// (PENDING savunmacı alias; iade/iptal ödeme durumunda değil order/paket durumundadır.)
 const ODEME_ETIKET = {
-  PAID: 'Ödendi', PENDING: 'Bekliyor', WAITING: 'Bekliyor', PARTIALLY_PAID: 'Kısmen Ödendi',
-  REFUNDED: 'İade Edildi', PARTIALLY_REFUNDED: 'Kısmen İade', FAILED: 'Başarısız', CANCELLED: 'İptal',
+  PAID: 'Ödendi', WAITING: 'Bekliyor', PENDING: 'Bekliyor', PARTIALLY_PAID: 'Kısmen Ödendi', FAILED: 'Başarısız',
 }
 const odemeRengi = (d) => d === 'PAID' ? 'bg-emerald-100 text-emerald-700'
   : (d === 'REFUNDED' || d === 'FAILED' || d === 'CANCELLED') ? 'bg-red-100 text-red-700'

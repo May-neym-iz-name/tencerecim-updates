@@ -499,8 +499,10 @@ module.exports = {
       ...(lines.length ? { lines } : {}),
     }
     await graphql('mutation F($input: FulFillOrderInput!){ fulfillOrder(input:$input){ id } }', { input })
-    // markAsReadyForShipment → paket durumu "Kargoya Hazır" olur (sonraki çekimde teyit edilir).
-    db.prepare("UPDATE online_siparisler SET durum = 'FULFILLED', kargo_durumu = 'READY_FOR_SHIPMENT' WHERE id = ?").run(id)
+    // Fulfillment order `status`'ünü DEĞİŞTİRMEZ (FULFILLED order status'ünde yoktur —
+    // OrderStatusEnum: CREATED/CANCELLED/REFUNDED... ). Hazırlık paket durumundadır:
+    // markAsReadyForShipment → kargo_durumu = READY_FOR_SHIPMENT (sonraki çekimde teyit).
+    db.prepare("UPDATE online_siparisler SET kargo_durumu = 'READY_FOR_SHIPMENT' WHERE id = ?").run(id)
     return { ok: true }
   },
 
