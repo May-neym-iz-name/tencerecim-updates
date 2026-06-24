@@ -27,7 +27,7 @@ describe('limitGuvenli', () => {
   test('aralık dışını sıkıştırır', () => {
     expect(limitGuvenli(0)).toBe(25) // 0 falsy → varsayılan
     expect(limitGuvenli(-5)).toBe(1) // negatif → alt sınır 1
-    expect(limitGuvenli(99999)).toBe(200) // MAKS_LIMIT
+    expect(limitGuvenli(99999)).toBe(2000) // MAKS_LIMIT
   })
 
   test('geçersiz girişte varsayılana düşer', () => {

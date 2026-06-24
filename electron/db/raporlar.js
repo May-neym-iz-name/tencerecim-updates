@@ -5,7 +5,7 @@ const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 const VARSAYILAN_LIMIT = 25
-const MAKS_LIMIT = 200
+const MAKS_LIMIT = 2000 // istemci tarafı sayfalama için geniş tavan
 const TARIH_RE = /^\d{4}-\d{2}-\d{2}$/
 
 // Tarih filtrelerini YYYY-MM-DD formatına göre doğrular (hatalı string sessizce

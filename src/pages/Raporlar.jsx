@@ -5,6 +5,8 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
 import { raporApi, lokasyonApi } from '../api/ipc'
+import Sayfalama from '../components/Sayfalama'
+import { useSayfalama } from '../hooks/useSayfalama'
 
 const PARA = (n) =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', maximumFractionDigits: 0 }).format(Number(n) || 0)
@@ -92,8 +94,8 @@ export default function Raporlar() {
     ;(async () => {
       try {
         let r = []
-        if (sekme === 'urunler') r = await raporApi.enCokUrunler({ ...filtre, siralama: urunSiralama, limit: 25 })
-        else if (sekme === 'musteri') r = await raporApi.musteriSadakat({ ...filtre, limit: 25 })
+        if (sekme === 'urunler') r = await raporApi.enCokUrunler({ ...filtre, siralama: urunSiralama, limit: 2000 })
+        else if (sekme === 'musteri') r = await raporApi.musteriSadakat({ ...filtre, limit: 2000 })
         else if (sekme === 'zaman') r = await raporApi.zamanSerisi({ ...filtre, granularite })
         else if (sekme === 'kategori') r = await raporApi.kategoriKirilim(filtre)
         else if (sekme === 'marka') r = await raporApi.markaKirilim(filtre)
@@ -334,10 +336,11 @@ function PastaSekmesi({ veri, etiketAlan }) {
   )
 }
 
-// Sıralanabilir, salt-okunur tablo. kolonlar: { baslik, hucre:(row)=>düğüm,
-// deger?:(row)=>sıralama anahtarı (varsa sütun tıklanabilir), sagda?:bool }.
-// Başlığa ilk tıklama artan, ikinci tıklama azalan sıralar; yeni sütun artanla başlar.
-function SiraliTablo({ kolonlar, veri, numarali = true }) {
+// Sıralanabilir + sayfalanabilir, salt-okunur tablo. kolonlar: { baslik,
+// hucre:(row)=>düğüm, deger?:(row)=>sıralama anahtarı (varsa sütun tıklanabilir),
+// sagda?:bool }. Başlığa ilk tıklama artan, ikinci tıklama azalan sıralar.
+// Altta sayfa başına adet seçimi + 1 2 3 … sayfa gezinme (useSayfalama).
+function SiraliTablo({ kolonlar, veri, numarali = true, varsayilanBoyut = 25 }) {
   const [sira, setSira] = useState({ idx: null, yon: 'asc' })
 
   const siraliVeri = useMemo(() => {
@@ -351,40 +354,46 @@ function SiraliTablo({ kolonlar, veri, numarali = true }) {
     })
   }, [veri, sira, kolonlar])
 
+  const { dilim, ...sayfalama } = useSayfalama(siraliVeri, varsayilanBoyut)
+  const ofset = (sayfalama.sayfa - 1) * sayfalama.boyut // # sütununda global sıra no
+
   function basligaTikla(idx) {
     if (!kolonlar[idx].deger) return
     setSira(s => s.idx === idx ? { idx, yon: s.yon === 'asc' ? 'desc' : 'asc' } : { idx, yon: 'asc' })
   }
 
   return (
-    <div className="overflow-x-auto mt-4">
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 text-gray-500 text-left text-xs">
-          <tr>
-            {numarali && <th className="px-3 py-2 font-medium w-10">#</th>}
-            {kolonlar.map((k, i) => {
-              const aktif = sira.idx === i
-              const tiklanabilir = !!k.deger
-              return (
-                <th key={k.baslik} onClick={() => basligaTikla(i)}
-                  className={`px-3 py-2 font-medium ${k.sagda ? 'text-right' : ''} ${tiklanabilir ? 'cursor-pointer select-none hover:text-gray-700' : ''}`}>
-                  {k.baslik}{aktif ? (sira.yon === 'asc' ? ' ▲' : ' ▼') : (tiklanabilir ? ' ↕' : '')}
-                </th>
-              )
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {siraliVeri.map((row, r) => (
-            <tr key={r} className="border-t hover:bg-gray-50">
-              {numarali && <td className="px-3 py-2 text-gray-400 w-10">{r + 1}</td>}
-              {kolonlar.map(k => (
-                <td key={k.baslik} className={`px-3 py-2 ${k.sagda ? 'text-right whitespace-nowrap' : ''}`}>{k.hucre(row)}</td>
-              ))}
+    <div className="mt-4">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-left text-xs">
+            <tr>
+              {numarali && <th className="px-3 py-2 font-medium w-10">#</th>}
+              {kolonlar.map((k, i) => {
+                const aktif = sira.idx === i
+                const tiklanabilir = !!k.deger
+                return (
+                  <th key={k.baslik} onClick={() => basligaTikla(i)}
+                    className={`px-3 py-2 font-medium ${k.sagda ? 'text-right' : ''} ${tiklanabilir ? 'cursor-pointer select-none hover:text-gray-700' : ''}`}>
+                    {k.baslik}{aktif ? (sira.yon === 'asc' ? ' ▲' : ' ▼') : (tiklanabilir ? ' ↕' : '')}
+                  </th>
+                )
+              })}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {dilim.map((row, r) => (
+              <tr key={ofset + r} className="border-t hover:bg-gray-50">
+                {numarali && <td className="px-3 py-2 text-gray-400 w-10">{ofset + r + 1}</td>}
+                {kolonlar.map(k => (
+                  <td key={k.baslik} className={`px-3 py-2 ${k.sagda ? 'text-right whitespace-nowrap' : ''}`}>{k.hucre(row)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Sayfalama {...sayfalama} />
     </div>
   )
 }
