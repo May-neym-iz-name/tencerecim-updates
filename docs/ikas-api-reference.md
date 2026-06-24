@@ -261,14 +261,47 @@ updateOrderPackageStatus(input: UpdateOrderPackageStatusInput!): Order!
 **Refund order lines:**
 ```graphql
 refundOrderLine(input: OrderRefundInput!): Order!
+
+input OrderRefundInput {
+  orderId: String!
+  orderRefundLines: [OrderRefundLineInput!]!
+  paymentGatewayId: String!        # REQUIRED — which payment gateway to refund through
+  stockLocationId: String!         # REQUIRED
+  refundShipping: Boolean
+  sendNotificationToCustomer: Boolean
+  reason: String
+  refundGift: Boolean
+}
+input OrderRefundLineInput {        # NOTE: no `price` field
+  orderLineItemId: String!
+  quantity: Float!
+  restockItems: Boolean!
+}
+```
+
+**Cancel order lines:**
+```graphql
+cancelOrderLine(input: CancelOrderLineInput!): Order!
+
+input CancelOrderLineInput {
+  orderId: String!
+  orderLineItems: [CancelOrderLineItemInput!]!
+}
+input CancelOrderLineItemInput {    # NOTE: no `price` field
+  orderLineItemId: String!
+  quantity: Float!
+  restockItems: Boolean!
+}
 ```
 
 **Other order mutations available:**
 - `cancelFulfillment` — reverse a fulfillment
 - `updateOrderAddresses` — modify billing/shipping addresses
-- `cancelOrderLine` — cancel specific lines (referenced; confirm exact input in Playground)
 
-**Notes / gotchas:** the app already uses `cancelOrderLine` → fallback `refundOrderLine` (see commit history v1.2.34). `finalUnitPrice null` previously caused price mismatch (v1.2.33). Always read back the returned `Order` to confirm new `orderPackageStatus`.
+**Notes / gotchas (VERIFIED 2026-06 against type-definition pages):**
+- `OrderRefundInput.paymentGatewayId` is **required** — the refund must specify which payment gateway to refund through. Source it from the order's payment data (paymentMethods/transactions).
+- Neither `OrderRefundLineInput` nor `CancelOrderLineItemInput` has a `price` field — sending one is rejected by schema validation. (Our app historically sent `price`; confirm current behavior with a live test — see audit notes.)
+- Always read back the returned `Order` to confirm new `orderPackageStatus`.
 
 ---
 
