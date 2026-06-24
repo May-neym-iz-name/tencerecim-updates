@@ -303,16 +303,15 @@ export default function OnlineSiparisler() {
               <th className="px-4 py-2.5 font-medium">Teslimat</th>
               <th className="px-4 py-2.5 font-medium">Ödeme</th>
               <th className="px-4 py-2.5 font-medium">Durum</th>
-              <th className="px-4 py-2.5 font-medium">Kargo</th>
               <th className="px-4 py-2.5 font-medium text-right">Tutar</th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
             {yukleniyor ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
             ) : filtreliSiparisler.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                 {siparisler.length === 0 ? 'Henüz sipariş yok. "Siparişleri Çek" ile ikas\'tan getirin.' : 'Filtreyle eşleşen sipariş yok.'}
               </td></tr>
             ) : sayfaSiparisler.map(s => (
@@ -331,15 +330,10 @@ export default function OnlineSiparisler() {
                   {s.odeme_yontemi && <span className="block text-[10px] text-gray-400 mt-0.5">{s.odeme_yontemi}</span>}
                 </td>
                 <td className="px-4 py-2.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.durum === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {DURUM_ETIKET[s.durum] || s.durum}
-                  </span>
-                  {!s.stok_dusuldu && <span className="block text-[10px] text-gray-400 mt-0.5">stok düşülmedi</span>}
-                </td>
-                <td className="px-4 py-2.5">
                   {s.kargo_durumu
                     ? <span className={`text-xs px-2 py-0.5 rounded-full ${kargoRengi(s.kargo_durumu)}`}>{KARGO_ETIKET[s.kargo_durumu] || s.kargo_durumu}</span>
-                    : <span className="text-xs text-gray-300">—</span>}
+                    : <span className={`text-xs px-2 py-0.5 rounded-full ${s.durum === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{DURUM_ETIKET[s.durum] || s.durum}</span>}
+                  {!s.stok_dusuldu && <span className="block text-[10px] text-gray-400 mt-0.5">stok düşülmedi</span>}
                 </td>
                 <td className="px-4 py-2.5 text-right font-medium">{PARA(s.toplam, s.para_birimi)}</td>
                 <td className="px-4 py-2.5 text-right">
