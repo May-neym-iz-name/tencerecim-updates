@@ -1,6 +1,6 @@
 {
   "name": "tencerecim",
-  "version": "1.2.36",
+  "version": "1.2.37",
   "description": "Tencerecim Mağaza Yönetim Sistemi",
   "main": "electron/main.js",
   "author": "Tencerecim",
@@ -19,6 +19,7 @@
     "better-sqlite3": "^9.4.3",
     "electron-updater": "^6.1.8",
     "jsbarcode": "^3.12.3",
+    "recharts": "^3.9.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

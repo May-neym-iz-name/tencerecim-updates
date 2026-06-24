@@ -126,6 +126,16 @@ export const onlineSiparisApi = {
   kalemLokasyon: (kalemId, lokasyonId) => invoke('online-siparis:kalem-lokasyon', { kalemId, lokasyonId }),
 }
 
+export const raporApi = {
+  ozet: (params) => invoke('raporlar:ozet', params),
+  enCokUrunler: (params) => invoke('raporlar:en-cok-urunler', params),
+  urunKombinasyonlari: (params) => invoke('raporlar:urun-kombinasyonlari', params),
+  musteriSadakat: (params) => invoke('raporlar:musteri-sadakat', params),
+  zamanSerisi: (params) => invoke('raporlar:zaman-serisi', params),
+  kategoriKirilim: (params) => invoke('raporlar:kategori-kirilim', params),
+  markaKirilim: (params) => invoke('raporlar:marka-kirilim', params),
+}
+
 export const uygulamaApi = {
   surum: () => invoke('app:surum'),
 }

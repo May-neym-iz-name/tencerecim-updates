@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
@@ -18,12 +18,16 @@ import SatisGecmisi from './pages/SatisGecmisi.jsx'
 import OnlineSiparisler from './pages/OnlineSiparisler.jsx'
 import Kullanicilar from './pages/Kullanicilar.jsx'
 
+// Raporlar ağır recharts kütüphanesini içerir → tembel yükle (yalnızca sekme açılınca).
+const Raporlar = lazy(() => import('./pages/Raporlar.jsx'))
+
 const navItems = [
   { to: '/', label: '🛒 Satış', end: true, yetki: 'satis_yap', el: <Satis /> },
   { to: '/satis-gecmisi', label: '📋 Satış Geçmişi', yetki: 'satis_gecmisi_goruntule', el: <SatisGecmisi /> },
   { to: '/urunler', label: '📦 Ürünler', yetki: 'urun_goruntule', el: <Urunler /> },
   { to: '/stok', label: '📊 Stok', yetki: 'stok_goruntule', el: <Stok /> },
   { to: '/online-siparisler', label: '🛍️ Online Siparişler', yetki: 'online_siparis_goruntule', el: <OnlineSiparisler /> },
+  { to: '/raporlar', label: '📈 Raporlar', yetki: 'rapor_goruntule', el: <Raporlar /> },
   { to: '/musteriler', label: '👥 Müşteriler', yetki: 'musteri_goruntule', el: <Musteriler /> },
   { to: '/kargo', label: '📦 Kargo', yetki: 'kargo_yonet', el: <Kargo /> },
   { to: '/ayarlar', label: '⚙️ Ayarlar', yetki: 'ayarlar_duzenle', el: <Ayarlar /> },
@@ -87,12 +91,14 @@ function Uygulama() {
         </nav>
 
         <main className="flex-1 overflow-auto">
-          <Routes>
-            {erisilebilir.map(item => (
-              <Route key={item.to} path={item.to === '/' ? '/' : item.to} element={item.el} />
-            ))}
-            <Route path="*" element={<Navigate to={ilkSayfa} replace />} />
-          </Routes>
+          <Suspense fallback={<div className="p-8 text-center text-gray-400">Yükleniyor…</div>}>
+            <Routes>
+              {erisilebilir.map(item => (
+                <Route key={item.to} path={item.to === '/' ? '/' : item.to} element={item.el} />
+              ))}
+              <Route path="*" element={<Navigate to={ilkSayfa} replace />} />
+            </Routes>
+          </Suspense>
         </main>
       </div>
     </HashRouter>
