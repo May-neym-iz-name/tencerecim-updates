@@ -57,6 +57,7 @@ export default function OnlineSiparisler() {
   const [kargoBaslangic, setKargoBaslangic] = useState(null)
   const [islemMesgul, setIslemMesgul] = useState('')
   const [adresDuzenle, setAdresDuzenle] = useState(null) // { siparis, shipping }
+  const [iadeModal, setIadeModal] = useState(null) // { siparis, kalemler, secimler, refundShipping, bildir }
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [tarihBas, setTarihBas] = useState('')
   const [tarihBit, setTarihBit] = useState('')
@@ -148,13 +149,36 @@ export default function OnlineSiparisler() {
     finally { setIslemMesgul('') }
   }
 
-  async function ikasIade(s) {
-    if (!confirm(`#${s.siparis_no} siparişi iade edilecek (stok geri eklenir). Para iadesini ikas/banka tarafında ayrıca kontrol edin. Devam?`)) return
+  // İade ekranını açar: ikas_kalem_id + güncel fiyatlar için tazele, taze kalemleri yükle.
+  async function iadeAc(s) {
+    setIslemMesgul('iade-hazirla')
+    try {
+      await ikasApi.siparisTazele(s.id)
+      const taze = await onlineSiparisApi.getir(s.id)
+      const kalemler = (taze.kalemler || []).filter(k => k.ikas_kalem_id)
+      if (!kalemler.length) { toast.error('İade edilebilir kalem bulunamadı (ikas kalem ID yok).'); return }
+      const secimler = {}
+      kalemler.forEach(k => { secimler[k.ikas_kalem_id] = Number(k.miktar) || 0 }) // varsayılan: tam adet
+      setIadeModal({ siparis: taze, kalemler, secimler, refundShipping: false, bildir: true })
+    } catch (e) { toast.error('İade ekranı açılamadı: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  async function iadeOnayla() {
+    const secimler = Object.entries(iadeModal.secimler)
+      .map(([ikasKalemId, miktar]) => ({ ikasKalemId, miktar: Number(miktar) || 0 }))
+      .filter(x => x.miktar > 0)
+    if (!secimler.length) { toast.error('İade için en az bir ürün/adet seçin.'); return }
     setIslemMesgul('iade')
     try {
-      await ikasApi.siparisIade({ id: s.id, restock: true, refundShipping: false, bildir: true })
-      toast.success('İade işlendi.')
-      await detayAc(s.id); await yukle()
+      const r = await ikasApi.siparisIade({
+        id: iadeModal.siparis.id, restock: true,
+        refundShipping: iadeModal.refundShipping, bildir: iadeModal.bildir, secimler,
+      })
+      toast.success(r.tamIade ? 'Tam iade işlendi.' : `Kısmi iade işlendi (${r.iadeKalemSayisi} kalem).`)
+      setIadeModal(null)
+      if (secili) await detayAc(secili.id)
+      await yukle()
     } catch (e) { toast.error('İade başarısız: ' + e.message) }
     finally { setIslemMesgul('') }
   }
@@ -329,9 +353,9 @@ export default function OnlineSiparisler() {
                 </td>
                 <td className="px-4 py-2.5 text-gray-600 text-xs">{[s.teslimat_ilce, s.teslimat_il].filter(Boolean).join(' / ') || '—'}</td>
                 <td className="px-4 py-2.5">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(s.odeme_durumu)}`}>
-                    {ODEME_ETIKET[s.odeme_durumu] || s.odeme_durumu || '—'}
-                  </span>
+                  {s.durum === 'CANCELLED'
+                    ? <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">İptal</span>
+                    : <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(s.odeme_durumu)}`}>{ODEME_ETIKET[s.odeme_durumu] || s.odeme_durumu || '—'}</span>}
                   {s.odeme_yontemi && <span className="block text-[10px] text-gray-400 mt-0.5">{s.odeme_yontemi}</span>}
                 </td>
                 <td className="px-4 py-2.5">
@@ -364,9 +388,11 @@ export default function OnlineSiparisler() {
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${secili.durum === 'CANCELLED' ? 'bg-red-100 text-red-700' : secili.durum === 'REFUNDED' ? 'bg-purple-100 text-purple-700' : secili.durum === 'FULFILLED' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
                     {DURUM_ETIKET[secili.durum] || secili.durum}
                   </span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(secili.odeme_durumu)}`}>
-                    {ODEME_ETIKET[secili.odeme_durumu] || secili.odeme_durumu || '—'}
-                  </span>
+                  {secili.durum !== 'CANCELLED' && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${odemeRengi(secili.odeme_durumu)}`}>
+                      {ODEME_ETIKET[secili.odeme_durumu] || secili.odeme_durumu || '—'}
+                    </span>
+                  )}
                   {secili.kargo_durumu && (
                     <span className={`text-xs px-2 py-0.5 rounded-full ${kargoRengi(secili.kargo_durumu)}`}>
                       {KARGO_ETIKET[secili.kargo_durumu] || secili.kargo_durumu}
@@ -492,9 +518,9 @@ export default function OnlineSiparisler() {
                   className="bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-orange-700 disabled:opacity-50">
                   ✖ İptal Et
                 </button>
-                <button onClick={() => ikasIade(secili)} disabled={!!islemMesgul}
+                <button onClick={() => iadeAc(secili)} disabled={!!islemMesgul}
                   className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-red-700 disabled:opacity-50">
-                  ↩ İade Et
+                  {islemMesgul === 'iade-hazirla' ? '…' : '↩ İade Et'}
                 </button>
               </div>
             </div>
@@ -523,6 +549,68 @@ export default function OnlineSiparisler() {
           </div>
         </div>
       )}
+
+      {iadeModal && (() => {
+        const pb = iadeModal.siparis.para_birimi
+        const iadeToplam = iadeModal.kalemler.reduce(
+          (t, k) => t + (Number(k.birim_fiyat) || 0) * (Number(iadeModal.secimler[k.ikas_kalem_id]) || 0), 0)
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+            onClick={() => islemMesgul !== 'iade' && setIadeModal(null)}>
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 border-b">
+                <h3 className="text-lg font-bold text-gray-800">İade — Sipariş #{iadeModal.siparis.siparis_no}</h3>
+                <p className="text-xs text-gray-400 mt-0.5">İade edilecek ürünleri ve adetleri seçin. Hepsi tam adet seçiliyse tam iade yapılır; aksi halde kısmi iade.</p>
+              </div>
+              <div className="flex-1 overflow-auto px-5 py-3 space-y-2">
+                {iadeModal.kalemler.map(k => {
+                  const max = Number(k.miktar) || 0
+                  const sec = Number(iadeModal.secimler[k.ikas_kalem_id]) || 0
+                  return (
+                    <div key={k.ikas_kalem_id} className="flex items-center gap-3 border rounded-lg px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-800 truncate">{k.urun_adi}</div>
+                        <div className="text-xs text-gray-400">{PARA(k.birim_fiyat, pb)} × {max} adet</div>
+                      </div>
+                      <input type="number" min={0} max={max} value={sec}
+                        onChange={e => {
+                          const v = Math.max(0, Math.min(max, Number(e.target.value) || 0))
+                          setIadeModal(m => ({ ...m, secimler: { ...m.secimler, [k.ikas_kalem_id]: v } }))
+                        }}
+                        className="w-16 border rounded-lg px-2 py-1 text-sm text-center" />
+                      <div className="w-24 text-right text-sm font-medium">{PARA((Number(k.birim_fiyat) || 0) * sec, pb)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="px-5 py-3 border-t space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-500">Toplam iade tutarı</span>
+                  <span className="font-bold text-lg text-red-600">{PARA(iadeToplam, pb)}</span>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input type="checkbox" checked={iadeModal.refundShipping}
+                    onChange={e => setIadeModal(m => ({ ...m, refundShipping: e.target.checked }))} />
+                  Kargo ücretini de iade et
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  <input type="checkbox" checked={iadeModal.bildir}
+                    onChange={e => setIadeModal(m => ({ ...m, bildir: e.target.checked }))} />
+                  Müşteriye bildirim gönder
+                </label>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button onClick={() => setIadeModal(null)} disabled={islemMesgul === 'iade'}
+                    className="px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50 disabled:opacity-50">Vazgeç</button>
+                  <button onClick={iadeOnayla} disabled={islemMesgul === 'iade' || iadeToplam <= 0}
+                    className="bg-red-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-red-700 disabled:opacity-50">
+                    {islemMesgul === 'iade' ? 'İade ediliyor…' : '↩ İade Et'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <KargoFormu acik={kargoAcik} baslangic={kargoBaslangic}
         kapat={() => setKargoAcik(false)}

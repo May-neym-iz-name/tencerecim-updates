@@ -540,8 +540,10 @@ module.exports = {
     return { ok: true }
   },
 
-  // Siparişin tüm kalemlerini iade eder (isteğe bağlı stok iadesi + kargo iadesi).
-  'ikas:siparis-iade': async ({ id, restock = true, refundShipping = false, bildir = true }) => {
+  // Siparişi iade eder. secimler verilmezse TÜM kalemler (tam iade); verilirse yalnızca
+  // seçilen kalemler/adetler iade edilir (ürün bazlı kısmi iade).
+  // secimler: [{ ikasKalemId, miktar }]
+  'ikas:siparis-iade': async ({ id, restock = true, refundShipping = false, bildir = true, secimler = null }) => {
     const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
     const db = getDb()
     let sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
@@ -551,18 +553,29 @@ module.exports = {
     sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     const kalemler = db.prepare('SELECT * FROM online_siparis_kalemleri WHERE siparis_id = ? AND ikas_kalem_id IS NOT NULL').all(id)
     if (!kalemler.length) throw new Error('İade edilebilir kalem bulunamadı (ikas tarafında sipariş kalemi yok).')
-    // ikas iadeyi geri yüklerken hangi stok lokasyonuna ekleyeceğini bilmek ister
-    // (zorunlu alan). İlk kalemin (seçili) ikas lokasyonunu kullan.
-    const stockLocationId = kalemler.map(k => kalemIkasLokId(db, k)).find(Boolean) || null
+
+    // İade edilecek kalemler ve adetleri belirle. secimler yoksa tümü.
+    let iade
+    if (Array.isArray(secimler) && secimler.length) {
+      const harita = new Map(secimler.map(s => [String(s.ikasKalemId), Number(s.miktar) || 0]))
+      iade = kalemler
+        .map(k => ({ k, miktar: Math.min(Number(k.miktar) || 0, Math.max(0, harita.get(String(k.ikas_kalem_id)) || 0)) }))
+        .filter(x => x.miktar > 0)
+      if (!iade.length) throw new Error('İade için ürün/adet seçilmedi.')
+    } else {
+      iade = kalemler.map(k => ({ k, miktar: Number(k.miktar) || 1 }))
+    }
+    const tamIade = iade.length === kalemler.length && iade.every(x => x.miktar >= (Number(x.k.miktar) || 0))
+
+    // ikas iade için stok lokasyonu ister (zorunlu). İlk seçili kalemin ikas lokasyonu.
+    const stockLocationId = iade.map(x => kalemIkasLokId(db, x.k)).find(Boolean) || null
     if (restock && !stockLocationId) {
       throw new Error('İade için stok lokasyonu belirlenemedi. Kalemlerin çıkış mağazasını seçin ve mağazanın ikas eşleşmesini yapın.')
     }
-    // CANLI ŞEMA: OrderRefundLineInput.price ZORUNLU (Float!). OrderRefundInput'ta
-    // paymentGatewayId YOK. Tutar uyuşmazlığını önlemek için birim fiyatlar yukarıda
-    // tazeleSiparisKalemleri ile ikas'tan tazelendi.
-    const orderRefundLines = kalemler.map(k => ({
-      orderLineItemId: k.ikas_kalem_id, quantity: Number(k.miktar) || 1,
-      price: Number(k.birim_fiyat) || 0, restockItems: !!restock,
+    // CANLI ŞEMA: OrderRefundLineInput.price ZORUNLU (Float!). OrderRefundInput'ta paymentGatewayId YOK.
+    const orderRefundLines = iade.map(x => ({
+      orderLineItemId: x.k.ikas_kalem_id, quantity: x.miktar,
+      price: Number(x.k.birim_fiyat) || 0, restockItems: !!restock,
     }))
     await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
       input: {
@@ -574,12 +587,14 @@ module.exports = {
     const geriEkle = db.transaction(() => {
       if (restock && sip.stok_dusuldu) {
         const stokArt = db.prepare('UPDATE urun_stoklar SET miktar = miktar + ? WHERE urun_id = ? AND lokasyon_id = ?')
-        for (const k of kalemler) if (k.urun_id && k.lokasyon_id) stokArt.run(Number(k.miktar) || 0, k.urun_id, k.lokasyon_id)
+        for (const x of iade) if (x.k.urun_id && x.k.lokasyon_id) stokArt.run(x.miktar, x.k.urun_id, x.k.lokasyon_id)
       }
-      db.prepare("UPDATE online_siparisler SET durum = 'REFUNDED', stok_dusuldu = 0 WHERE id = ?").run(id)
+      // Tam iade → REFUNDED + stok kapat. Kısmi → PARTIALLY_REFUNDED (sonraki çekim teyit eder).
+      db.prepare('UPDATE online_siparisler SET durum = ?, stok_dusuldu = ? WHERE id = ?')
+        .run(tamIade ? 'REFUNDED' : 'PARTIALLY_REFUNDED', tamIade ? 0 : sip.stok_dusuldu, id)
     })
     geriEkle()
-    return { ok: true }
+    return { ok: true, tamIade, iadeKalemSayisi: iade.length }
   },
 
   // Düzenleme için siparişin güncel adreslerini ikas'tan çeker (geo ID'leriyle birlikte).
