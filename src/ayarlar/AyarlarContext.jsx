@@ -2,7 +2,11 @@ import { createContext, useContext, useState, useCallback } from 'react'
 
 // Uygulama ayarları YEREL olarak (localStorage) saklanır — Supabase gerektirmez.
 // Bunlar makineye/kullanıcıya özel tercihlerdir, merkezi politika değil.
-const VARSAYILAN = { musteri_zorunlu: false, iskonto_tipi: 'oran' }
+// odeme_oran_*: ödeme tipine göre yüzdesel fiyat farkı (pozitif = artırım, negatif = indirim).
+const VARSAYILAN = {
+  musteri_zorunlu: false, iskonto_tipi: 'oran',
+  odeme_oran_nakit: 0, odeme_oran_kart: 0, odeme_oran_havale: 0,
+}
 const ANAHTAR = 'tencerecim_ayarlar'
 
 function yukle() {

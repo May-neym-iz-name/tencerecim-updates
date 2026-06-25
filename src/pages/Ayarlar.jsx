@@ -179,7 +179,7 @@ export default function Ayarlar() {
   }
 
   return (
-    <div className="p-5 max-w-2xl">
+    <div className="p-5 max-w-5xl">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Ayarlar</h2>
 
       <div className="flex gap-1 border-b mb-5">
@@ -248,6 +248,30 @@ export default function Ayarlar() {
           </label>
 
           <p className="text-xs text-gray-400">Genel indirim tipini (% / ₺) satış ekranındaki indirim alanının yanından değiştirebilirsiniz.</p>
+
+          {/* Ödeme tipine göre yüzdesel fiyat farkı */}
+          <div className="border-t pt-4">
+            <p className="text-sm font-medium text-gray-700 mb-1">Ödeme Tipine Göre Fiyat Farkı (%)</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Satış ekranında seçilen ödeme tipine göre toplam fiyat otomatik ayarlanır.
+              <span className="text-orange-600 font-medium"> Pozitif değer = fiyat artışı</span>,
+              <span className="text-green-600 font-medium"> negatif değer = indirim</span>. Örn. Kart için <b>+5</b>, Nakit için <b>-2</b>.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              {[['odeme_oran_nakit', '💵 Nakit'], ['odeme_oran_kart', '💳 Kart'], ['odeme_oran_havale', '🏦 Havale']].map(([anahtar, etiket]) => (
+                <div key={anahtar}>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{etiket}</label>
+                  <div className="flex items-center">
+                    <input type="number" step="0.5" disabled={!yonetici}
+                      value={ayarlar[anahtar] ?? 0}
+                      onChange={e => ayarDegistir(anahtar, parseFloat(e.target.value) || 0)}
+                      className="w-full border rounded-l-lg px-2 py-1.5 text-sm disabled:bg-gray-100" />
+                    <span className="border border-l-0 rounded-r-lg px-2.5 py-1.5 text-sm bg-gray-50 text-gray-500">%</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 

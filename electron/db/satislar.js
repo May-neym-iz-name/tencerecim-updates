@@ -22,12 +22,16 @@ function fisNoUret(db) {
 }
 
 module.exports = {
-  'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0 }) => {
+  'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0, odeme_oran = 0 }) => {
     yetkiKontrol('satis_yap')
     lokasyonKontrol(lokasyon_id)
     const db = getDb()
     if (!lokasyon_id) throw new Error('Lokasyon seçilmedi')
     if (!Array.isArray(kalemler) || kalemler.length === 0) throw new Error('Satış en az bir kalem içermelidir')
+
+    // Ödeme tipine göre yüzdesel fiyat farkı (pozitif = artırım, negatif = indirim).
+    // Birim fiyatlara çarpan olarak uygulanır; -%100 altı güvenlik için 0'a kırpılır.
+    const odemeCarpani = Math.max(0, 1 + (Number(odeme_oran) || 0) / 100)
 
     // Ürün/stok doğrula ve hesaplama için kalem verisini hazırla
     const hesapKalemleri = []
@@ -38,7 +42,7 @@ module.exports = {
       const stok = db.prepare('SELECT * FROM urun_stoklar WHERE urun_id = ? AND lokasyon_id = ?').get(kalem.urun_id, lokasyon_id)
       if (!stok || stok.miktar < kalem.miktar) throw new Error(`Yetersiz stok: ${urun.ad}`)
 
-      const birimFiyat = kalem.birim_fiyat ?? urun.satis_fiyati
+      const birimFiyat = (kalem.birim_fiyat ?? urun.satis_fiyati) * odemeCarpani
       hesapKalemleri.push({ miktar: kalem.miktar, birim_fiyat: birimFiyat, kdv_orani: urun.kdv_orani, iskonto_orani: kalem.iskonto_orani })
       kalemMeta.push({ urun_id: kalem.urun_id, miktar: kalem.miktar, kdv_orani: urun.kdv_orani })
     }

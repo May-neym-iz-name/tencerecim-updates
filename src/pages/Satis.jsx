@@ -72,6 +72,8 @@ export default function Satis() {
   const { ayarlar, kaydet: ayarKaydet } = useAyarlar()
   const iskontoTipi = ayarlar.iskonto_tipi || 'oran'
   const musteriZorunlu = !!ayarlar.musteri_zorunlu
+  // Ödeme tipine göre yüzdesel fiyat farkı (Ayarlar > Satış'tan girilir).
+  const odemeOran = Number(ayarlar[`odeme_oran_${odemeTipi}`]) || 0
 
   // Başlangıç yüklemesi
   useEffect(() => {
@@ -191,6 +193,13 @@ export default function Satis() {
   const toplamIskonto = sepet.reduce((t, k) => t + k.satis_fiyati * k.miktar * efektifIskonto(k) / 100, 0)
   const genelToplam = sepet.reduce((t, k) => t + kalemToplam(k), 0)
 
+  // Ödeme tipi farkını (kart/havale/nakit %) iskontolu toplamların ÜZERİNE uygula.
+  const odemeCarpani = Math.max(0, 1 + odemeOran / 100)
+  const araToplamSon = toplamKDVsiz * odemeCarpani
+  const kdvToplamSon = toplamKDV * odemeCarpani
+  const genelToplamSon = genelToplam * odemeCarpani
+  const odemeFarki = genelToplamSon - genelToplam
+
   async function satisOlustur() {
     if (!secilenLokasyonId) { toast.error('Lokasyon seçin'); return }
     if (!lokasyonErisim(secilenLokasyonId)) { toast.error('Bu lokasyonda işlem yapma yetkiniz yok'); return }
@@ -203,6 +212,7 @@ export default function Satis() {
         musteri_id: secilenMusteri?.id || null,
         odeme_tipi: odemeTipi,
         genel_iskonto: genelIskontoYuzde,
+        odeme_oran: odemeOran,
         kalemler: sepet.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) })),
       })
       toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
@@ -450,19 +460,29 @@ export default function Satis() {
           )}
 
           <div className="bg-white rounded-lg border p-2.5 space-y-1">
-            <div className="flex justify-between text-xs text-gray-500"><span>Ara Toplam</span><span>₺{toplamKDVsiz.toFixed(2)}</span></div>
+            <div className="flex justify-between text-xs text-gray-500"><span>Ara Toplam</span><span>₺{araToplamSon.toFixed(2)}</span></div>
             {toplamIskonto > 0 && <div className="flex justify-between text-xs text-green-600"><span>İskonto</span><span>-₺{toplamIskonto.toFixed(2)}</span></div>}
-            <div className="flex justify-between text-xs text-gray-500"><span>KDV</span><span>₺{toplamKDV.toFixed(2)}</span></div>
-            <div className="flex justify-between text-base font-bold border-t pt-1.5 mt-1"><span>Toplam</span><span className="text-green-700">₺{genelToplam.toFixed(2)}</span></div>
+            {Math.abs(odemeFarki) >= 0.005 && (
+              <div className={`flex justify-between text-xs ${odemeFarki >= 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                <span>Ödeme farkı ({odemeOran > 0 ? '+' : ''}%{odemeOran})</span>
+                <span>{odemeFarki >= 0 ? '+' : '-'}₺{Math.abs(odemeFarki).toFixed(2)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-xs text-gray-500"><span>KDV</span><span>₺{kdvToplamSon.toFixed(2)}</span></div>
+            <div className="flex justify-between text-base font-bold border-t pt-1.5 mt-1"><span>Toplam</span><span className="text-green-700">₺{genelToplamSon.toFixed(2)}</span></div>
           </div>
 
           <div className="grid grid-cols-3 gap-1">
-            {[['nakit', '💵', 'Nakit'], ['kart', '💳', 'Kart'], ['havale', '🏦', 'Havale']].map(([val, icon, label]) => (
-              <button key={val} onClick={() => setOdemeTipi(val)}
-                className={`py-1.5 rounded-lg text-xs font-medium border transition-colors ${odemeTipi === val ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
-                {icon} {label}
-              </button>
-            ))}
+            {[['nakit', '💵', 'Nakit'], ['kart', '💳', 'Kart'], ['havale', '🏦', 'Havale']].map(([val, icon, label]) => {
+              const oran = Number(ayarlar[`odeme_oran_${val}`]) || 0
+              return (
+                <button key={val} onClick={() => setOdemeTipi(val)}
+                  className={`py-1.5 rounded-lg text-xs font-medium border transition-colors ${odemeTipi === val ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                  {icon} {label}
+                  {oran !== 0 && <span className={`block text-[10px] font-semibold ${odemeTipi === val ? 'text-gray-300' : oran > 0 ? 'text-orange-500' : 'text-green-600'}`}>{oran > 0 ? '+' : ''}%{oran}</span>}
+                </button>
+              )
+            })}
           </div>
 
           {musteriZorunlu && !secilenMusteri && sepet.length > 0 && (
@@ -470,7 +490,7 @@ export default function Satis() {
           )}
           <button onClick={satisOlustur} disabled={islemde || sepet.length === 0 || (musteriZorunlu && !secilenMusteri)}
             className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 text-sm transition-colors">
-            {islemde ? '⏳ İşleniyor...' : `✓ Satışı Tamamla  ₺${genelToplam.toFixed(2)}`}
+            {islemde ? '⏳ İşleniyor...' : `✓ Satışı Tamamla  ₺${genelToplamSon.toFixed(2)}`}
           </button>
 
           {sepet.length > 0 && (
