@@ -530,18 +530,41 @@ module.exports = {
       isSendNotification: !!bildir,
     }
     if (trackingLink) trackingInfoDetail.trackingLink = trackingLink
-    const input = {
-      orderId: sip.ikas_siparis_id,
-      markAsReadyForShipment: true,
-      sendNotificationToCustomer: !!bildir,
-      trackingInfoDetail,
-      ...(lines.length ? { lines } : {}),
+
+    // Sipariş ikas'ta ZATEN paketlenmişse (ör. ikas UPS entegrasyonu paket oluşturmuş)
+    // fulfillOrder "order_line_is_already_packaged" hatası verir. Bu durumda yeni paket
+    // açmak yerine MEVCUT pakete takip no'yu işleriz (updateOrderPackageStatus).
+    const pkData = await graphql(`query P($f: StringFilterInput){
+      listOrder(id:$f, pagination:{page:1,limit:1}){ data { orderPackages { id orderPackageFulfillStatus } } }
+    }`, { f: { eq: sip.ikas_siparis_id } })
+    const paketler = pkData?.listOrder?.data?.[0]?.orderPackages || []
+
+    if (paketler.length) {
+      // Zaten paketli → mevcut paketlere takip bilgisini ekle, durumu koru.
+      await graphql('mutation S($input: UpdateOrderPackageStatusInput!){ updateOrderPackageStatus(input:$input){ id orderPackageStatus } }', {
+        input: {
+          orderId: sip.ikas_siparis_id,
+          packages: paketler.map(p => ({
+            packageId: p.id,
+            status: p.orderPackageFulfillStatus || 'READY_FOR_SHIPMENT',
+            trackingInfo: trackingInfoDetail,
+          })),
+        },
+      })
+    } else {
+      // Henüz paket yok → kalemleri paketle + takip (fulfillOrder).
+      const input = {
+        orderId: sip.ikas_siparis_id,
+        markAsReadyForShipment: true,
+        sendNotificationToCustomer: !!bildir,
+        trackingInfoDetail,
+        ...(lines.length ? { lines } : {}),
+      }
+      await graphql('mutation F($input: FulFillOrderInput!){ fulfillOrder(input:$input){ id } }', { input })
     }
-    await graphql('mutation F($input: FulFillOrderInput!){ fulfillOrder(input:$input){ id } }', { input })
-    // Fulfillment order `status`'ünü DEĞİŞTİRMEZ (FULFILLED order status'ünde yoktur —
-    // OrderStatusEnum: CREATED/CANCELLED/REFUNDED... ). Hazırlık paket durumundadır:
-    // markAsReadyForShipment → kargo_durumu = READY_FOR_SHIPMENT (sonraki çekimde teyit).
-    db.prepare("UPDATE online_siparisler SET kargo_durumu = 'READY_FOR_SHIPMENT' WHERE id = ?").run(id)
+    // Hazırlık paket durumuna geçer; sonraki çekimde teyit edilir.
+    db.prepare("UPDATE online_siparisler SET kargo_takip_no = ?, kargo_firma = ?, kargo_durumu = CASE WHEN kargo_durumu IS NULL THEN 'READY_FOR_SHIPMENT' ELSE kargo_durumu END WHERE id = ?")
+      .run(String(takipNo), kargoFirma || 'UPS', id)
     return { ok: true }
   },
 
