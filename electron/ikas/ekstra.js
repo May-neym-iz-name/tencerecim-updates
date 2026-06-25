@@ -232,7 +232,7 @@ async function urunEsle({ adIleEsle = true } = {}) {
 async function siparisPaketleri(ikasSiparisId) {
   const data = await graphql(`query P($f: StringFilterInput){
     listOrder(id: $f, pagination:{page:1,limit:1}){ data {
-      id orderPackages { id orderPackageFulfillStatus trackingInfo { trackingNumber cargoCompany trackingLink } }
+      id orderPackages { id orderPackageFulfillStatus trackingInfo { trackingNumber cargoCompany trackingLink barcode } }
     } }
   }`, { f: { eq: ikasSiparisId } })
   return data?.listOrder?.data?.[0]?.orderPackages || []
@@ -279,10 +279,11 @@ module.exports = {
     if (!durum) throw new Error('Paket durumu gerekli')
     let paketIdler = orderPackageId ? [orderPackageId] : (await siparisPaketleri(sip.ikas_siparis_id)).map(p => p.id)
     if (!paketIdler.length) throw new Error('Siparişin ikas paketi yok (önce kargolayın).')
+    // CANLI ŞEMA: UpdateOrderPackageStatusInput { orderId, packages: [{ packageId, status }] }.
     const mutation = `mutation S($input: UpdateOrderPackageStatusInput!){ updateOrderPackageStatus(input:$input){ id orderPackageStatus } }`
-    for (const pid of paketIdler) {
-      await graphql(mutation, { input: { orderId: sip.ikas_siparis_id, orderPackageId: pid, status: durum } })
-    }
+    await graphql(mutation, {
+      input: { orderId: sip.ikas_siparis_id, packages: paketIdler.map(pid => ({ packageId: pid, status: durum })) },
+    })
     db.prepare('UPDATE online_siparisler SET kargo_durumu = ? WHERE id = ?').run(durum, id)
     return { ok: true, paket: paketIdler.length }
   },

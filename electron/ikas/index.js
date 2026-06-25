@@ -117,19 +117,23 @@ const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
       customer { firstName lastName email phone }
       shippingAddress { city { name } district { name } addressLine1 postalCode phone }
       billingAddress { company taxNumber taxOffice identityNumber }
-      orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink } }
+      orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink barcode } }
       orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } }
     }
   }
 }`
 
 // Siparişin paketlerinden ilk takip bilgisini çıkarır (kargo no/firma/link).
+// ikas UPS entegrasyonu takip no'yu trackingNumber yerine `barcode`'a yazar
+// (ör. UPS 1Z numarası) → trackingNumber boşsa barcode'a düşülür.
 function takipBilgisi(sip) {
   for (const p of (sip?.orderPackages || [])) {
     const t = p?.trackingInfo
-    if (t && (t.trackingNumber || t.trackingLink)) {
+    if (!t) continue
+    const no = (t.trackingNumber || t.barcode || '').trim() || null
+    if (no || t.trackingLink) {
       return {
-        no: (t.trackingNumber || '').trim() || null,
+        no,
         firma: (t.cargoCompany || '').trim() || null,
         link: (t.trackingLink || '').trim() || null,
       }
@@ -336,7 +340,7 @@ async function pullSiparisler() {
 const TEK_SIPARIS_SORGU = `query Tek($f: StringFilterInput) {
   listOrder(id: $f, pagination: { page: 1, limit: 1 }) {
     data { id status orderPaymentStatus orderPackageStatus
-      orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink } }
+      orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink barcode } }
       orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } } }
   }
 }`
