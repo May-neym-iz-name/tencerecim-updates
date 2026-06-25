@@ -73,10 +73,12 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
-// ikas online siparişlerini periyodik çek (açılışta + her 5 dakikada bir).
-// Otomatik senkron kapalıysa pullSiparisler kendi içinde online lokasyon yoksa atlar;
-// otomatik_senk bayrağını burada da kontrol ederiz.
-const IKAS_SENK_ARALIGI_MS = 5 * 60 * 1000
+// ikas online siparişlerini periyodik çek (açılışta + her 90 saniyede bir).
+// Webhook yerine sık polling: masaüstü uygulama public endpoint alamadığı için
+// gecikmeyi ~1 dakikaya indirir. pullSiparisler updatedAt imleci ile artımlıdır
+// (yalnızca değişen siparişleri çeker), bu yüzden sık çağrı ucuzdur.
+// Otomatik senkron kapalıysa atlanır.
+const IKAS_SENK_ARALIGI_MS = 90 * 1000
 function ikasSiparisSenkBaslat() {
   const { _pullSiparisler } = require('./ikas')
   const { _ayarlariGetir } = require('./db/ikas-ayarlar')
@@ -131,6 +133,7 @@ const handlerModules = [
   require('./db/online-siparisler'),
   require('./db/raporlar'),
   require('./ikas'),
+  require('./ikas/ekstra'),
   require('./fis-yazdir'),
   require('./barkod-yazdir'),
   require('./auth'),

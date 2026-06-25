@@ -118,6 +118,13 @@ export const ikasApi = {
   siparisAdresGetir: (id) => invoke('ikas:siparis-adres-getir', { id }),
   siparisAdres: (veri) => invoke('ikas:siparis-adres', veri),
   siparisTazele: (id) => invoke('ikas:siparis-tazele', { id }),
+  // Ek yetenekler (ekstra.js): fiyat senkronu, müşteri çekme, ürün eşleştirme, paket durumu.
+  fiyatGonder: () => invoke('ikas:fiyat-gonder'),
+  musteriCek: () => invoke('ikas:musteri-cek'),
+  urunEsle: () => invoke('ikas:urun-esle'),
+  siparisPaketler: (id) => invoke('ikas:siparis-paketler', { id }),
+  siparisPaketDurum: (veri) => invoke('ikas:siparis-paket-durum', veri),
+  siparisKargoIptal: (veri) => invoke('ikas:siparis-kargo-iptal', veri),
 }
 
 export const onlineSiparisApi = {

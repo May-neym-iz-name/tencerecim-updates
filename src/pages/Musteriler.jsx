@@ -83,7 +83,7 @@ export default function Musteriler() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              {['Ad Soyad', 'Telefon', 'Vergi / TC', 'İl/İlçe', 'İskonto', ''].map(h => (
+              {['Ad Soyad', 'Telefon', 'Vergi / TC', 'İl/İlçe', 'İskonto', 'ikas (Web)', ''].map(h => (
                 <th key={h} className="text-left px-4 py-3 font-medium text-gray-600">{h}</th>
               ))}
             </tr>
@@ -99,6 +99,13 @@ export default function Musteriler() {
                 <td className="px-4 py-2.5 text-gray-500 text-xs font-mono">{m.vergi_no || m.tc_kimlik || '—'}</td>
                 <td className="px-4 py-2.5 text-gray-500">{m.il ? `${m.il}${m.ilce ? '/' + m.ilce : ''}` : '—'}</td>
                 <td className="px-4 py-2.5 text-xs">{m.iskonto_orani > 0 ? <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded">%{m.iskonto_orani}</span> : '—'}</td>
+                <td className="px-4 py-2.5 text-xs">
+                  {m.ikas_siparis_sayisi > 0
+                    ? <span className="text-gray-600" title={m.ikas_son_siparis ? `Son sipariş: ${new Date(m.ikas_son_siparis).toLocaleDateString('tr-TR')}` : ''}>
+                        {m.ikas_siparis_sayisi} sipariş · ₺{Number(m.ikas_toplam_harcama || 0).toLocaleString('tr-TR')}
+                      </span>
+                    : '—'}
+                </td>
                 <td className="px-4 py-2.5">
                   {duzenleYetkisi && (
                     <button onClick={() => handleDuzenle(m)} className="text-blue-600 hover:underline text-xs mr-3">Düzenle</button>
@@ -110,7 +117,7 @@ export default function Musteriler() {
               </tr>
             ))}
             {musteriler.length === 0 && (
-              <tr><td colSpan={6} className="text-center py-10 text-gray-400">Müşteri bulunamadı</td></tr>
+              <tr><td colSpan={7} className="text-center py-10 text-gray-400">Müşteri bulunamadı</td></tr>
             )}
           </tbody>
         </table>

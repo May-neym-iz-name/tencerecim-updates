@@ -293,6 +293,16 @@ function migrate() {
   try { db.exec("ALTER TABLE kargolar ADD COLUMN online_siparis_id INTEGER REFERENCES online_siparisler(id)") } catch {}
   // online_siparis_kalemleri — ikas sipariş kalemi id'si (iptal/iade için).
   try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN ikas_kalem_id TEXT") } catch {}
+  // online_siparisler — ikas'tan okunan kargo takip bilgisi (orderPackages.trackingInfo).
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_no TEXT") } catch {}
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_firma TEXT") } catch {}
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_link TEXT") } catch {}
+  // musteriler — ikas müşteri istatistikleri (listCustomer: orderCount/totalOrderPrice...).
+  try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_musteri_id TEXT") } catch {}
+  try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_siparis_sayisi INTEGER") } catch {}
+  try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_toplam_harcama REAL") } catch {}
+  try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_ilk_siparis TEXT") } catch {}
+  try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_son_siparis TEXT") } catch {}
 }
 
 function seedLokasyonlar() {

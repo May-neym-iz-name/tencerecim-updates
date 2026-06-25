@@ -117,10 +117,26 @@ const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
       customer { firstName lastName email phone }
       shippingAddress { city { name } district { name } addressLine1 postalCode phone }
       billingAddress { company taxNumber taxOffice identityNumber }
+      orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink } }
       orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } }
     }
   }
 }`
+
+// Siparişin paketlerinden ilk takip bilgisini çıkarır (kargo no/firma/link).
+function takipBilgisi(sip) {
+  for (const p of (sip?.orderPackages || [])) {
+    const t = p?.trackingInfo
+    if (t && (t.trackingNumber || t.trackingLink)) {
+      return {
+        no: (t.trackingNumber || '').trim() || null,
+        firma: (t.cargoCompany || '').trim() || null,
+        link: (t.trackingLink || '').trim() || null,
+      }
+    }
+  }
+  return { no: null, firma: null, link: null }
+}
 
 // Müşteriyi telefon ya da e-posta ile eşleştirir; yoksa ekler. Mevcut müşterinin
 // boş alanlarını siparişten gelen bilgiyle tamamlar (var olanları ezmez).
@@ -185,10 +201,12 @@ async function pullSiparisler() {
   const sipEkle = db.prepare(`INSERT OR IGNORE INTO online_siparisler
     (ikas_siparis_id, siparis_no, siparis_tarihi, durum, odeme_durumu, kargo_durumu, odeme_yontemi, toplam, para_birimi,
      musteri_id, musteri_ad, musteri_email, musteri_telefon, teslimat_il, teslimat_ilce, teslimat_adres,
-     fatura_unvan, fatura_vergi_no, fatura_vergi_dairesi, fatura_tc, stok_dusuldu)
+     fatura_unvan, fatura_vergi_no, fatura_vergi_dairesi, fatura_tc, stok_dusuldu,
+     kargo_takip_no, kargo_firma, kargo_takip_link)
     VALUES (@ikas_siparis_id, @siparis_no, @siparis_tarihi, @durum, @odeme_durumu, @kargo_durumu, @odeme_yontemi, @toplam, @para_birimi,
      @musteri_id, @musteri_ad, @musteri_email, @musteri_telefon, @teslimat_il, @teslimat_ilce, @teslimat_adres,
-     @fatura_unvan, @fatura_vergi_no, @fatura_vergi_dairesi, @fatura_tc, @stok_dusuldu)`)
+     @fatura_unvan, @fatura_vergi_no, @fatura_vergi_dairesi, @fatura_tc, @stok_dusuldu,
+     @kargo_takip_no, @kargo_firma, @kargo_takip_link)`)
   const kalemEkle = db.prepare(`INSERT INTO online_siparis_kalemleri
     (siparis_id, urun_id, ikas_kalem_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -197,6 +215,7 @@ async function pullSiparisler() {
   // Var olan siparişin durum tazeleme + iptal/iade'de stok geri ekleme.
   const mevcutGetir = db.prepare('SELECT id, durum, odeme_durumu, kargo_durumu, stok_dusuldu FROM online_siparisler WHERE ikas_siparis_id = ?')
   const durumGuncelle = db.prepare('UPDATE online_siparisler SET durum = ?, odeme_durumu = ?, kargo_durumu = ? WHERE id = ?')
+  const takipGuncelle = db.prepare('UPDATE online_siparisler SET kargo_takip_no = ?, kargo_firma = ?, kargo_takip_link = ? WHERE id = ?')
   const stokGeri = db.prepare('UPDATE urun_stoklar SET miktar = miktar + ? WHERE urun_id = ? AND lokasyon_id = ?')
   const stokSifirla = db.prepare('UPDATE online_siparisler SET stok_dusuldu = 0 WHERE id = ?')
   const kalemlerGetir = db.prepare('SELECT urun_id, lokasyon_id, miktar FROM online_siparis_kalemleri WHERE siparis_id = ?')
@@ -230,6 +249,9 @@ async function pullSiparisler() {
             durumGuncelle.run(yeniDurum, yeniOdeme, yeniKargo, mevcut.id)
             guncellenen++
           }
+          // Kargo takip bilgisi ikas'ta girilmiş/değişmişse tazele.
+          const takip = takipBilgisi(sip)
+          if (takip.no || takip.link) takipGuncelle.run(takip.no, takip.firma, takip.link, mevcut.id)
           // İkas'ta iptal/iade edildiyse ve stok düşülmüşse yerel stoğu geri ekle.
           if (IADE_DURUMLARI.has(yeniDurum) && mevcut.stok_dusuldu) {
             for (const k of kalemlerGetir.all(mevcut.id)) {
@@ -248,6 +270,7 @@ async function pullSiparisler() {
         // Ödeme yöntemi: birden çok olabilir; gateway adlarını birleştir ("Havale / EFT").
         const odemeYontemi = (sip.paymentMethods || [])
           .map(p => p.paymentGatewayName || p.type).filter(Boolean).join(', ') || null
+        const takip = takipBilgisi(sip)
 
         const r = sipEkle.run({
           ikas_siparis_id: sip.id,
@@ -271,6 +294,9 @@ async function pullSiparisler() {
           fatura_vergi_dairesi: billing.taxOffice || null,
           fatura_tc: billing.identityNumber || null,
           stok_dusuldu: stokDusecek ? 1 : 0,
+          kargo_takip_no: takip.no,
+          kargo_firma: takip.firma,
+          kargo_takip_link: takip.link,
         })
         if (r.changes === 0) continue
         const siparisId = r.lastInsertRowid
@@ -309,7 +335,9 @@ async function pullSiparisler() {
 // Manuel atanmış lokasyon_id korunur (varyant bazında).
 const TEK_SIPARIS_SORGU = `query Tek($f: StringFilterInput) {
   listOrder(id: $f, pagination: { page: 1, limit: 1 }) {
-    data { id status orderPaymentStatus orderPackageStatus orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } } }
+    data { id status orderPaymentStatus orderPackageStatus
+      orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink } }
+      orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } } }
   }
 }`
 
@@ -353,6 +381,13 @@ async function tazeleSiparisKalemleri(db, siparisId) {
     }
     db.prepare('UPDATE online_siparisler SET durum = ?, odeme_durumu = ?, kargo_durumu = ?, stok_dusuldu = CASE WHEN ? THEN 0 ELSE stok_dusuldu END WHERE id = ?')
       .run(yeniDurum, yeniOdeme, yeniKargo, iadeOldu ? 1 : 0, siparisId)
+
+    // ikas kargo takip bilgisini geri doldur (eski siparişlerde boştu).
+    const takip = takipBilgisi(o)
+    if (takip.no || takip.link) {
+      db.prepare('UPDATE online_siparisler SET kargo_takip_no = ?, kargo_firma = ?, kargo_takip_link = ? WHERE id = ?')
+        .run(takip.no, takip.firma, takip.link, siparisId)
+    }
 
     db.prepare('DELETE FROM online_siparis_kalemleri WHERE siparis_id = ?').run(siparisId)
     for (const kalem of (o.orderLineItems || [])) {

@@ -134,6 +134,33 @@ export default function Ayarlar() {
     finally { setIkasMesgul('') }
   }
 
+  async function ikasFiyatGonder() {
+    if (!confirm('Tüm eşleşmiş ürünlerin yerel fiyatı (satış/alış) ikas\'a yazılacak. Devam edilsin mi?')) return
+    setIkasMesgul('fiyat')
+    try { const r = await ikasApi.fiyatGonder(); toast.success(`${r.gonderilen} ürün fiyatı ikas\'a gönderildi`) }
+    catch (e) { toast.error('Fiyat gönderim hatası: ' + e.message) }
+    finally { setIkasMesgul('') }
+  }
+
+  async function ikasUrunEsle() {
+    setIkasMesgul('urunEsle')
+    try {
+      const r = await ikasApi.urunEsle()
+      toast.success(`${r.eslesen} ürün eşleşti (${r.adEslesen || 0} tanesi ürün adıyla; ikas'ta ${r.ikasToplam} varyant tarandı).`)
+      await ikasDurumYenile()
+    } catch (e) { toast.error('Ürün eşleştirme hatası: ' + e.message) }
+    finally { setIkasMesgul('') }
+  }
+
+  async function ikasMusteriCek() {
+    setIkasMesgul('musteri')
+    try {
+      const r = await ikasApi.musteriCek()
+      toast.success(`${r.toplam} müşteri tarandı: ${r.eslesen} güncellendi, ${r.eklenen} eklendi.`)
+    } catch (e) { toast.error('Müşteri çekme hatası: ' + e.message) }
+    finally { setIkasMesgul('') }
+  }
+
   async function lokasyonEkle(e) {
     e.preventDefault()
     try {
@@ -379,6 +406,18 @@ export default function Ayarlar() {
             <button onClick={ikasSiparisCek} disabled={!!ikasMesgul}
               className="bg-amber-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50">
               {ikasMesgul === 'cek' ? 'Çekiliyor…' : 'Siparişleri Şimdi Çek'}
+            </button>
+            <button onClick={ikasFiyatGonder} disabled={!!ikasMesgul}
+              className="bg-teal-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50">
+              {ikasMesgul === 'fiyat' ? 'Gönderiliyor…' : 'Tüm Fiyatı ikas\'a Gönder'}
+            </button>
+            <button onClick={ikasUrunEsle} disabled={!!ikasMesgul}
+              className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
+              {ikasMesgul === 'urunEsle' ? 'Eşleşiyor…' : 'Ürünleri SKU/Barkod ile Eşle'}
+            </button>
+            <button onClick={ikasMusteriCek} disabled={!!ikasMesgul}
+              className="bg-purple-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50">
+              {ikasMesgul === 'musteri' ? 'Çekiliyor…' : 'Müşterileri Çek'}
             </button>
           </div>
 

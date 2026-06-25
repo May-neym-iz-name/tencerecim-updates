@@ -97,10 +97,13 @@ module.exports = {
     const db = getDb()
     const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
     // Satış fiyatı değişiyorsa ayrıca fiyat_degistir yetkisi gerekir.
-    const mevcut = db.prepare('SELECT satis_fiyati FROM urunler WHERE id = ?').get(id)
+    const mevcut = db.prepare('SELECT satis_fiyati, alis_fiyati FROM urunler WHERE id = ?').get(id)
     if (mevcut && Number(mevcut.satis_fiyati) !== Number(satis_fiyati)) {
       yetkiKontrol('fiyat_degistir')
     }
+    // Fiyat (satış/alış) değişti mi → ikas'a arka planda gönder.
+    const fiyatDegisti = mevcut &&
+      (Number(mevcut.satis_fiyati) !== Number(satis_fiyati) || Number(mevcut.alis_fiyati) !== Number(alis_fiyati))
     try {
       db.prepare(`
         UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
@@ -112,6 +115,9 @@ module.exports = {
       if (String(e.message).includes('UNIQUE') && e.message.includes('barkod')) throw new Error('Bu barkod başka bir üründe kullanılıyor')
       if (String(e.message).includes('UNIQUE') && e.message.includes('sku')) throw new Error('Bu SKU başka bir üründe kullanılıyor')
       throw e
+    }
+    if (fiyatDegisti) {
+      try { require('../ikas/ekstra')._pushFiyatArkaPlan([id]) } catch {}
     }
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(id)
   },

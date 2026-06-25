@@ -149,6 +149,30 @@ export default function OnlineSiparisler() {
     finally { setIslemMesgul('') }
   }
 
+  // Siparişin paketlerini ikas'ta "teslim edildi" işaretler.
+  async function ikasTeslim(s) {
+    if (!confirm(`#${s.siparis_no} siparişi ikas'ta "Teslim Edildi" olarak işaretlensin mi?`)) return
+    setIslemMesgul('teslim')
+    try {
+      await ikasApi.siparisPaketDurum({ id: s.id, durum: 'DELIVERED' })
+      toast.success('Sipariş teslim edildi olarak işaretlendi.')
+      await detayAc(s.id); await yukle()
+    } catch (e) { toast.error('Teslim işaretleme başarısız: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  // Kargolamayı (fulfillment) geri alır — yanlış kargolama düzeltme.
+  async function ikasKargoIptal(s) {
+    if (!confirm(`#${s.siparis_no} siparişinin kargolama işlemi ikas'ta geri alınacak. Devam edilsin mi?`)) return
+    setIslemMesgul('kargo-iptal')
+    try {
+      await ikasApi.siparisKargoIptal({ id: s.id })
+      toast.success('Kargolama geri alındı.')
+      await detayAc(s.id); await yukle()
+    } catch (e) { toast.error('Kargolama geri alınamadı: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
   // İade ekranını açar: ikas_kalem_id + güncel fiyatlar için tazele, taze kalemleri yükle.
   async function iadeAc(s) {
     setIslemMesgul('iade-hazirla')
@@ -478,6 +502,18 @@ export default function OnlineSiparisler() {
                 </table>
               </div>
 
+              {/* ikas kargo takip (ikas tarafında girilmiş takip no) */}
+              {secili.kargo_takip_no && (
+                <div className="bg-white rounded-xl border p-3 text-sm">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold mb-1">ikas Kargo Takip</p>
+                  <span className="text-gray-700 font-medium">{secili.kargo_firma ? `${secili.kargo_firma}: ` : ''}{secili.kargo_takip_no}</span>
+                  {secili.kargo_takip_link && (
+                    <a href={secili.kargo_takip_link} target="_blank" rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline text-xs ml-2">takip et ↗</a>
+                  )}
+                </div>
+              )}
+
               {/* Kargo */}
               <div className="bg-white rounded-xl border p-3 flex items-center justify-between">
                 <div className="text-sm">
@@ -508,6 +544,16 @@ export default function OnlineSiparisler() {
                 <button onClick={() => ikasKargola(secili)} disabled={!!islemMesgul}
                   className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-emerald-700 disabled:opacity-50">
                   🚚 Kargolandı Bildir
+                </button>
+                <button onClick={() => ikasTeslim(secili)} disabled={!!islemMesgul}
+                  className="bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-green-800 disabled:opacity-50"
+                  title="Siparişin ikas paketlerini 'Teslim Edildi' olarak işaretler">
+                  {islemMesgul === 'teslim' ? '…' : '✅ Teslim Edildi'}
+                </button>
+                <button onClick={() => ikasKargoIptal(secili)} disabled={!!islemMesgul}
+                  className="bg-yellow-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-yellow-700 disabled:opacity-50"
+                  title="Yanlış kargolamayı ikas'ta geri alır (fulfillment iptali)">
+                  {islemMesgul === 'kargo-iptal' ? '…' : '↺ Kargoyu Geri Al'}
                 </button>
                 <button onClick={() => adresAc(secili)} disabled={!!islemMesgul}
                   className="bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-gray-800 disabled:opacity-50">
