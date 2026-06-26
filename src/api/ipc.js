@@ -157,6 +157,25 @@ export const yedekApi = {
   geriYukle: () => invoke('yedek:geri-yukle'),
 }
 
+export const kasaApi = {
+  acik: (lokasyon_id) => invoke('kasa:acik', { lokasyon_id }),
+  ac: (veri) => invoke('kasa:ac', veri),
+  kapat: (veri) => invoke('kasa:kapat', veri),
+  gecmis: (params) => invoke('kasa:gecmis', params),
+}
+
+export const giderApi = {
+  ekle: (veri) => invoke('gider:ekle', veri),
+  listele: (params) => invoke('gider:listele', params),
+  sil: (id) => invoke('gider:sil', id),
+}
+
+export const malKabulApi = {
+  olustur: (veri) => invoke('mal-kabul:olustur', veri),
+  listele: (params) => invoke('mal-kabul:listele', params),
+  getir: (id) => invoke('mal-kabul:getir', id),
+}
+
 export const authApi = {
   beniHatirlaKaydet: (email, sifre) => invoke('auth:beni-hatirla-kaydet', { email, sifre }),
   beniHatirlaGetir: () => invoke('auth:beni-hatirla-getir'),

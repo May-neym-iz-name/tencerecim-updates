@@ -17,6 +17,9 @@ import Kargo from './pages/Kargo.jsx'
 import Ayarlar from './pages/Ayarlar.jsx'
 import SatisGecmisi from './pages/SatisGecmisi.jsx'
 import OnlineSiparisler from './pages/OnlineSiparisler.jsx'
+import Kasa from './pages/Kasa.jsx'
+import Giderler from './pages/Giderler.jsx'
+import MalKabul from './pages/MalKabul.jsx'
 import Kullanicilar from './pages/Kullanicilar.jsx'
 
 // Raporlar ağır recharts kütüphanesini içerir → tembel yükle (yalnızca sekme açılınca).
@@ -28,7 +31,10 @@ const navItems = [
   { to: '/satis-gecmisi', label: '📋 Satış Geçmişi', yetki: 'satis_gecmisi_goruntule', el: <SatisGecmisi /> },
   { to: '/urunler', label: '📦 Ürünler', yetki: 'urun_goruntule', el: <Urunler /> },
   { to: '/stok', label: '📊 Stok', yetki: 'stok_goruntule', el: <Stok /> },
+  { to: '/mal-kabul', label: '📥 Mal Kabul', yetki: 'mal_kabul_yonet', el: <MalKabul /> },
   { to: '/online-siparisler', label: '🛍️ Online Siparişler', yetki: 'online_siparis_goruntule', el: <OnlineSiparisler /> },
+  { to: '/kasa', label: '💰 Kasa', yetki: 'kasa_kullan', el: <Kasa /> },
+  { to: '/giderler', label: '🧾 Giderler', yetki: 'gider_yonet', el: <Giderler /> },
   { to: '/raporlar', label: '📈 Raporlar', yetki: 'rapor_goruntule', el: <Raporlar /> },
   { to: '/musteriler', label: '👥 Müşteriler', yetki: 'musteri_goruntule', el: <Musteriler /> },
   { to: '/kargo', label: '📦 Kargo', yetki: 'kargo_yonet', el: <Kargo /> },

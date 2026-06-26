@@ -269,6 +269,55 @@ function createTables() {
       son_durum_tarihi TEXT,
       olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
     );
+
+    -- Kasa oturumları (vardiya): gün açılış-kapanış + nakit mutabakatı.
+    CREATE TABLE IF NOT EXISTS kasa_oturumlar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lokasyon_id INTEGER NOT NULL REFERENCES lokasyonlar(id),
+      acan TEXT,
+      acilis_tarihi TEXT DEFAULT (datetime('now','localtime')),
+      acilis_nakit REAL DEFAULT 0,
+      kapatan TEXT,
+      kapanis_tarihi TEXT,
+      sayilan_nakit REAL,
+      beklenen_nakit REAL,
+      fark REAL,
+      durum TEXT DEFAULT 'acik',
+      notlar TEXT
+    );
+
+    -- Giderler (kira, fatura, personel, vb.).
+    CREATE TABLE IF NOT EXISTS giderler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lokasyon_id INTEGER REFERENCES lokasyonlar(id),
+      tarih TEXT DEFAULT (date('now','localtime')),
+      kategori TEXT,
+      aciklama TEXT,
+      tutar REAL NOT NULL,
+      odeme_tipi TEXT DEFAULT 'nakit',
+      kullanici TEXT,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
+
+    -- Mal kabul (tedarikçiden gelen ürün girişi).
+    CREATE TABLE IF NOT EXISTS mal_kabuller (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lokasyon_id INTEGER NOT NULL REFERENCES lokasyonlar(id),
+      tedarikci_id INTEGER REFERENCES tedarikciler(id),
+      fatura_no TEXT,
+      tarih TEXT DEFAULT (datetime('now','localtime')),
+      toplam_maliyet REAL DEFAULT 0,
+      kullanici TEXT,
+      notlar TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS mal_kabul_kalemleri (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mal_kabul_id INTEGER NOT NULL REFERENCES mal_kabuller(id),
+      urun_id INTEGER NOT NULL REFERENCES urunler(id),
+      miktar INTEGER NOT NULL,
+      birim_maliyet REAL DEFAULT 0
+    );
   `)
 }
 
