@@ -267,6 +267,18 @@ export default function Ayarlar() {
             </span>
           </label>
 
+          {/* Nakit satış için kasa zorunluluğu */}
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" disabled={!yonetici}
+              checked={!!ayarlar.kasa_zorunlu_nakit}
+              onChange={e => ayarDegistir('kasa_zorunlu_nakit', e.target.checked)}
+              className="w-4 h-4 mt-0.5" />
+            <span>
+              <span className="text-sm font-medium text-gray-800">Kasa açılmadan nakit satış yapılamasın</span>
+              <span className="block text-xs text-gray-500">Açıkken, nakit satış için seçili mağazada açık bir kasa (vardiya) bulunması zorunludur. Kart/Havale bundan etkilenmez.</span>
+            </span>
+          </label>
+
           <p className="text-xs text-gray-400">Genel indirim tipini (% / ₺) satış ekranındaki indirim alanının yanından değiştirebilirsiniz.</p>
 
           {/* Ödeme tipine göre yüzdesel fiyat farkı */}

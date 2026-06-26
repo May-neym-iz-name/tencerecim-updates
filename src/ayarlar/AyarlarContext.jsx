@@ -6,6 +6,8 @@ import { createContext, useContext, useState, useCallback } from 'react'
 const VARSAYILAN = {
   musteri_zorunlu: false, iskonto_tipi: 'oran',
   odeme_oran_nakit: 0, odeme_oran_kart: 0, odeme_oran_havale: 0,
+  // Açıkken: kasa (vardiya) açılmadan nakit satış yapılamaz (kart/havale serbest).
+  kasa_zorunlu_nakit: false,
 }
 const ANAHTAR = 'tencerecim_ayarlar'
 

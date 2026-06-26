@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi, fisApi } from '../api/ipc'
+import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi, fisApi, kasaApi } from '../api/ipc'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
@@ -74,6 +74,19 @@ export default function Satis() {
   const musteriZorunlu = !!ayarlar.musteri_zorunlu
   // Ödeme tipine göre yüzdesel fiyat farkı (Ayarlar > Satış'tan girilir).
   const odemeOran = Number(ayarlar[`odeme_oran_${odemeTipi}`]) || 0
+
+  // Kasa zorunluluğu: nakit satış için seçili mağazada açık kasa (vardiya) olmalı.
+  const kasaZorunlu = !!ayarlar.kasa_zorunlu_nakit
+  const [kasaAcik, setKasaAcik] = useState(null) // null=bilinmiyor, true/false
+  const kasaKontrol = useCallback(async (lid) => {
+    if (!lid) { setKasaAcik(null); return }
+    try { setKasaAcik(!!(await kasaApi.acik(lid))) } catch { setKasaAcik(null) }
+  }, [])
+  // Mağaza ya da ödeme tipi değişince kasa durumunu tazele (nakit + zorunlu iken).
+  useEffect(() => {
+    if (kasaZorunlu && secilenLokasyonId) kasaKontrol(secilenLokasyonId)
+  }, [kasaZorunlu, secilenLokasyonId, odemeTipi, kasaKontrol])
+  const kasaNakitEngel = kasaZorunlu && odemeTipi === 'nakit' && kasaAcik === false
 
   // Başlangıç yüklemesi
   useEffect(() => {
@@ -205,6 +218,7 @@ export default function Satis() {
     if (!lokasyonErisim(secilenLokasyonId)) { toast.error('Bu lokasyonda işlem yapma yetkiniz yok'); return }
     if (sepet.length === 0) { toast.error('Sepet boş'); return }
     if (musteriZorunlu && !secilenMusteri) { toast.error('Bu satış için müşteri seçilmesi zorunludur'); return }
+    if (kasaNakitEngel) { toast.error('Nakit satış için önce Kasa açın (Satış & Kasa > Kasa).'); return }
     setIslemde(true)
     try {
       const satis = await satisApi.olustur({
@@ -488,9 +502,12 @@ export default function Satis() {
           {musteriZorunlu && !secilenMusteri && sepet.length > 0 && (
             <p className="text-[11px] text-amber-600 text-center -mb-1">⚠️ Satış için müşteri seçimi zorunlu</p>
           )}
-          <button onClick={satisOlustur} disabled={islemde || sepet.length === 0 || (musteriZorunlu && !secilenMusteri)}
+          {kasaNakitEngel && (
+            <p className="text-[11px] text-red-600 text-center -mb-1">🔒 Nakit satış için kasa kapalı — önce Kasa açın</p>
+          )}
+          <button onClick={satisOlustur} disabled={islemde || sepet.length === 0 || (musteriZorunlu && !secilenMusteri) || kasaNakitEngel}
             className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 text-sm transition-colors">
-            {islemde ? '⏳ İşleniyor...' : `✓ Satışı Tamamla  ₺${genelToplamSon.toFixed(2)}`}
+            {islemde ? '⏳ İşleniyor...' : kasaNakitEngel ? '🔒 Kasa Kapalı (Nakit)' : `✓ Satışı Tamamla  ₺${genelToplamSon.toFixed(2)}`}
           </button>
 
           {sepet.length > 0 && (
