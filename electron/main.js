@@ -137,6 +137,7 @@ const handlerModules = [
   require('./db/gider'),
   require('./db/malkabul'),
   require('./yedek'),
+  require('./sistem'),
   require('./ikas'),
   require('./ikas/ekstra'),
   require('./fis-yazdir'),

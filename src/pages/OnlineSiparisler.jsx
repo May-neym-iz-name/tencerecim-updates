@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi } from '../api/ipc'
+import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink } from '../api/ipc'
 import KargoFormu from '../components/KargoFormu'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
@@ -510,6 +510,16 @@ export default function OnlineSiparisler() {
                   {secili.kargo_takip_link && (
                     <a href={secili.kargo_takip_link} target="_blank" rel="noopener noreferrer"
                       className="text-blue-600 hover:underline text-xs ml-2">takip et ↗</a>
+                  )}
+                  {secili.musteri_telefon && (
+                    <button onClick={() => {
+                      const mesaj = `Merhaba, ${secili.siparis_no} numaralı siparişiniz kargoya verildi. ` +
+                        `${secili.kargo_firma || 'Kargo'} takip no: ${secili.kargo_takip_no}` +
+                        (secili.kargo_takip_link ? `\nTakip: ${secili.kargo_takip_link}` : '')
+                      const link = whatsappLink(secili.musteri_telefon, mesaj)
+                      if (link) sistemApi.linkAc(link).catch(e => toast.error(e.message))
+                    }}
+                      className="ml-3 text-green-700 hover:underline text-xs font-medium">💬 WhatsApp ile gönder</button>
                   )}
                 </div>
               )}

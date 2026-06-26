@@ -346,6 +346,10 @@ function migrate() {
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_no TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_firma TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_link TEXT") } catch {}
+  // satislar — mağaza içi iade desteği (negatif "iade satışı" kaydı).
+  try { db.exec("ALTER TABLE satislar ADD COLUMN tip TEXT DEFAULT 'satis'") } catch {}
+  try { db.exec("ALTER TABLE satislar ADD COLUMN iade_kaynak_id INTEGER REFERENCES satislar(id)") } catch {}
+  try { db.exec("ALTER TABLE satis_kalemleri ADD COLUMN iade_miktar INTEGER DEFAULT 0") } catch {}
   // musteriler — ikas müşteri istatistikleri (listCustomer: orderCount/totalOrderPrice...).
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_musteri_id TEXT") } catch {}
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_siparis_sayisi INTEGER") } catch {}

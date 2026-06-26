@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Sayfalama from '../components/Sayfalama'
 import toast from 'react-hot-toast'
-import { satisApi, lokasyonApi, fisApi } from '../api/ipc'
+import { satisApi, lokasyonApi, fisApi, sistemApi, whatsappLink } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 
 export default function SatisGecmisi() {
@@ -15,6 +15,7 @@ export default function SatisGecmisi() {
   const [seciliSatis, setSeciliSatis] = useState(null)
   const [satisDetay, setSatisDetay] = useState(null)
   const [yukleniyor, setYukleniyor] = useState(false)
+  const [iadeModal, setIadeModal] = useState(null) // { satis, secimler: {kalemId: miktar} }
 
   const bugun = new Date().toISOString().split('T')[0]
   const [filtre, setFiltre] = useState({ lokasyon_id: '', baslangic: bugun, bitis: bugun, odeme_tipi: '', sayfa: 1, boyut: 50 })
@@ -49,6 +50,36 @@ export default function SatisGecmisi() {
     if (!confirm('Bu satışı iptal etmek istediğinize emin misiniz? Stoklar geri yüklenecek.')) return
     try { await satisApi.iptal(id); toast.success('Satış iptal edildi'); yukle(); setSeciliSatis(null); setSatisDetay(null) }
     catch (e) { toast.error(e.message) }
+  }
+
+  // İade modalını aç (kalan iade edilebilir adetlerle).
+  function iadeAc(detay) {
+    const secimler = {}
+    for (const k of (detay.kalemler || [])) {
+      const kalan = (k.miktar || 0) - (k.iade_miktar || 0)
+      if (kalan > 0) secimler[k.id] = 0
+    }
+    if (!Object.keys(secimler).length) { toast.error('Bu satışta iade edilebilir ürün kalmadı'); return }
+    setIadeModal({ satis: detay, secimler })
+  }
+
+  async function iadeOnayla() {
+    const kalemler = Object.entries(iadeModal.secimler)
+      .map(([id, m]) => ({ satis_kalemi_id: Number(id), miktar: Number(m) || 0 }))
+      .filter(x => x.miktar > 0)
+    if (!kalemler.length) { toast.error('İade adedi girin'); return }
+    try {
+      await satisApi.iade({ satis_id: iadeModal.satis.id, kalemler })
+      toast.success('İade işlendi, stok güncellendi')
+      setIadeModal(null); setSeciliSatis(null); setSatisDetay(null); yukle()
+    } catch (e) { toast.error(e.message) }
+  }
+
+  // Müşteriye WhatsApp ile satış/teşekkür mesajı gönder.
+  function whatsappGonder(detay) {
+    const link = whatsappLink(detay.musteri_telefon, `Merhaba, ${detay.fis_no} numaralı alışverişiniz için teşekkür ederiz. 🛍️`)
+    if (!link) { toast.error('Müşteri telefonu yok'); return }
+    sistemApi.linkAc(link).catch(e => toast.error(e.message))
   }
 
   const odemeRenk = { nakit: 'bg-green-100 text-green-700', kart: 'bg-blue-100 text-blue-700', havale: 'bg-purple-100 text-purple-700' }
@@ -137,10 +168,10 @@ export default function SatisGecmisi() {
                   <td className="px-3 py-2 text-xs text-green-600">{s.iskonto_toplam>0?`-₺${s.iskonto_toplam?.toFixed(2)}`:'—'}</td>
                   <td className="px-3 py-2 font-semibold">₺{s.genel_toplam?.toFixed(2)}</td>
                   <td className="px-3 py-2">
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${durumRenk[s.durum]||''}`}>{s.durum}</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${durumRenk[s.tip==='iade'?'iade':s.durum]||''}`}>{s.tip==='iade'?'iade':s.durum}</span>
                   </td>
                   <td className="px-2 py-2">
-                    {s.durum==='tamamlandi' && iptalYetkisi && (
+                    {s.durum==='tamamlandi' && s.tip!=='iade' && iptalYetkisi && (
                       <button onClick={e => { e.stopPropagation(); satisIptal(s.id) }} className="text-xs text-red-500 hover:underline">İptal</button>
                     )}
                   </td>
@@ -208,11 +239,71 @@ export default function SatisGecmisi() {
             🖨️ Fişi Yazdır
           </button>
 
-          {satisDetay.durum === 'tamamlandi' && iptalYetkisi && (
-            <button onClick={() => satisIptal(satisDetay.id)} className="w-full mt-2 border border-red-300 text-red-600 py-1.5 rounded-lg text-sm hover:bg-red-50">
-              Satışı İptal Et
+          {satisDetay.musteri_telefon && (
+            <button onClick={() => whatsappGonder(satisDetay)}
+              className="w-full mt-2 border border-green-300 text-green-700 py-1.5 rounded-lg text-sm hover:bg-green-50">
+              💬 WhatsApp ile Bilgilendir
             </button>
           )}
+
+          {satisDetay.durum === 'tamamlandi' && satisDetay.tip !== 'iade' && iptalYetkisi && (
+            <>
+              <button onClick={() => iadeAc(satisDetay)} className="w-full mt-2 border border-orange-300 text-orange-600 py-1.5 rounded-lg text-sm hover:bg-orange-50">
+                ↩ Ürün İade Al
+              </button>
+              <button onClick={() => satisIptal(satisDetay.id)} className="w-full mt-2 border border-red-300 text-red-600 py-1.5 rounded-lg text-sm hover:bg-red-50">
+                Satışı İptal Et
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* İade modalı */}
+      {iadeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setIadeModal(null)}>
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b flex justify-between items-center">
+              <h3 className="font-bold">Ürün İade — {iadeModal.satis.fis_no}</h3>
+              <button onClick={() => setIadeModal(null)} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+            </div>
+            <div className="flex-1 overflow-auto px-5 py-3 space-y-2">
+              <p className="text-xs text-gray-500 mb-2">İade edilecek ürün adetlerini girin. Stok geri eklenir, ciro düşülür.</p>
+              {(iadeModal.satis.kalemler || []).map(k => {
+                const kalan = (k.miktar || 0) - (k.iade_miktar || 0)
+                const birimEf = k.miktar ? (k.toplam || 0) / k.miktar : 0
+                return (
+                  <div key={k.id} className={`flex items-center justify-between gap-2 border rounded-lg px-3 py-2 ${kalan <= 0 ? 'opacity-40' : ''}`}>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{k.urun_adi}</p>
+                      <p className="text-xs text-gray-400">{kalan}/{k.miktar} iade edilebilir · ₺{birimEf.toFixed(2)}/adet</p>
+                    </div>
+                    <input type="number" min="0" max={kalan} disabled={kalan <= 0}
+                      value={iadeModal.secimler[k.id] ?? 0}
+                      onChange={e => {
+                        const v = Math.max(0, Math.min(kalan, parseInt(e.target.value, 10) || 0))
+                        setIadeModal(m => ({ ...m, secimler: { ...m.secimler, [k.id]: v } }))
+                      }}
+                      className="w-16 border rounded px-2 py-1 text-sm text-center" />
+                  </div>
+                )
+              })}
+            </div>
+            <div className="px-5 py-3 border-t flex justify-between items-center">
+              <span className="text-sm text-gray-500">
+                İade Tutarı: <b className="text-orange-600">₺{
+                  (iadeModal.satis.kalemler || []).reduce((t, k) => {
+                    const birimEf = k.miktar ? (k.toplam || 0) / k.miktar : 0
+                    return t + birimEf * (Number(iadeModal.secimler[k.id]) || 0)
+                  }, 0).toFixed(2)
+                }</b>
+              </span>
+              <button onClick={iadeOnayla}
+                className="bg-orange-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-orange-700">
+                İadeyi Onayla
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

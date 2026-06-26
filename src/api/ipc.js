@@ -29,6 +29,21 @@ export const satisApi = {
   olustur: (veri) => invoke('satislar:olustur', veri),
   gunlukOzet: (params) => invoke('satislar:gunluk-ozet', params),
   iptal: (id) => invoke('satislar:iptal', id),
+  iade: (veri) => invoke('satislar:iade', veri),
+}
+
+export const sistemApi = {
+  linkAc: (url) => invoke('sistem:link-ac', url),
+}
+
+// Telefonu uluslararası WhatsApp formatına çevirir (TR varsayılan +90).
+export function whatsappLink(telefon, mesaj = '') {
+  const d = String(telefon || '').replace(/\D/g, '')
+  if (!d) return null
+  let no = d
+  if (no.length === 10) no = '90' + no            // 5xx... → 905xx...
+  else if (no.length === 11 && no.startsWith('0')) no = '90' + no.slice(1)
+  return `https://wa.me/${no}${mesaj ? `?text=${encodeURIComponent(mesaj)}` : ''}`
 }
 
 export const stokApi = {
