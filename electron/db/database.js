@@ -318,6 +318,18 @@ function createTables() {
       miktar INTEGER NOT NULL,
       birim_maliyet REAL DEFAULT 0
     );
+
+    -- Sabit (tekrarlayan) gider şablonları: kira, maaş vb. Tek tıkla gidere işlenir.
+    CREATE TABLE IF NOT EXISTS sabit_giderler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lokasyon_id INTEGER REFERENCES lokasyonlar(id),
+      kategori TEXT,
+      aciklama TEXT,
+      tutar REAL NOT NULL,
+      odeme_tipi TEXT DEFAULT 'nakit',
+      aktif INTEGER DEFAULT 1,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
   `)
 }
 

@@ -17,8 +17,45 @@ export default function Giderler() {
   const [liste, setListe] = useState([])
   const [toplam, setToplam] = useState(0)
   const [mesgul, setMesgul] = useState(false)
+  const [sabitler, setSabitler] = useState([])
+  const [sabitAcik, setSabitAcik] = useState(false)
+  const [sabitForm, setSabitForm] = useState({ lokasyon_id: '', kategori: 'Kira', aciklama: '', tutar: '', odeme_tipi: 'nakit' })
 
   useEffect(() => { lokasyonApi.listele().then(l => setLokasyonlar(erisilebilirLokasyonlar(l))) }, [])
+
+  const sabitYukle = useCallback(async () => {
+    try { setSabitler(await giderApi.sabitListele()) } catch {}
+  }, [])
+  useEffect(() => { sabitYukle() }, [sabitYukle])
+
+  async function sabitEkle(e) {
+    e.preventDefault()
+    if (!sabitForm.tutar || parseFloat(sabitForm.tutar) <= 0) { toast.error('Tutar girin'); return }
+    try {
+      await giderApi.sabitEkle({ ...sabitForm, lokasyon_id: sabitForm.lokasyon_id || null, tutar: parseFloat(sabitForm.tutar) })
+      toast.success('Sabit gider eklendi')
+      setSabitForm(f => ({ ...f, aciklama: '', tutar: '' }))
+      await sabitYukle()
+    } catch (e) { toast.error(e.message) }
+  }
+  async function sabitSil(id) {
+    if (!confirm('Sabit gider şablonu silinsin mi?')) return
+    try { await giderApi.sabitSil(id); await sabitYukle() } catch (e) { toast.error(e.message) }
+  }
+  async function sabitUygula(id) {
+    try {
+      await giderApi.sabitUygula({ id, tarih: form.tarih, kullanici })
+      toast.success('Gidere işlendi'); await yukle()
+    } catch (e) { toast.error(e.message) }
+  }
+  async function sabitTumunuUygula() {
+    if (!sabitler.length) return
+    if (!confirm(`${sabitler.length} sabit gider ${form.tarih} tarihiyle eklenecek. Devam?`)) return
+    try {
+      const r = await giderApi.sabitUygula({ idler: sabitler.map(s => s.id), tarih: form.tarih, kullanici })
+      toast.success(`${r.eklenen} sabit gider eklendi`); await yukle()
+    } catch (e) { toast.error(e.message) }
+  }
 
   const yukle = useCallback(async () => {
     try {
@@ -97,6 +134,72 @@ export default function Giderler() {
             placeholder="Açıklama (opsiyonel)" className="w-full border rounded-lg px-3 py-1.5 text-sm" />
         </div>
       </form>
+
+      {/* Sabit (tekrarlayan) giderler */}
+      <div className="bg-white rounded-2xl border">
+        <button onClick={() => setSabitAcik(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-left">
+          <span className="font-medium text-gray-700">🔁 Sabit Giderler ({sabitler.length})</span>
+          <span className="flex items-center gap-2">
+            {sabitler.length > 0 && (
+              <span onClick={e => { e.stopPropagation(); sabitTumunuUygula() }}
+                className="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">
+                Tümünü {form.tarih} tarihine ekle
+              </span>
+            )}
+            <span className="text-gray-400">{sabitAcik ? '▲' : '▼'}</span>
+          </span>
+        </button>
+
+        {sabitAcik && (
+          <div className="border-t p-4 space-y-3">
+            <p className="text-xs text-gray-500">
+              Kira, maaş gibi her ay tekrarlayan giderleri buraya bir kez tanımlayın; "Ekle" ile seçili tarihe (yukarıdaki tarih) tek tıkla işleyin.
+            </p>
+
+            {/* Şablon listesi */}
+            {sabitler.length > 0 && (
+              <div className="divide-y border rounded-xl">
+                {sabitler.map(s => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <span className="font-medium">{s.kategori}</span>
+                      {s.aciklama && <span className="text-gray-500"> · {s.aciklama}</span>}
+                      <span className="text-gray-400"> · {s.lokasyon_adi || 'Genel'} · {s.odeme_tipi}</span>
+                    </div>
+                    <span className="font-semibold text-red-600 whitespace-nowrap">{PARA(s.tutar)}</span>
+                    <button onClick={() => sabitUygula(s.id)}
+                      className="text-xs bg-emerald-600 text-white px-2.5 py-1 rounded hover:bg-emerald-700 whitespace-nowrap">+ Ekle</button>
+                    <button onClick={() => sabitSil(s.id)} className="text-gray-300 hover:text-red-500">✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Yeni şablon ekleme */}
+            <form onSubmit={sabitEkle} className="grid grid-cols-2 md:grid-cols-6 gap-2 items-end">
+              <select value={sabitForm.lokasyon_id} onChange={e => setSabitForm(f => ({ ...f, lokasyon_id: e.target.value }))}
+                className="border rounded-lg px-2 py-1.5 text-sm bg-white">
+                <option value="">Genel</option>
+                {lokasyonlar.map(l => <option key={l.id} value={l.id}>{l.ad}</option>)}
+              </select>
+              <select value={sabitForm.kategori} onChange={e => setSabitForm(f => ({ ...f, kategori: e.target.value }))}
+                className="border rounded-lg px-2 py-1.5 text-sm bg-white">
+                {KATEGORILER.map(k => <option key={k} value={k}>{k}</option>)}
+              </select>
+              <input value={sabitForm.aciklama} onChange={e => setSabitForm(f => ({ ...f, aciklama: e.target.value }))}
+                placeholder="Açıklama" className="border rounded-lg px-2 py-1.5 text-sm" />
+              <input type="number" step="0.01" value={sabitForm.tutar} onChange={e => setSabitForm(f => ({ ...f, tutar: e.target.value }))}
+                placeholder="Tutar ₺" className="border rounded-lg px-2 py-1.5 text-sm" />
+              <select value={sabitForm.odeme_tipi} onChange={e => setSabitForm(f => ({ ...f, odeme_tipi: e.target.value }))}
+                className="border rounded-lg px-2 py-1.5 text-sm bg-white">
+                <option value="nakit">Nakit</option><option value="kart">Kart</option><option value="havale">Havale</option>
+              </select>
+              <button type="submit" className="bg-gray-700 text-white px-3 py-1.5 rounded-lg text-sm hover:bg-gray-800">+ Şablon</button>
+            </form>
+          </div>
+        )}
+      </div>
 
       {/* Filtre + toplam */}
       <div className="flex flex-wrap items-end gap-3">

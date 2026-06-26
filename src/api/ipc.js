@@ -183,6 +183,11 @@ export const giderApi = {
   ekle: (veri) => invoke('gider:ekle', veri),
   listele: (params) => invoke('gider:listele', params),
   sil: (id) => invoke('gider:sil', id),
+  // Sabit (tekrarlayan) gider şablonları
+  sabitListele: () => invoke('sabit-gider:listele'),
+  sabitEkle: (veri) => invoke('sabit-gider:ekle', veri),
+  sabitSil: (id) => invoke('sabit-gider:sil', id),
+  sabitUygula: (veri) => invoke('sabit-gider:uygula', veri),
 }
 
 export const malKabulApi = {

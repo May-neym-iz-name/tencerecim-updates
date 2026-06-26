@@ -36,6 +36,9 @@ export default function Kasa() {
   useEffect(() => { yukle() }, [yukle])
 
   async function kasaAc() {
+    if (acilisNakit === '' || isNaN(parseFloat(acilisNakit))) {
+      toast.error('Kasadaki açılış tutarını girin (0 ise 0 yazın).'); return
+    }
     setMesgul(true)
     try {
       await kasaApi.ac({ lokasyon_id: lokId, acilis_nakit: parseFloat(acilisNakit) || 0, kullanici })
@@ -112,7 +115,7 @@ export default function Kasa() {
               <input type="number" step="0.01" value={acilisNakit} onChange={e => setAcilisNakit(e.target.value)}
                 placeholder="0,00" className="w-full border rounded-lg px-3 py-2 text-sm" />
             </div>
-            <button onClick={kasaAc} disabled={mesgul || !lokId}
+            <button onClick={kasaAc} disabled={mesgul || !lokId || acilisNakit === ''}
               className="bg-emerald-600 text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
               🟢 Kasa Aç
             </button>
