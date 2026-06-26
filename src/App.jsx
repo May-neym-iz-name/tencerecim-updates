@@ -8,6 +8,7 @@ import { AyarlarProvider } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import logo from './assets/logo.png'
 import Giris from './pages/Giris.jsx'
+import Panel from './pages/Panel.jsx'
 import Satis from './pages/Satis.jsx'
 import Urunler from './pages/Urunler.jsx'
 import Stok from './pages/Stok.jsx'
@@ -22,6 +23,7 @@ import Kullanicilar from './pages/Kullanicilar.jsx'
 const Raporlar = lazy(() => import('./pages/Raporlar.jsx'))
 
 const navItems = [
+  { to: '/panel', label: '🏠 Ana Ekran', yetki: 'rapor_goruntule', el: <Panel /> },
   { to: '/', label: '🛒 Satış', end: true, yetki: 'satis_yap', el: <Satis /> },
   { to: '/satis-gecmisi', label: '📋 Satış Geçmişi', yetki: 'satis_gecmisi_goruntule', el: <SatisGecmisi /> },
   { to: '/urunler', label: '📦 Ürünler', yetki: 'urun_goruntule', el: <Urunler /> },

@@ -305,6 +305,9 @@ function MusteriSekmesi({ veri }) {
         { baslik: 'Telefon', hucre: m => m.telefon || '—' },
         { baslik: 'Sipariş Sayısı', sagda: true, hucre: m => SAYI(m.islem_sayisi), deger: m => m.islem_sayisi },
         { baslik: 'Toplam Harcama', sagda: true, hucre: m => PARA(m.toplam_harcama), deger: m => m.toplam_harcama },
+        { baslik: 'ikas Ömür Boyu', sagda: true,
+          hucre: m => m.ikas_siparis_sayisi > 0 ? `${SAYI(m.ikas_siparis_sayisi)} · ${PARA(m.ikas_toplam_harcama)}` : '—',
+          deger: m => m.ikas_toplam_harcama || 0 },
       ]} />
     </div>
   )

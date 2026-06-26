@@ -147,6 +147,16 @@ export const uygulamaApi = {
   surum: () => invoke('app:surum'),
 }
 
+export const panelApi = {
+  ozet: () => invoke('panel:ozet'),
+  dusukStok: (params) => invoke('stok:dusuk', params),
+}
+
+export const yedekApi = {
+  olustur: () => invoke('yedek:olustur'),
+  geriYukle: () => invoke('yedek:geri-yukle'),
+}
+
 export const authApi = {
   beniHatirlaKaydet: (email, sifre) => invoke('auth:beni-hatirla-kaydet', { email, sifre }),
   beniHatirlaGetir: () => invoke('auth:beni-hatirla-getir'),

@@ -132,6 +132,8 @@ const handlerModules = [
   require('./db/ayar-senk'),
   require('./db/online-siparisler'),
   require('./db/raporlar'),
+  require('./db/panel'),
+  require('./yedek'),
   require('./ikas'),
   require('./ikas/ekstra'),
   require('./fis-yazdir'),

@@ -183,7 +183,8 @@ module.exports = {
              COALESCE(m.ad || ' ' || COALESCE(m.soyad,''), '#' || k.musteri_id) AS musteri_adi,
              m.telefon,
              COUNT(DISTINCT k.satis_anahtar) AS islem_sayisi,
-             SUM(k.tutar) AS toplam_harcama
+             SUM(k.tutar) AS toplam_harcama,
+             m.ikas_siparis_sayisi, m.ikas_toplam_harcama
       FROM kalemler k
       LEFT JOIN musteriler m ON k.musteri_id = m.id
       WHERE k.musteri_id IS NOT NULL

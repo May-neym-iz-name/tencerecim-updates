@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi } from '../api/ipc'
+import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
@@ -19,7 +19,27 @@ export default function Ayarlar() {
     { kod: 'satis', ad: '🛒 Satış' },
     { kod: 'kargo', ad: '📦 Kargo / UPS' },
     { kod: 'ikas', ad: '🛍️ ikas' },
+    { kod: 'yedek', ad: '💾 Yedekleme' },
   ]
+
+  const [yedekMesgul, setYedekMesgul] = useState('')
+  async function yedekAl() {
+    setYedekMesgul('al')
+    try {
+      const r = await yedekApi.olustur()
+      if (r.iptal) return
+      toast.success(`Yedek alındı (${(r.boyut / 1048576).toFixed(1)} MB): ${r.yol}`)
+    } catch (e) { toast.error('Yedek alınamadı: ' + e.message) }
+    finally { setYedekMesgul('') }
+  }
+  async function yedekGeriYukle() {
+    setYedekMesgul('yukle')
+    try {
+      const r = await yedekApi.geriYukle()
+      if (r.iptal) setYedekMesgul('')
+      // Başarılıysa uygulama yeniden başlar; mesgul kalması önemsiz.
+    } catch (e) { toast.error('Geri yükleme başarısız: ' + e.message); setYedekMesgul('') }
+  }
 
   // Ayar kaydı sonrası buluta sessizce yükler (PC'ler arası senkron).
   function bulutaYukleSessiz() {
@@ -455,6 +475,36 @@ export default function Ayarlar() {
               <span>Son senkron: {ikasDurum.son_siparis_senk ? new Date(ikasDurum.son_siparis_senk).toLocaleString('tr-TR') : '—'}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Yedekleme (yalnızca yönetici) */}
+      {sekme === 'yedek' && (
+        <div className="bg-white rounded-xl border p-5 mb-5">
+          <h3 className="font-semibold mb-1">💾 Veritabanı Yedekleme</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            Tüm veriler (ürünler, satışlar, stok, müşteriler, ayarlar) bu bilgisayardaki yerel veritabanında tutulur.
+            Düzenli yedek almanız önerilir; yedeği USB belleğe veya buluta kopyalayabilirsiniz.
+          </p>
+          {!yonetici && <p className="text-xs text-gray-400 mb-3">Bu işlemleri yalnızca yöneticiler yapabilir.</p>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="border rounded-xl p-4">
+              <p className="text-sm font-medium text-gray-700 mb-1">Yedek Al</p>
+              <p className="text-xs text-gray-400 mb-3">Mevcut tüm verinin tek dosyalık (.db) bir kopyasını kaydeder.</p>
+              <button onClick={yedekAl} disabled={!yonetici || !!yedekMesgul}
+                className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
+                {yedekMesgul === 'al' ? 'Alınıyor…' : '⬇️ Yedek Al'}
+              </button>
+            </div>
+            <div className="border rounded-xl p-4">
+              <p className="text-sm font-medium text-gray-700 mb-1">Yedekten Geri Yükle</p>
+              <p className="text-xs text-red-500 mb-3">Dikkat: Mevcut tüm veriler seçilen yedekle değiştirilir, uygulama yeniden başlar.</p>
+              <button onClick={yedekGeriYukle} disabled={!yonetici || !!yedekMesgul}
+                className="bg-orange-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-orange-700 disabled:opacity-50">
+                {yedekMesgul === 'yukle' ? 'Yükleniyor…' : '⬆️ Geri Yükle'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
