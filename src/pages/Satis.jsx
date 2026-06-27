@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi, fisApi, kasaApi } from '../api/ipc'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
@@ -64,6 +65,7 @@ export default function Satis() {
 
   // Kargo (satış sonrası UPS gönderisi)
   const { yetkiVar, erisilebilirLokasyonlar, lokasyonErisim } = useAuth()
+  const navigate = useNavigate()
   const kargoYetkisi = yetkiVar('kargo_yonet')
   const [kargoFormAcik, setKargoFormAcik] = useState(false)
   const [sonSatis, setSonSatis] = useState(null) // { satisId, fisNo, musteri }
@@ -500,10 +502,16 @@ export default function Satis() {
           </div>
 
           {musteriZorunlu && !secilenMusteri && sepet.length > 0 && (
-            <p className="text-[11px] text-amber-600 text-center -mb-1">⚠️ Satış için müşteri seçimi zorunlu</p>
+            <button type="button" onClick={() => { setMusteriForm(MUSTERI_BOSH); setMusteriFormAcik(true) }}
+              className="w-full text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-300 rounded-lg py-1.5 hover:bg-amber-100 transition-colors">
+              ⚠️ Satış için müşteri seçimi zorunlu — Müşteri Ekle ›
+            </button>
           )}
           {kasaNakitEngel && (
-            <p className="text-[11px] text-red-600 text-center -mb-1">🔒 Nakit satış için kasa kapalı — önce Kasa açın</p>
+            <button type="button" onClick={() => navigate('/satis-gecmisi?sekme=kasa')}
+              className="w-full text-[11px] font-medium text-red-700 bg-red-50 border border-red-300 rounded-lg py-1.5 hover:bg-red-100 transition-colors">
+              🔒 Nakit satış için kasa kapalı — Kasayı Aç ›
+            </button>
           )}
           <button onClick={satisOlustur} disabled={islemde || sepet.length === 0 || (musteriZorunlu && !secilenMusteri) || kasaNakitEngel}
             className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 text-sm transition-colors">

@@ -2,8 +2,11 @@ import { useState } from 'react'
 
 // Üstte sekme çubuğu + altta aktif sekme içeriği (Ayarlar'daki sekme görünümü gibi).
 // sekmeler: [{ kod, ad, el }] — yetkiye göre önceden filtrelenmiş gelir.
-export default function Sekmeler({ sekmeler }) {
-  const [aktif, setAktif] = useState(sekmeler[0]?.kod)
+// aktifKod: açılışta seçili gelecek sekme (yoksa ilk sekme).
+export default function Sekmeler({ sekmeler, aktifKod }) {
+  const [aktif, setAktif] = useState(
+    (aktifKod && sekmeler.some(s => s.kod === aktifKod)) ? aktifKod : sekmeler[0]?.kod
+  )
   if (!sekmeler.length) return null
   const akt = sekmeler.find(s => s.kod === aktif) || sekmeler[0]
   return (
