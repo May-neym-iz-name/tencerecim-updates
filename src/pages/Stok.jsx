@@ -4,6 +4,7 @@ import { stokApi, lokasyonApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
+import { usePersistentState } from '../hooks/usePersistentState'
 
 export default function Stok() {
   const { erisilebilirLokasyonlar, yetkiVar } = useAuth()
@@ -18,7 +19,8 @@ export default function Stok() {
   const [acikLokasyonlar, setAcikLokasyonlar] = useState([]) // tıklanınca açılan mağaza id'leri
 
   // Aktif sayım (aynı anda tek mağaza): { lokasyon_id, id, kalemler:[{...,_girilen}] }
-  const [aktifSayim, setAktifSayim] = useState(null)
+  // Kalıcı: başka sekmeye geçilse de devam eden sayım kaybolmaz.
+  const [aktifSayim, setAktifSayim] = usePersistentState('stok_aktif_sayim', null)
   const [barkodInput, setBarkodInput] = useState('')
   const [vurgulanan, setVurgulanan] = useState(null) // okutulan ürün id (kaydır+vurgula)
   const barkodRef = useRef(null)

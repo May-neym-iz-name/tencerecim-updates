@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi, fisApi, kasaApi } from '../api/ipc'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
+import { usePersistentState } from '../hooks/usePersistentState'
 import KargoFormu from '../components/KargoFormu'
 
 const MUSTERI_BOSH = {
@@ -41,26 +42,26 @@ export default function Satis() {
   const [kategoriAcik, setKategoriAcik] = useState(false)
   const kategoriRef = useRef()
 
-  // Lokasyon
+  // Lokasyon (seçim kalıcı — sekme değişince kaybolmasın)
   const [lokasyonlar, setLokasyonlar] = useState([])
-  const [secilenLokasyonId, setSecilenLokasyonId] = useState(null)
+  const [secilenLokasyonId, setSecilenLokasyonId] = usePersistentState('satis_lokasyon', null)
 
   // Barkod
   const [barkodInput, setBarkodInput] = useState('')
   const barkodRef = useRef()
 
-  // Müşteri
+  // Müşteri (seçili müşteri kalıcı)
   const [musteriArama, setMusteriArama] = useState('')
   const [musteriSonuclari, setMusteriSonuclari] = useState([])
-  const [secilenMusteri, setSecilenMusteri] = useState(null)
+  const [secilenMusteri, setSecilenMusteri] = usePersistentState('satis_musteri', null)
   const [musteriFormAcik, setMusteriFormAcik] = useState(false)
   const [musteriForm, setMusteriForm] = useState(MUSTERI_BOSH)
   const [musteriKayitYukleniyor, setMusteriKayitYukleniyor] = useState(false)
 
-  // Sepet
-  const [sepet, setSepet] = useState([])
-  const [manuelIskonto, setManuelIskonto] = useState(0) // değeri ayar tipine göre % veya ₺
-  const [odemeTipi, setOdemeTipi] = useState('nakit')
+  // Sepet (kalıcı — başka sekmeye geçip dönünce kaybolmasın)
+  const [sepet, setSepet] = usePersistentState('satis_sepet', [])
+  const [manuelIskonto, setManuelIskonto] = usePersistentState('satis_iskonto', 0) // değeri ayar tipine göre % veya ₺
+  const [odemeTipi, setOdemeTipi] = usePersistentState('satis_odeme_tipi', 'nakit')
   const [islemde, setIslemde] = useState(false)
 
   // Kargo (satış sonrası UPS gönderisi)
@@ -100,7 +101,10 @@ export default function Satis() {
       // Yalnızca kullanıcının erişebildiği lokasyonları göster (izinli_lokasyonlar).
       const erisilebilir = erisilebilirLokasyonlar(lok)
       setLokasyonlar(erisilebilir)
-      if (erisilebilir.length) setSecilenLokasyonId(erisilebilir[0].id)
+      // Kalıcı seçim hâlâ geçerliyse koru; değilse ilk erişilebilir lokasyona düş.
+      if (erisilebilir.length) {
+        setSecilenLokasyonId(prev => (prev && erisilebilir.some(l => l.id === prev)) ? prev : erisilebilir[0].id)
+      }
     })
     markaApi.listele().then(setMarkalar)
     kategoriApi.listele().then(setKategoriler)
