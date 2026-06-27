@@ -22,12 +22,18 @@ function fisNoUret(db) {
 }
 
 module.exports = {
-  'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0, odeme_oran = 0 }) => {
+  'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0, odeme_oran = 0, odemeler = null }) => {
     yetkiKontrol('satis_yap')
     lokasyonKontrol(lokasyon_id)
     const db = getDb()
     if (!lokasyon_id) throw new Error('Lokasyon seçilmedi')
     if (!Array.isArray(kalemler) || kalemler.length === 0) throw new Error('Satış en az bir kalem içermelidir')
+
+    // Parçalı (karma) ödeme: [{ odeme_tipi, tutar }]. Verilirse satislar.odeme_tipi
+    // 'karma' (tek kalemse o tip) olur; tutarlar satis_odemeler'e yazılır.
+    const parcali = Array.isArray(odemeler)
+      ? odemeler.map(o => ({ odeme_tipi: o.odeme_tipi, tutar: Number(o.tutar) || 0 })).filter(o => o.tutar > 0)
+      : null
 
     // Ödeme tipine göre yüzdesel fiyat farkı (pozitif = artırım, negatif = indirim).
     // Birim fiyatlara çarpan olarak uygulanır; -%100 altı güvenlik için 0'a kırpılır.
@@ -49,11 +55,22 @@ module.exports = {
 
     const { araToplam, iskontoToplam, kdvToplam, genelToplam, kalemSonuc } = satisHesapla(hesapKalemleri, genel_iskonto)
 
+    // Parçalı ödeme tutarları satış toplamıyla uyuşmalı (±0.05 tolerans).
+    if (parcali) {
+      if (!parcali.length) throw new Error('Ödeme tutarı girilmedi')
+      const odemeToplam = parcali.reduce((t, o) => t + o.tutar, 0)
+      if (Math.abs(odemeToplam - genelToplam) > 0.05) {
+        throw new Error(`Ödeme toplamı (₺${odemeToplam.toFixed(2)}) satış tutarına (₺${genelToplam.toFixed(2)}) eşit olmalı.`)
+      }
+    }
+    // satislar.odeme_tipi: parçalı çoklu ise 'karma', tek kalemse o tip.
+    const satisOdemeTipi = parcali ? (parcali.length > 1 ? 'karma' : parcali[0].odeme_tipi) : odeme_tipi
+
     const insertFn = db.transaction(() => {
       const satis = db.prepare(`
         INSERT INTO satislar (fis_no, lokasyon_id, musteri_id, odeme_tipi, notlar, ara_toplam, iskonto_toplam, kdv_toplam, genel_toplam)
         VALUES (?,?,?,?,?,?,?,?,?)
-      `).run(fisNoUret(db), lokasyon_id, musteri_id||null, odeme_tipi, notlar||null,
+      `).run(fisNoUret(db), lokasyon_id, musteri_id||null, satisOdemeTipi, notlar||null,
         araToplam, iskontoToplam, kdvToplam, genelToplam)
 
       kalemMeta.forEach((k, i) => {
@@ -62,6 +79,12 @@ module.exports = {
           .run(satis.lastInsertRowid, k.urun_id, k.miktar, h.birimFiyat, h.iskonto, k.kdv_orani, r(h.toplam))
         db.prepare('UPDATE urun_stoklar SET miktar=miktar-? WHERE urun_id=? AND lokasyon_id=?').run(k.miktar, k.urun_id, lokasyon_id)
       })
+
+      // Ödeme kalemlerini yaz (parçalı ise her tip; değilse tek satır = tüm tutar).
+      const odemeEkle = db.prepare('INSERT INTO satis_odemeler (satis_id, odeme_tipi, tutar) VALUES (?,?,?)')
+      const odemeSatirlari = parcali || [{ odeme_tipi: satisOdemeTipi, tutar: genelToplam }]
+      for (const o of odemeSatirlari) odemeEkle.run(satis.lastInsertRowid, o.odeme_tipi, r(o.tutar))
+
       return db.prepare('SELECT * FROM satislar WHERE id=?').get(satis.lastInsertRowid)
     })
     const sonuc = insertFn()
@@ -106,6 +129,7 @@ module.exports = {
       SELECT sk.*, u.ad as urun_adi, u.barkod
       FROM satis_kalemleri sk JOIN urunler u ON sk.urun_id=u.id
       WHERE sk.satis_id=?`).all(id)
+    satis.odemeler = db.prepare('SELECT odeme_tipi, tutar FROM satis_odemeler WHERE satis_id=?').all(id)
     return satis
   },
 

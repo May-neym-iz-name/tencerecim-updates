@@ -82,7 +82,7 @@ export default function SatisGecmisi() {
     sistemApi.linkAc(link).catch(e => toast.error(e.message))
   }
 
-  const odemeRenk = { nakit: 'bg-green-100 text-green-700', kart: 'bg-blue-100 text-blue-700', havale: 'bg-purple-100 text-purple-700' }
+  const odemeRenk = { nakit: 'bg-green-100 text-green-700', kart: 'bg-blue-100 text-blue-700', havale: 'bg-purple-100 text-purple-700', karma: 'bg-teal-100 text-teal-700' }
   const durumRenk = { tamamlandi: 'bg-green-100 text-green-700', iptal: 'bg-red-100 text-red-700', iade: 'bg-orange-100 text-orange-700' }
 
   return (
@@ -138,6 +138,7 @@ export default function SatisGecmisi() {
             <option value="nakit">Nakit</option>
             <option value="kart">Kart</option>
             <option value="havale">Havale</option>
+            <option value="karma">Karma (parçalı)</option>
           </select>
           <button onClick={() => setFiltre(f => ({ lokasyon_id:'', baslangic:bugun, bitis:bugun, odeme_tipi:'', sayfa:1, boyut:f.boyut }))}
             className="text-xs text-gray-500 hover:text-red-600 border rounded-lg px-2 py-1.5">Bugüne Dön</button>
@@ -210,6 +211,11 @@ export default function SatisGecmisi() {
             <div className="flex justify-between"><span className="text-gray-500">Lokasyon</span><span>{satisDetay.lokasyon_adi}</span></div>
             {satisDetay.musteri_adi && <div className="flex justify-between"><span className="text-gray-500">Müşteri</span><span>{satisDetay.musteri_adi}</span></div>}
             <div className="flex justify-between"><span className="text-gray-500">Ödeme</span><span className="capitalize">{satisDetay.odeme_tipi}</span></div>
+            {satisDetay.odemeler?.length > 1 && satisDetay.odemeler.map((o, i) => (
+              <div key={i} className="flex justify-between text-xs text-gray-400 pl-2">
+                <span className="capitalize">↳ {o.odeme_tipi}</span><span>₺{Number(o.tutar).toFixed(2)}</span>
+              </div>
+            ))}
           </div>
 
           <div className="space-y-2 mb-3">

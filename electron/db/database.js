@@ -319,6 +319,15 @@ function createTables() {
       birim_maliyet REAL DEFAULT 0
     );
 
+    -- Satış ödeme kalemleri (parçalı/karma ödeme: bir kısmı nakit, bir kısmı kart...).
+    -- Her satış için bir veya birden çok satır. satislar.odeme_tipi karma ise 'karma'.
+    CREATE TABLE IF NOT EXISTS satis_odemeler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      satis_id INTEGER NOT NULL REFERENCES satislar(id),
+      odeme_tipi TEXT NOT NULL,
+      tutar REAL NOT NULL
+    );
+
     -- Sabit (tekrarlayan) gider şablonları: kira, maaş vb. Tek tıkla gidere işlenir.
     CREATE TABLE IF NOT EXISTS sabit_giderler (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

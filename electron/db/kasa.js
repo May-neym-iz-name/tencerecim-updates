@@ -7,13 +7,25 @@ function nakitOzet(db, oturum) {
   const baslangic = oturum.acilis_tarihi
   const bitis = oturum.kapanis_tarihi || "datetime('now','localtime')"
   const bitisKosul = oturum.kapanis_tarihi ? '?' : "datetime('now','localtime')"
+  // Nakit satış = parçalı ödeme kalemlerinden nakit (satis_odemeler) +
+  // satis_odemeler kaydı OLMAYAN eski tek-ödeme nakit satışlar (genel_toplam).
+  // Böylece hem karma hem tekli ödemeler doğru sayılır.
   const satisParams = [oturum.lokasyon_id, baslangic]
   if (oturum.kapanis_tarihi) satisParams.push(oturum.kapanis_tarihi)
+  const legacyParams = [oturum.lokasyon_id, baslangic]
+  if (oturum.kapanis_tarihi) legacyParams.push(oturum.kapanis_tarihi)
   const nakitSatis = db.prepare(`
-    SELECT COALESCE(SUM(genel_toplam),0) n FROM satislar
-    WHERE lokasyon_id = ? AND durum = 'tamamlandi' AND odeme_tipi = 'nakit'
-      AND tarih >= ? AND tarih <= ${bitisKosul}
+    SELECT COALESCE(SUM(o.tutar),0) n
+    FROM satis_odemeler o JOIN satislar s ON o.satis_id = s.id
+    WHERE s.lokasyon_id = ? AND s.durum = 'tamamlandi' AND o.odeme_tipi = 'nakit'
+      AND s.tarih >= ? AND s.tarih <= ${bitisKosul}
   `).get(...satisParams).n
+    + db.prepare(`
+    SELECT COALESCE(SUM(s.genel_toplam),0) n FROM satislar s
+    WHERE s.lokasyon_id = ? AND s.durum = 'tamamlandi' AND s.odeme_tipi = 'nakit'
+      AND s.tarih >= ? AND s.tarih <= ${bitisKosul}
+      AND NOT EXISTS (SELECT 1 FROM satis_odemeler o WHERE o.satis_id = s.id)
+  `).get(...legacyParams).n
   const giderParams = [oturum.lokasyon_id, baslangic]
   if (oturum.kapanis_tarihi) giderParams.push(oturum.kapanis_tarihi)
   const nakitGider = db.prepare(`

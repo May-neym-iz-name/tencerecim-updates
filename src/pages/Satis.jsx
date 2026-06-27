@@ -90,6 +90,10 @@ export default function Satis() {
   }, [kasaZorunlu, secilenLokasyonId, odemeTipi, kasaKontrol])
   const kasaNakitEngel = kasaZorunlu && odemeTipi === 'nakit' && kasaAcik === false
 
+  // Parçalı (karma) ödeme modalı.
+  const [parcaliAcik, setParcaliAcik] = useState(false)
+  const [parcali, setParcali] = useState({ nakit: '', kart: '', havale: '' })
+
   // Başlangıç yüklemesi
   useEffect(() => {
     lokasyonApi.listele().then(lok => {
@@ -215,26 +219,32 @@ export default function Satis() {
   const genelToplamSon = genelToplam * odemeCarpani
   const odemeFarki = genelToplamSon - genelToplam
 
-  async function satisOlustur() {
+  // odemelerArg verilirse parçalı (karma) ödeme: [{ odeme_tipi, tutar }] ve fiyat
+  // farkı (odeme_oran) uygulanmaz; aksi halde tek ödeme (seçili odemeTipi).
+  async function satisOlustur(odemelerArg = null) {
     if (!secilenLokasyonId) { toast.error('Lokasyon seçin'); return }
     if (!lokasyonErisim(secilenLokasyonId)) { toast.error('Bu lokasyonda işlem yapma yetkiniz yok'); return }
     if (sepet.length === 0) { toast.error('Sepet boş'); return }
     if (musteriZorunlu && !secilenMusteri) { toast.error('Bu satış için müşteri seçilmesi zorunludur'); return }
-    if (kasaNakitEngel) { toast.error('Nakit satış için önce Kasa açın (Satış & Kasa > Kasa).'); return }
+    // Nakit kontrolü: tek ödemede nakit, parçalıda nakit kısmı varsa kasa açık olmalı.
+    const nakitVar = odemelerArg ? odemelerArg.some(o => o.odeme_tipi === 'nakit' && o.tutar > 0) : odemeTipi === 'nakit'
+    if (kasaZorunlu && nakitVar && kasaAcik === false) { toast.error('Nakit satış için önce Kasa açın (Satış & Kasa > Kasa).'); return }
     setIslemde(true)
     try {
       const satis = await satisApi.olustur({
         lokasyon_id: secilenLokasyonId,
         musteri_id: secilenMusteri?.id || null,
-        odeme_tipi: odemeTipi,
+        odeme_tipi: odemelerArg ? (odemelerArg.length > 1 ? 'karma' : odemelerArg[0].odeme_tipi) : odemeTipi,
         genel_iskonto: genelIskontoYuzde,
-        odeme_oran: odemeOran,
+        odeme_oran: odemelerArg ? 0 : odemeOran,
+        odemeler: odemelerArg || undefined,
         kalemler: sepet.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) })),
       })
       toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
       // Kargo butonu için bu satışı ve müşterisini sakla (sepet temizlenmeden önce).
       setSonSatis({ satisId: satis.id, fisNo: satis.fis_no, musteri: secilenMusteri })
       setSepet([]); setSecilenMusteri(null); setMusteriArama(''); setManuelIskonto(0)
+      setParcaliAcik(false); setParcali({ nakit: '', kart: '', havale: '' })
       barkodRef.current?.focus()
       // Fişi yazdır (hata olursa satışı engellemesin)
       fisApi.yazdir(satis.id).catch(err => toast.error(`Fiş yazdırılamadı: ${err.message}`))
@@ -501,6 +511,12 @@ export default function Satis() {
             })}
           </div>
 
+          <button type="button" onClick={() => { setParcali({ nakit: '', kart: '', havale: '' }); setParcaliAcik(true) }}
+            disabled={sepet.length === 0}
+            className="w-full text-xs font-medium text-gray-600 border border-dashed border-gray-300 rounded-lg py-1.5 hover:bg-gray-50 disabled:opacity-40">
+            ➗ Parçalı Ödeme (nakit + kart + havale)
+          </button>
+
           {musteriZorunlu && !secilenMusteri && sepet.length > 0 && (
             <button type="button" onClick={() => { setMusteriForm(MUSTERI_BOSH); setMusteriFormAcik(true) }}
               className="w-full text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-300 rounded-lg py-1.5 hover:bg-amber-100 transition-colors">
@@ -534,6 +550,56 @@ export default function Satis() {
           )}
         </div>
       </div>
+
+      {/* ===== Parçalı (Karma) Ödeme Modal ===== */}
+      {parcaliAcik && (() => {
+        const sum = (parseFloat(parcali.nakit) || 0) + (parseFloat(parcali.kart) || 0) + (parseFloat(parcali.havale) || 0)
+        const kalan = genelToplam - sum
+        const tamam = Math.abs(kalan) < 0.005 && sum > 0
+        const alanlar = [['nakit', '💵 Nakit'], ['kart', '💳 Kart'], ['havale', '🏦 Havale']]
+        const kalaniYaz = (alan) => setParcali(p => ({ ...p, [alan]: ((parseFloat(p[alan]) || 0) + kalan).toFixed(2) }))
+        return (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={() => !islemde && setParcaliAcik(false)}>
+            <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-1">
+                <h3 className="text-base font-bold">Parçalı Ödeme</h3>
+                <button onClick={() => setParcaliAcik(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+              </div>
+              <p className="text-xs text-gray-400 mb-3">Toplam <b className="text-gray-700">₺{genelToplam.toFixed(2)}</b> tutarını ödeme tiplerine bölün. (Parçalı ödemede ödeme farkı yüzdesi uygulanmaz.)</p>
+
+              <div className="space-y-2">
+                {alanlar.map(([alan, etiket]) => (
+                  <div key={alan} className="flex items-center gap-2">
+                    <label className="text-sm w-24 flex-shrink-0">{etiket}</label>
+                    <input type="number" step="0.01" min="0" value={parcali[alan]}
+                      onChange={e => setParcali(p => ({ ...p, [alan]: e.target.value }))}
+                      placeholder="0,00" className="flex-1 border rounded-lg px-2 py-1.5 text-sm text-right" />
+                    <button type="button" onClick={() => kalaniYaz(alan)} disabled={Math.abs(kalan) < 0.005}
+                      className="text-[11px] text-blue-600 hover:underline disabled:opacity-30 flex-shrink-0 w-12">kalanı</button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-center mt-3 pt-3 border-t text-sm">
+                <span className="text-gray-500">Girilen: <b>₺{sum.toFixed(2)}</b></span>
+                <span className={kalan > 0.005 ? 'text-orange-600' : kalan < -0.005 ? 'text-red-600' : 'text-green-600'}>
+                  {kalan > 0.005 ? `Kalan: ₺${kalan.toFixed(2)}` : kalan < -0.005 ? `Fazla: ₺${(-kalan).toFixed(2)}` : '✓ Tam'}
+                </span>
+              </div>
+
+              <button onClick={() => {
+                const odemeler = alanlar
+                  .map(([alan]) => ({ odeme_tipi: alan, tutar: parseFloat(parcali[alan]) || 0 }))
+                  .filter(o => o.tutar > 0)
+                satisOlustur(odemeler)
+              }} disabled={!tamam || islemde}
+                className="w-full mt-4 bg-green-600 text-white py-2.5 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 text-sm">
+                {islemde ? '⏳ İşleniyor...' : `✓ Satışı Tamamla  ₺${genelToplam.toFixed(2)}`}
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ===== UPS Kargo Modal ===== */}
       <KargoFormu
