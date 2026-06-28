@@ -7,6 +7,7 @@ import { buluttanAl } from './lib/ayarSenk'
 import { veriSenk } from './lib/veriSenk'
 import { AyarlarProvider, useAyarlar } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
+import HataSiniri from './components/HataSiniri'
 import logo from './assets/logo.png'
 import Giris from './pages/Giris.jsx'
 import Panel from './pages/Panel.jsx'
@@ -110,14 +111,16 @@ function Uygulama() {
         </nav>
 
         <main className="flex-1 overflow-auto">
-          <Suspense fallback={<div className="p-8 text-center text-gray-400">Yükleniyor…</div>}>
-            <Routes>
-              {erisilebilir.map(item => (
-                <Route key={item.to} path={item.to === '/' ? '/' : item.to} element={item.el} />
-              ))}
-              <Route path="*" element={<Navigate to={ilkSayfa} replace />} />
-            </Routes>
-          </Suspense>
+          <HataSiniri>
+            <Suspense fallback={<div className="p-8 text-center text-gray-400">Yükleniyor…</div>}>
+              <Routes>
+                {erisilebilir.map(item => (
+                  <Route key={item.to} path={item.to === '/' ? '/' : item.to} element={item.el} />
+                ))}
+                <Route path="*" element={<Navigate to={ilkSayfa} replace />} />
+              </Routes>
+            </Suspense>
+          </HataSiniri>
         </main>
       </div>
     </HashRouter>
@@ -135,11 +138,13 @@ function Kapi() {
 
 export default function App() {
   return (
+    <HataSiniri>
     <GuncellemeKapisi>
       <AuthProvider>
         <Kapi />
         <Toaster position="top-right" />
       </AuthProvider>
     </GuncellemeKapisi>
+    </HataSiniri>
   )
 }
