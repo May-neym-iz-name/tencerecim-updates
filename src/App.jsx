@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { uygulamaApi } from './api/ipc'
 import { buluttanAl } from './lib/ayarSenk'
+import { veriSenk } from './lib/veriSenk'
 import { AyarlarProvider, useAyarlar } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import logo from './assets/logo.png'
@@ -53,6 +54,15 @@ function Uygulama() {
       .then(() => ayarlariYenile())
       .catch(err => console.error('Ayar senkron (çekme):', err.message))
   }, [ayarlariYenile])
+
+  // Çok-PC veri senkronu: girişten ~15 sn sonra ve her 60 sn'de bir (ürün,
+  // müşteri, stok, kategori, marka, tedarikçi). Hata olursa sessizce yeniden dener.
+  useEffect(() => {
+    const calistir = () => veriSenk().catch(err => console.error('Veri senkron:', err.message))
+    const t = setTimeout(calistir, 15 * 1000)
+    const i = setInterval(calistir, 60 * 1000)
+    return () => { clearTimeout(t); clearInterval(i) }
+  }, [])
 
   if (erisilebilir.length === 0) {
     return (

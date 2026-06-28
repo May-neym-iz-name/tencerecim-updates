@@ -14,6 +14,7 @@ function init() {
   db.pragma('foreign_keys = ON')
   createTables()
   migrate()
+  try { require('./senk-sema').kur(db) } catch (e) { console.error('senk-sema kur:', e.message) }
   seedLokasyonlar()
   seedUpsSehirIlce()
   backfillStok()

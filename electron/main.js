@@ -133,6 +133,7 @@ const handlerModules = [
   require('./db/online-siparisler'),
   require('./db/raporlar'),
   require('./db/panel'),
+  require('./db/senk-veri'),
   require('./db/kasa'),
   require('./db/gider'),
   require('./db/malkabul'),

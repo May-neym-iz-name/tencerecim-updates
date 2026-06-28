@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
+import { veriSenk } from '../lib/veriSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import IlIlceSecici from '../components/IlIlceSecici'
@@ -23,6 +24,15 @@ export default function Ayarlar() {
   ]
 
   const [yedekMesgul, setYedekMesgul] = useState('')
+  const [senkMesgul, setSenkMesgul] = useState(false)
+  async function veriSenkle() {
+    setSenkMesgul(true)
+    try {
+      const r = await veriSenk()
+      toast.success(`Senkron tamam: ${r.gonderilen || 0} gönderildi, ${r.alinan || 0} alındı`)
+    } catch (e) { toast.error('Senkron hatası: ' + e.message) }
+    finally { setSenkMesgul(false) }
+  }
   async function yedekAl() {
     setYedekMesgul('al')
     try {
@@ -499,6 +509,19 @@ export default function Ayarlar() {
             Düzenli yedek almanız önerilir; yedeği USB belleğe veya buluta kopyalayabilirsiniz.
           </p>
           {!yonetici && <p className="text-xs text-gray-400 mb-3">Bu işlemleri yalnızca yöneticiler yapabilir.</p>}
+          {/* Çok-PC veri senkronu */}
+          <div className="border rounded-xl p-4 mb-4 bg-blue-50/40">
+            <p className="text-sm font-medium text-gray-700 mb-1">🔄 Veri Senkronu (PC'ler arası)</p>
+            <p className="text-xs text-gray-500 mb-3">
+              Ürünler, müşteriler, stok, kategori/marka/tedarikçi bilgileri tüm bilgisayarlar arasında otomatik senkronlanır (her dakika).
+              Aşağıdaki butonla hemen senkronlayabilirsiniz.
+            </p>
+            <button onClick={veriSenkle} disabled={senkMesgul}
+              className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+              {senkMesgul ? 'Senkronlanıyor…' : '🔄 Şimdi Senkronla'}
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="border rounded-xl p-4">
               <p className="text-sm font-medium text-gray-700 mb-1">Yedek Al</p>
