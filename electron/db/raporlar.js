@@ -241,6 +241,37 @@ module.exports = {
     return satirlar
   },
 
+  // İade raporu — mağaza içi iadeler (satislar.tip='iade'; negatif iade satışları).
+  // Özet (tutar/işlem/adet) + ürün bazlı kırılım. Tarih = iade kaydının tarihi.
+  'raporlar:iadeler': (f = {}) => {
+    yetkiKontrol('rapor_goruntule')
+    const { baslangic, bitis, lokasyon_id } = f
+    tarihDogrula(baslangic, bitis)
+    const db = getDb()
+    let where = "WHERE s.tip = 'iade'"
+    const params = []
+    if (baslangic) { where += ' AND substr(s.tarih,1,10) >= ?'; params.push(baslangic) }
+    if (bitis) { where += ' AND substr(s.tarih,1,10) <= ?'; params.push(bitis) }
+    if (lokasyon_id) { where += ' AND s.lokasyon_id = ?'; params.push(Number(lokasyon_id)) }
+
+    const ozet = db.prepare(`
+      SELECT COUNT(*) AS islem, COALESCE(SUM(ABS(s.genel_toplam)),0) AS tutar
+      FROM satislar s ${where}`).get(...params)
+
+    const urunler = db.prepare(`
+      SELECT COALESCE(u.ad, '(silinmiş ürün)') AS urun_adi, sk.urun_id,
+             SUM(ABS(sk.miktar)) AS adet, SUM(ABS(sk.toplam)) AS tutar
+      FROM satis_kalemleri sk
+      JOIN satislar s ON sk.satis_id = s.id
+      LEFT JOIN urunler u ON sk.urun_id = u.id
+      ${where}
+      GROUP BY sk.urun_id
+      ORDER BY tutar DESC`).all(...params)
+
+    const toplamAdet = urunler.reduce((t, u) => t + (Number(u.adet) || 0), 0)
+    return { ozet: { ...ozet, adet: toplamAdet }, urunler }
+  },
+
   // Test/yeniden kullanım için saf yardımcıları dışa ver ('_' önekli → IPC'ye kaydedilmez).
   _kalemlerCte: kalemlerCte,
   _webDurumKosulu: webDurumKosulu,

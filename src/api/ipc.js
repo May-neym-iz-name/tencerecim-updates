@@ -156,6 +156,7 @@ export const raporApi = {
   zamanSerisi: (params) => invoke('raporlar:zaman-serisi', params),
   kategoriKirilim: (params) => invoke('raporlar:kategori-kirilim', params),
   markaKirilim: (params) => invoke('raporlar:marka-kirilim', params),
+  iadeler: (params) => invoke('raporlar:iadeler', params),
 }
 
 export const uygulamaApi = {

@@ -37,6 +37,7 @@ const SEKMELER = [
   { id: 'zaman', ad: 'Zaman Trendi' },
   { id: 'kategori', ad: 'Kategori' },
   { id: 'marka', ad: 'Marka' },
+  { id: 'iade', ad: 'İadeler' },
 ]
 
 // Üst KPI kartı.
@@ -65,6 +66,7 @@ export default function Raporlar() {
   const [yukleniyor, setYukleniyor] = useState(false)
   const [granularite, setGranularite] = useState('gun')
   const [urunSiralama, setUrunSiralama] = useState('adet')
+  const [iadeOzet, setIadeOzet] = useState(null)
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
 
@@ -101,6 +103,11 @@ export default function Raporlar() {
         else if (sekme === 'zaman') r = await raporApi.zamanSerisi({ ...filtre, granularite })
         else if (sekme === 'kategori') r = await raporApi.kategoriKirilim(filtre)
         else if (sekme === 'marka') r = await raporApi.markaKirilim(filtre)
+        else if (sekme === 'iade') {
+          const iade = await raporApi.iadeler(filtre)
+          if (!cancelled) setIadeOzet(iade.ozet)
+          r = iade.urunler
+        }
         if (!cancelled) setVeri(r)
       } catch (e) { if (!cancelled) toast.error('Rapor yüklenemedi: ' + e.message) }
       finally { if (!cancelled) setYukleniyor(false) }
@@ -199,6 +206,7 @@ export default function Raporlar() {
             {sekme === 'zaman' && <ZamanSekmesi veri={veri} granularite={granularite} setGranularite={setGranularite} />}
             {sekme === 'kategori' && <PastaSekmesi veri={veri} etiketAlan="kategori" />}
             {sekme === 'marka' && <PastaSekmesi veri={veri} etiketAlan="marka" />}
+            {sekme === 'iade' && <IadeSekmesi veri={veri} ozet={iadeOzet} />}
           </>
         )}
       </div>
@@ -424,6 +432,27 @@ function SiraliTablo({ kolonlar, veri, numarali = true, varsayilanBoyut = 25 }) 
         </table>
       </div>
       <Sayfalama {...sayfalama} />
+    </div>
+  )
+}
+
+// İade raporu — özet KPI'lar + en çok iade edilen ürünler.
+function IadeSekmesi({ veri, ozet }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <KpiKart baslik="Toplam İade Tutarı" deger={PARA(ozet?.tutar)} renk="text-red-600" />
+        <KpiKart baslik="İade İşlemi" deger={SAYI(ozet?.islem)} altBaslik="iade fişi" />
+        <KpiKart baslik="İade Edilen Ürün" deger={SAYI(ozet?.adet)} altBaslik="adet" />
+      </div>
+      <h3 className="text-sm font-semibold text-gray-700">En Çok İade Edilen Ürünler</h3>
+      {!veri.length ? <Bos /> : (
+        <SiraliTablo veri={veri} kolonlar={[
+          { baslik: 'Ürün', hucre: m => m.urun_adi, deger: m => m.urun_adi },
+          { baslik: 'İade Adedi', sagda: true, hucre: m => SAYI(m.adet), deger: m => m.adet },
+          { baslik: 'İade Tutarı', sagda: true, hucre: m => PARA(m.tutar), deger: m => m.tutar },
+        ]} />
+      )}
     </div>
   )
 }
