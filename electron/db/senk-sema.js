@@ -48,9 +48,12 @@ function kur(db) {
     try { db.exec(`ALTER TABLE ${tablo} ADD COLUMN senk_guncelleme TEXT`) } catch {}
     try { db.exec(`CREATE INDEX IF NOT EXISTS idx_${tablo}_senkid ON ${tablo}(senk_id)`) } catch {}
     try { db.exec(`CREATE INDEX IF NOT EXISTS idx_${tablo}_senkg ON ${tablo}(senk_guncelleme)`) } catch {}
-    // Mevcut satırları damgala (bir kez; sadece boş olanlar).
+    // Mevcut satırları damgala (bir kez; sadece boş olanlar). senk_guncelleme ESKİ
+    // sabit ts ile doldurulur (NOW değil): yükseltme öncesi mevcut veri "temel"dir;
+    // yükseltme sonrası GERÇEK her işlem (satış/sayım/düzenleme) bunu yener → bir
+    // lokasyonu fiilen işleyen PC'nin stoğu, işlemeyen PC'nin bayat değerini kazanır.
     db.exec(`UPDATE ${tablo} SET senk_id = lower(hex(randomblob(16))) WHERE senk_id IS NULL OR senk_id = ''`)
-    db.exec(`UPDATE ${tablo} SET senk_guncelleme = ${NOWMS} WHERE senk_guncelleme IS NULL OR senk_guncelleme = ''`)
+    db.exec(`UPDATE ${tablo} SET senk_guncelleme = '2000-01-01T00:00:00.000Z' WHERE senk_guncelleme IS NULL OR senk_guncelleme = ''`)
     // Tetikleyiciler.
     db.exec(`CREATE TRIGGER IF NOT EXISTS trg_${tablo}_senk_ins AFTER INSERT ON ${tablo}
       WHEN new.senk_id IS NULL BEGIN
