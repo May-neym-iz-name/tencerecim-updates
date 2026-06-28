@@ -58,14 +58,19 @@ module.exports = {
         const mevcut = bulSenk.get(k.senk_id)
         if (mevcut && mevcut.senk_guncelleme >= k.guncelleme) { atlanan++; continue } // yerel daha yeni/eşit
 
-        // FK'ları yerel id'ye çöz; referans henüz senkronlanmadıysa satırı ertele.
+        // FK'ları yerel id'ye çöz. Zorunlu FK çözülemezse satırı ertele (sonraki tur);
+        // zorunlu olmayan çözülemezse null bırak.
+        const zorunlu = new Set(cfg.zorunluFk || [])
         const fkLocal = {}
         let eksikFk = false
         for (const [kolon, ref] of Object.entries(cfg.fk || {})) {
           const refSenk = k.veri._fk?.[kolon]
           if (!refSenk) { fkLocal[kolon] = null; continue }
           const refRow = db.prepare(`SELECT id FROM ${ref} WHERE senk_id = ?`).get(refSenk)
-          if (!refRow) { eksikFk = true; break }
+          if (!refRow) {
+            if (zorunlu.has(kolon)) { eksikFk = true; break }
+            fkLocal[kolon] = null; continue
+          }
           fkLocal[kolon] = refRow.id
         }
         if (eksikFk) { atlanan++; continue }
@@ -98,12 +103,24 @@ module.exports = {
             .run({ ...cols, _sid: k.senk_id, _g: k.guncelleme, _id: eslesen.id })
           uygulanan++; continue
         }
-        try {
-          const kols = [...kolonAdlari, 'senk_id', 'senk_guncelleme']
+        const insertEt = (degerler) => {
+          const kols = [...Object.keys(degerler), 'senk_id', 'senk_guncelleme']
           db.prepare(`INSERT INTO ${tablo} (${kols.join(',')}) VALUES (${kols.map(c => '@' + c).join(',')})`)
-            .run({ ...cols, senk_id: k.senk_id, senk_guncelleme: k.guncelleme })
+            .run({ ...degerler, senk_id: k.senk_id, senk_guncelleme: k.guncelleme })
+        }
+        try {
+          insertEt(cols)
           uygulanan++
-        } catch (e) { atlanan++ } // UNIQUE vb. — bir sonraki turda doğal eşleşme yakalar
+        } catch (e) {
+          // fis_no gibi PC'ler arası çakışabilen tekil sütun → suffix ile tekrar dene
+          // (iki FARKLI kayıt yanlışlıkla birleştirilmesin). Yoksa atla.
+          if (cfg.cakismaKolon && cols[cfg.cakismaKolon]) {
+            try {
+              insertEt({ ...cols, [cfg.cakismaKolon]: `${cols[cfg.cakismaKolon]}-${k.senk_id.slice(0, 6)}` })
+              uygulanan++
+            } catch { atlanan++ }
+          } else { atlanan++ }
+        }
       }
     })
     tx()

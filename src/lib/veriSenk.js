@@ -11,7 +11,11 @@ const invoke = async (channel, ...args) => {
 }
 
 // FK bağımlılık sırası (senk-sema.js SIRA ile aynı): referanslar önce uygulanır.
-const SIRA = ['markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar']
+const SIRA = [
+  'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
+  'satislar', 'satis_kalemleri', 'satis_odemeler',
+  'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
+]
 const SAYFA = 1000
 
 let calisiyor = false

@@ -12,18 +12,35 @@ const NOWMS = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 // Senkronlanacak tablolar + senkron alanları + FK eşlemesi + doğal (tekil) anahtarlar.
 // kolonlar: kopyalanacak veri alanları (FK kolonları AYRI tutulur). fk: { kolon: referansTablo }.
 // dogal: çakışma birleştirme (dedup) için aday tekil sütunlar.
-// FAZ 1 — referans + katalog. Faz 2'de satislar/kasa/gider/mal_kabul eklenecek.
+// zorunluFk: çözülemezse satır ertelenir (NOT NULL). Diğer FK'lar çözülemezse null.
+// cakismaKolon: bu tekil sütunda UNIQUE çakışması olursa (fis_no PC'ler arası
+// çakışabilir) suffix eklenir — iki farklı kayıt yanlışlıkla BİRLEŞTİRİLMEZ.
 const TABLOLAR = {
+  // --- Faz 1: referans + katalog ---
   markalar:     { kolonlar: ['ad', 'aktif'], fk: {}, dogal: ['ad'] },
   tedarikciler: { kolonlar: ['ad', 'telefon', 'email', 'aktif'], fk: {}, dogal: ['ad'] },
   kategoriler:  { kolonlar: ['ad', 'tam_yol', 'aktif'], fk: { ust_kategori_id: 'kategoriler' }, dogal: [] },
   musteriler:   { kolonlar: ['ad', 'soyad', 'telefon', 'email', 'tc_kimlik', 'vergi_no', 'vergi_dairesi', 'unvan', 'adres', 'il', 'ilce', 'iskonto_orani', 'aktif', 'ikas_musteri_id', 'ikas_siparis_sayisi', 'ikas_toplam_harcama', 'ikas_ilk_siparis', 'ikas_son_siparis'], fk: {}, dogal: ['telefon'] },
   urunler:      { kolonlar: ['ad', 'barkod', 'sku', 'marka', 'kategori', 'aciklama', 'alis_fiyati', 'satis_fiyati', 'kdv_orani', 'aktif', 'ikas_urun_id', 'ikas_varyant_id'], fk: { marka_id: 'markalar', kategori_id: 'kategoriler', tedarikci_id: 'tedarikciler' }, dogal: ['barkod', 'sku'] },
-  urun_stoklar: { kolonlar: ['lokasyon_id', 'miktar', 'minimum_stok'], fk: { urun_id: 'urunler' }, dogalCift: ['urun_id', 'lokasyon_id'] },
+  urun_stoklar: { kolonlar: ['lokasyon_id', 'miktar', 'minimum_stok'], fk: { urun_id: 'urunler' }, zorunluFk: ['urun_id'], dogalCift: ['urun_id', 'lokasyon_id'] },
+
+  // --- Faz 2: işlemsel veri (append-mostly). lokasyon_id her PC'de aynı seed → düz kolon. ---
+  satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
+  satis_kalemleri:    { kolonlar: ['miktar', 'birim_fiyat', 'iskonto_orani', 'kdv_orani', 'toplam', 'iade_miktar'], fk: { satis_id: 'satislar', urun_id: 'urunler' }, zorunluFk: ['satis_id', 'urun_id'], dogal: [] },
+  satis_odemeler:     { kolonlar: ['odeme_tipi', 'tutar'], fk: { satis_id: 'satislar' }, zorunluFk: ['satis_id'], dogal: [] },
+  kasa_oturumlar:     { kolonlar: ['lokasyon_id', 'acan', 'acilis_tarihi', 'acilis_nakit', 'kapatan', 'kapanis_tarihi', 'sayilan_nakit', 'beklenen_nakit', 'fark', 'durum', 'notlar'], fk: {}, dogal: [] },
+  giderler:           { kolonlar: ['lokasyon_id', 'tarih', 'kategori', 'aciklama', 'tutar', 'odeme_tipi', 'kullanici', 'olusturma_tarihi'], fk: {}, dogal: [] },
+  sabit_giderler:     { kolonlar: ['lokasyon_id', 'kategori', 'aciklama', 'tutar', 'odeme_tipi', 'aktif'], fk: {}, dogal: [] },
+  mal_kabuller:       { kolonlar: ['lokasyon_id', 'fatura_no', 'tarih', 'toplam_maliyet', 'kullanici', 'notlar'], fk: { tedarikci_id: 'tedarikciler' }, dogal: [] },
+  mal_kabul_kalemleri:{ kolonlar: ['miktar', 'birim_maliyet'], fk: { mal_kabul_id: 'mal_kabuller', urun_id: 'urunler' }, zorunluFk: ['mal_kabul_id', 'urun_id'], dogal: [] },
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
-const SIRA = ['markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar']
+const SIRA = [
+  'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
+  'satislar', 'satis_kalemleri', 'satis_odemeler',
+  'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
+]
 
 function kur(db) {
   for (const tablo of Object.keys(TABLOLAR)) {
