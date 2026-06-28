@@ -22,7 +22,7 @@ function fisNoUret(db) {
 }
 
 module.exports = {
-  'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0, odeme_oran = 0, odemeler = null }) => {
+  'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0, odeme_oran = 0, odemeler = null, stok_zorla = false }) => {
     yetkiKontrol('satis_yap')
     lokasyonKontrol(lokasyon_id)
     const db = getDb()
@@ -46,7 +46,11 @@ module.exports = {
       const urun = db.prepare('SELECT * FROM urunler WHERE id = ? AND aktif = 1').get(kalem.urun_id)
       if (!urun) throw new Error(`Ürün bulunamadı: ${kalem.urun_id}`)
       const stok = db.prepare('SELECT * FROM urun_stoklar WHERE urun_id = ? AND lokasyon_id = ?').get(kalem.urun_id, lokasyon_id)
-      if (!stok || stok.miktar < kalem.miktar) throw new Error(`Yetersiz stok: ${urun.ad}`)
+      // stok_zorla açıkken yetersiz stok satışı engellemez (stok 0'ın altına düşmez).
+      if ((!stok || stok.miktar < kalem.miktar) && !stok_zorla) {
+        const mevcut = stok ? stok.miktar : 0
+        throw new Error(`Yetersiz stok: ${urun.ad} (mevcut: ${mevcut}, istenen: ${kalem.miktar})`)
+      }
 
       const birimFiyat = (kalem.birim_fiyat ?? urun.satis_fiyati) * odemeCarpani
       hesapKalemleri.push({ miktar: kalem.miktar, birim_fiyat: birimFiyat, kdv_orani: urun.kdv_orani, iskonto_orani: kalem.iskonto_orani })
@@ -77,7 +81,9 @@ module.exports = {
         const h = kalemSonuc[i]
         db.prepare(`INSERT INTO satis_kalemleri (satis_id,urun_id,miktar,birim_fiyat,iskonto_orani,kdv_orani,toplam) VALUES (?,?,?,?,?,?,?)`)
           .run(satis.lastInsertRowid, k.urun_id, k.miktar, h.birimFiyat, h.iskonto, k.kdv_orani, r(h.toplam))
-        db.prepare('UPDATE urun_stoklar SET miktar=miktar-? WHERE urun_id=? AND lokasyon_id=?').run(k.miktar, k.urun_id, lokasyon_id)
+        // Stok satırı yoksa oluştur (stok_zorla durumunda eksik olabilir); 0 altına düşürme.
+        db.prepare('INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok) VALUES (?, ?, 0, 0)').run(k.urun_id, lokasyon_id)
+        db.prepare('UPDATE urun_stoklar SET miktar=MAX(0, miktar-?) WHERE urun_id=? AND lokasyon_id=?').run(k.miktar, k.urun_id, lokasyon_id)
       })
 
       // Ödeme kalemlerini yaz (parçalı ise her tip; değilse tek satır = tüm tutar).

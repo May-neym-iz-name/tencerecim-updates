@@ -226,6 +226,8 @@ export default function Satis() {
   // odemelerArg verilirse parçalı (karma) ödeme: [{ odeme_tipi, tutar }] ve fiyat
   // farkı (odeme_oran) uygulanmaz; aksi halde tek ödeme (seçili odemeTipi).
   async function satisOlustur(odemelerArg = null) {
+    // Güvence: yalnızca dizi parçalı ödeme sayılır (onClick event'i vb. yok sayılır).
+    odemelerArg = Array.isArray(odemelerArg) ? odemelerArg : null
     if (!secilenLokasyonId) { toast.error('Lokasyon seçin'); return }
     if (!lokasyonErisim(secilenLokasyonId)) { toast.error('Bu lokasyonda işlem yapma yetkiniz yok'); return }
     if (sepet.length === 0) { toast.error('Sepet boş'); return }
@@ -242,6 +244,7 @@ export default function Satis() {
         genel_iskonto: genelIskontoYuzde,
         odeme_oran: odemelerArg ? 0 : odemeOran,
         odemeler: odemelerArg || undefined,
+        stok_zorla: !!ayarlar.stok_yetersiz_satis,
         kalemler: sepet.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) })),
       })
       toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
@@ -252,8 +255,8 @@ export default function Satis() {
       barkodRef.current?.focus()
       // Fişi yazdır (hata olursa satışı engellemesin)
       fisApi.yazdir(satis.id).catch(err => toast.error(`Fiş yazdırılamadı: ${err.message}`))
-    } catch (e) { toast.error(e.message || 'Satış hatası') }
-    setIslemde(false)
+    } catch (e) { toast.error(e.message || 'Satış hatası', { duration: 6000 }) }
+    finally { setIslemde(false) }
   }
 
   const secilenKategoriAdi = kategoriler.find(k => String(k.id) === secilenKategori)?.tam_yol || null
@@ -533,9 +536,9 @@ export default function Satis() {
               🔒 Nakit satış için kasa kapalı — Kasayı Aç ›
             </button>
           )}
-          <button onClick={satisOlustur} disabled={islemde || sepet.length === 0 || (musteriZorunlu && !secilenMusteri) || kasaNakitEngel}
+          <button onClick={() => satisOlustur()} disabled={islemde}
             className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 text-sm transition-colors">
-            {islemde ? '⏳ İşleniyor...' : kasaNakitEngel ? '🔒 Kasa Kapalı (Nakit)' : `✓ Satışı Tamamla  ₺${genelToplamSon.toFixed(2)}`}
+            {islemde ? '⏳ İşleniyor...' : `✓ Satışı Tamamla  ₺${genelToplamSon.toFixed(2)}`}
           </button>
 
           {sepet.length > 0 && (

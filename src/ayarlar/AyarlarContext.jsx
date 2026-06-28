@@ -8,6 +8,8 @@ const VARSAYILAN = {
   odeme_oran_nakit: 0, odeme_oran_kart: 0, odeme_oran_havale: 0,
   // Açıkken: kasa (vardiya) açılmadan nakit satış yapılamaz (kart/havale serbest).
   kasa_zorunlu_nakit: false,
+  // Açıkken: stok yetersiz olsa bile satış tamamlanabilir (stok 0'ın altına düşmez).
+  stok_yetersiz_satis: false,
 }
 const ANAHTAR = 'tencerecim_ayarlar'
 
