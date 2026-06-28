@@ -16,15 +16,21 @@ Authentication → **Sign In / Up → Email** sağlayıcısı:
 - E-posta (Email) açık olsun
 - **"Allow new users to sign up"** seçeneğini **KAPAT** (dışarıdan kimse kayıt olamasın)
 
-## 3. Yetki şemasını çalıştır
-SQL Editor → **New query** → `01_auth_rbac.sql` dosyasının içeriğini yapıştır → **Run**.
-(Bu dosya bu klasörde. Kullanıcıları oluşturmadan ÖNCE çalıştır.)
+## 3. SQL şemalarını çalıştır (SIRAYLA)
+SQL Editor → **New query** → her dosyanın içeriğini yapıştır → **Run** (bu klasördeki dosyalar):
+1. `01_auth_rbac.sql` — yetki/rol şeması (kullanıcılardan ÖNCE)
+2. `04_ayar_senk.sql` — ayar senkronu tablosu
+3. `05_yeni_yetkiler.sql` — yeni modül yetki kodları (kasa/gider/mal kabul)
+4. `06_veri_senk.sql` — **çok-PC veri senkronu tablosu (ürün/müşteri/stok/satış/kasa/gider/mal kabul). Bu olmadan PC'ler arası veri senkronu çalışmaz.**
+
+> (`03_profil_backfill.sql` yalnızca mevcut kullanıcıları geriye dönük profillemek için; gerekiyorsa çalıştır.)
+> Tüm dosyalar tekrar çalıştırılabilir (idempotent) — güvenli.
 
 ## 4. Kullanıcı hesaplarını oluştur
 Authentication → **Users → Add user**. Her birinde **"Auto Confirm User"** işaretle:
 
 | E-posta | Rol (otomatik/sonra ayarlanır) |
-|---------|-------------------------------|
+|---------|-------------------------------
 | `info@resiftencerecim.com` | **Süper yönetici** (otomatik atanır) |
 | `info@tencerecim.store` | Yönetici (uygulamadan yetki verilecek) |
 | `golcukmagaza@tencerecim.store` | Gölcük personeli (uygulamadan yetki verilecek) |
