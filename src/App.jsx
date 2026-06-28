@@ -4,7 +4,7 @@ import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { uygulamaApi } from './api/ipc'
 import { buluttanAl } from './lib/ayarSenk'
-import { AyarlarProvider } from './ayarlar/AyarlarContext'
+import { AyarlarProvider, useAyarlar } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import logo from './assets/logo.png'
 import Giris from './pages/Giris.jsx'
@@ -40,13 +40,19 @@ const ROL_ETIKET = { super_admin: 'Süper Yönetici', yonetici: 'Yönetici', per
 
 function Uygulama() {
   const { profil, cikis, yetkiVar } = useAuth()
+  const { yenile: ayarlariYenile } = useAyarlar()
   // Bir menü öğesi tek `yetki` ya da `yetkiler` (herhangi biri) ile görünür.
   const erisilebilir = navItems.filter(i => i.yetkiler ? i.yetkiler.some(y => yetkiVar(y)) : yetkiVar(i.yetki))
   const ilkSayfa = erisilebilir[0]?.to || '/'
   const [surum, setSurum] = useState('')
   useEffect(() => { uygulamaApi.surum().then(setSurum).catch(() => {}) }, [])
-  // Girişten sonra ayarları buluttan çek (PC'ler arası senkron).
-  useEffect(() => { buluttanAl().catch(err => console.error('Ayar senkron (çekme):', err.message)) }, [])
+  // Girişten sonra ayarları buluttan çek (PC'ler arası senkron) ve state'i tazele
+  // ki senkronlanan ayarlar (ödeme oranı, kasa zorunlu vb.) anında etkili olsun.
+  useEffect(() => {
+    buluttanAl()
+      .then(() => ayarlariYenile())
+      .catch(err => console.error('Ayar senkron (çekme):', err.message))
+  }, [ayarlariYenile])
 
   if (erisilebilir.length === 0) {
     return (

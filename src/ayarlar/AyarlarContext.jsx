@@ -32,8 +32,12 @@ export function AyarlarProvider({ children }) {
     })
   }, [])
 
+  // Buluttan ayar çekildikten (localStorage güncellendikten) sonra state'i tazeler;
+  // böylece senkronlanan ayarlar uygulamayı kapatmadan anında etkili olur.
+  const yenile = useCallback(() => setAyarlar(yukle()), [])
+
   return (
-    <AyarlarContext.Provider value={{ ayarlar, kaydet }}>
+    <AyarlarContext.Provider value={{ ayarlar, kaydet, yenile }}>
       {children}
     </AyarlarContext.Provider>
   )
