@@ -168,7 +168,7 @@ export default function Urunler() {
         <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-gray-50 border-b sticky top-0">
             <tr>
-              {['Ürün Adı', 'Barkod', 'Marka', 'Kategori', 'Tedarikçi', 'Alış', 'Satış', 'KDV', ''].map(h => (
+              {['Ürün Adı', 'Stok Kodu', 'Barkod', 'Marka', 'Kategori', 'Tedarikçi', 'Alış', 'Satış', 'KDV', ''].map(h => (
                 <th key={h} className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -177,6 +177,7 @@ export default function Urunler() {
             {sayfaUrunler.map(u => (
               <tr key={u.id} className="border-b hover:bg-gray-50">
                 <td className="px-3 py-2 font-medium max-w-xs truncate" title={u.ad}>{u.ad}</td>
+                <td className="px-3 py-2 font-mono text-xs text-gray-500">{u.sku||'—'}</td>
                 <td className="px-3 py-2 font-mono text-xs text-gray-500">{u.barkod||'—'}</td>
                 <td className="px-3 py-2 text-xs">{u.marka_adi||'—'}</td>
                 <td className="px-3 py-2 text-xs text-gray-500 max-w-[160px] truncate" title={u.kategori_yol}>{u.kategori_yol||'—'}</td>
@@ -196,7 +197,7 @@ export default function Urunler() {
               </tr>
             ))}
             {urunler.length === 0 && (
-              <tr><td colSpan={9} className="text-center py-12 text-gray-400">Ürün bulunamadı</td></tr>
+              <tr><td colSpan={10} className="text-center py-12 text-gray-400">Ürün bulunamadı</td></tr>
             )}
           </tbody>
         </table>
