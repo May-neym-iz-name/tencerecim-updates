@@ -128,6 +128,23 @@ module.exports = {
     try { return JSON.parse(k.barkod_png || '[]') } catch { return [] }
   },
 
+  // Birden çok kargonun etiket PNG'lerini tek dizide toplar (toplu basım için).
+  // Sıra korunur; etiketi olmayan/bulunmayan kargolar atlanır.
+  'kargo:etiket-toplu': (idler) => {
+    if (!Array.isArray(idler) || !idler.length) throw new Error('Kargo seçilmedi')
+    const stmt = getDb().prepare('SELECT barkod_png FROM kargolar WHERE id = ?')
+    let pngler = []
+    let kargoSayisi = 0
+    for (const id of idler) {
+      const k = stmt.get(id)
+      if (!k) continue
+      let arr = []
+      try { arr = JSON.parse(k.barkod_png || '[]') } catch { arr = [] }
+      if (arr.length) { pngler = pngler.concat(arr); kargoSayisi++ }
+    }
+    return { pngler, kargoSayisi, etiketSayisi: pngler.length }
+  },
+
   // Takip durumunu sorgular ve kaydı günceller.
   'kargo:takip': async (takipNo) => {
     const ayar = _ayarlariGetir()

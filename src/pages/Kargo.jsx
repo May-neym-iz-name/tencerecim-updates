@@ -18,6 +18,8 @@ export default function Kargo() {
   const [formAcik, setFormAcik] = useState(false)
   const [yukleniyor, setYukleniyor] = useState(false)
   const [filtre, setFiltre] = useState({ takip: '', musteri: '', bas: '', bit: '' })
+  const [secili, setSecili] = useState(() => new Set()) // toplu basım için seçili kargo id'leri
+  const [basiliyor, setBasiliyor] = useState(false)
 
   function filtreAlan(k, v) { setFiltre(f => ({ ...f, [k]: v })) }
   function filtreTemizle() { setFiltre({ takip: '', musteri: '', bas: '', bit: '' }) }
@@ -69,11 +71,48 @@ export default function Kargo() {
     } catch (e) { toast.error('Etiket yazdırılamadı: ' + e.message) }
   }
 
+  // Toplu basım için seçilebilir kargolar: iptal olmayan + takip no'lu.
+  const secilebilir = gosterilen.filter(k => k.durum !== 'iptal' && k.takip_no)
+  const tumuSecili = secilebilir.length > 0 && secilebilir.every(k => secili.has(k.id))
+
+  function secimDegistir(id) {
+    setSecili(prev => {
+      const y = new Set(prev)
+      y.has(id) ? y.delete(id) : y.add(id)
+      return y
+    })
+  }
+  function tumunuSec() {
+    setSecili(tumuSecili ? new Set() : new Set(secilebilir.map(k => k.id)))
+  }
+
+  async function topluEtiketBas() {
+    const idler = [...secili]
+    if (!idler.length) { toast.error('Etiket basmak için kargo seçin'); return }
+    setBasiliyor(true)
+    const bekle = toast.loading(`${idler.length} kargonun etiketi hazırlanıyor…`)
+    try {
+      const { pngler, kargoSayisi, etiketSayisi } = await kargoApi.etiketToplu(idler)
+      if (!pngler.length) { toast.error('Seçili kargoların kayıtlı etiketi yok', { id: bekle }); return }
+      const ayar = await upsApi.ayarGetir()
+      await kargoApi.etiketYazdir(pngler, ayar?.etiket_yazici || undefined)
+      toast.success(`${kargoSayisi} kargo · ${etiketSayisi} etiket yazıcıya gönderildi`, { id: bekle })
+      setSecili(new Set())
+    } catch (e) { toast.error('Toplu etiket yazdırılamadı: ' + e.message, { id: bekle }) }
+    finally { setBasiliyor(false) }
+  }
+
   return (
     <div className="p-5">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-2xl font-bold text-gray-800">📦 Kargo</h2>
         <div className="flex gap-2">
+          {secili.size > 0 && (
+            <button onClick={topluEtiketBas} disabled={basiliyor}
+              className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
+              🖨️ {basiliyor ? 'Basılıyor…' : `Seçili Etiketleri Bas (${secili.size})`}
+            </button>
+          )}
           <button onClick={() => setFormAcik(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ Yeni Gönderi</button>
         </div>
@@ -104,6 +143,10 @@ export default function Kargo() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600 text-left">
             <tr>
+              <th className="px-3 py-2 w-8">
+                <input type="checkbox" checked={tumuSecili} onChange={tumunuSec}
+                  title="Filtreye uyan (iptal olmayan) tüm kargoları seç" disabled={!secilebilir.length} />
+              </th>
               <th className="px-3 py-2 font-medium">Takip No</th>
               <th className="px-3 py-2 font-medium">Alıcı</th>
               <th className="px-3 py-2 font-medium">Adres</th>
@@ -115,7 +158,11 @@ export default function Kargo() {
           </thead>
           <tbody>
             {sayfaKargolar.map(k => (
-              <tr key={k.id} className="border-t hover:bg-gray-50">
+              <tr key={k.id} className={`border-t hover:bg-gray-50 ${secili.has(k.id) ? 'bg-emerald-50' : ''}`}>
+                <td className="px-3 py-2">
+                  <input type="checkbox" checked={secili.has(k.id)} onChange={() => secimDegistir(k.id)}
+                    disabled={k.durum === 'iptal' || !k.takip_no} />
+                </td>
                 <td className="px-3 py-2 font-mono text-xs">{k.takip_no || '—'}</td>
                 <td className="px-3 py-2">{k.alici_ad}</td>
                 <td className="px-3 py-2 text-gray-500 text-xs max-w-[180px] truncate">{[k.ilce, k.il].filter(Boolean).join(', ')}</td>
@@ -136,7 +183,7 @@ export default function Kargo() {
               </tr>
             ))}
             {gosterilen.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">
                 {yukleniyor ? 'Yükleniyor…' : (kargolar.length ? 'Filtreye uyan gönderi yok.' : 'Henüz kargo gönderisi yok.')}
               </td></tr>
             )}
