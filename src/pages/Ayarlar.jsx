@@ -148,7 +148,11 @@ export default function Ayarlar() {
   async function ikasStokGonder() {
     if (!confirm('Tüm eşleşmiş ürünlerin yerel stoğu ikas\'a yazılacak. Devam edilsin mi?')) return
     setIkasMesgul('gonder')
-    try { const r = await ikasApi.stokGonder(); toast.success(`${r.gonderilen} stok kaydı ikas\'a gönderildi`) }
+    try {
+      const r = await ikasApi.stokGonder()
+      if (r.kapali) toast.error('Stok gönderimi kapalı. Önce "Stok miktarı ikas\'a gönderilsin" seçeneğini açın.')
+      else toast.success(`${r.gonderilen} stok kaydı ikas\'a gönderildi`)
+    }
     catch (e) { toast.error('Gönderim hatası: ' + e.message) }
     finally { setIkasMesgul('') }
   }
@@ -456,6 +460,19 @@ export default function Ayarlar() {
             </p>
           </div>
 
+          <div className="mb-4">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={ikas.stok_push_kapali !== '1'}
+                onChange={e => ikasAlan('stok_push_kapali', e.target.checked ? '' : '1')}
+                className="w-4 h-4" />
+              <span className="font-medium text-gray-800">Stok miktarı ikas'a gönderilsin</span>
+            </label>
+            <p className="text-xs text-gray-400 mt-1">
+              Kapatılırsa yerel stok değişiklikleri ikas paneline <b>gönderilmez</b> (ürün düzenlemesi sırasında güvenlik için).
+              Sipariş çekme ve fiyat gönderimi bundan etkilenmez.
+            </p>
+          </div>
+
           <div className="flex flex-wrap gap-2 mb-3">
             <button onClick={ikasKaydet} disabled={!!ikasMesgul}
               className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
@@ -491,6 +508,7 @@ export default function Ayarlar() {
             <div className="text-xs text-gray-500 border-t pt-3 grid grid-cols-2 gap-1">
               <span>Durum: {ikasDurum.yapilandirildi ? '✅ Yapılandırıldı' : '⚠️ Eksik bilgi'}</span>
               <span>Otomatik senkron: {ikasDurum.otomatik_senk ? 'Açık' : 'Kapalı'}</span>
+              <span>Stok gönderimi: {ikasDurum.stok_push_kapali ? '⛔ Kapalı' : 'Açık'}</span>
               <span>Eşleşmiş ürün: {ikasDurum.eslesmisUrun}</span>
               <span>Eşleşmiş lokasyon: {ikasDurum.eslesmisLok}/2</span>
               <span>Kayıtlı online sipariş: {ikasDurum.onlineSiparis}</span>

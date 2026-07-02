@@ -43,6 +43,10 @@ async function lokasyonEsle() {
 // Verilen ürün id'lerinin (boşsa tüm eşleşmiş ürünlerin) güncel yerel stoklarını
 // ikas'a mutlak değer olarak yazar. Yerel DB doğru kaynaktır.
 async function pushUrunStok(urunIdler) {
+  // Stok miktarı senkronu geçici olarak kapatılabilir (sipariş çekme + fiyat push
+  // etkilenmez; yalnızca yerel stok → ikas gönderimi durur). '1' = kapalı.
+  if (ayarGetir().stok_push_kapali === '1') return { gonderilen: 0, kapali: true }
+
   const db = getDb()
   let where = `WHERE u.aktif = 1 AND u.ikas_urun_id IS NOT NULL AND u.ikas_varyant_id IS NOT NULL
                AND l.ikas_lokasyon_id IS NOT NULL`
@@ -502,6 +506,7 @@ module.exports = {
     return {
       yapilandirildi: !!(a.store_name && a.client_id && a.client_secret),
       otomatik_senk: !!a.otomatik_senk,
+      stok_push_kapali: a.stok_push_kapali === '1',
       son_siparis_senk: a.son_siparis_senk ? Number(a.son_siparis_senk) : null,
       eslesmisUrun, eslesmisLok, onlineSiparis,
     }
