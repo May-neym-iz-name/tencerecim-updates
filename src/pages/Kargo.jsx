@@ -68,7 +68,7 @@ export default function Kargo() {
       const pngler = await kargoApi.etiket(k.id)
       if (!pngler.length) { toast.error('Bu gönderinin kayıtlı etiketi yok'); return }
       const ayar = await upsApi.ayarGetir()
-      await kargoApi.etiketYazdir(pngler, ayar?.etiket_yazici || undefined)
+      await kargoApi.etiketYazdir(pngler, ayar?.etiket_yazici || undefined, Number(sayfaBasina) || 1)
       toast.success('Etiket yazıcıya gönderildi')
     } catch (e) { toast.error('Etiket yazdırılamadı: ' + e.message) }
   }
@@ -110,21 +110,10 @@ export default function Kargo() {
         <h2 className="text-2xl font-bold text-gray-800">📦 Kargo</h2>
         <div className="flex gap-2">
           {secili.size > 0 && (
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-gray-500 flex items-center gap-1">
-                Sayfa başına
-                <select value={sayfaBasina} onChange={e => setSayfaBasina(Number(e.target.value))}
-                  className="border rounded px-2 py-1.5 text-sm bg-white">
-                  <option value={1}>1 (termal etiket)</option>
-                  <option value={2}>2 (A4)</option>
-                  <option value={4}>4 (A4)</option>
-                </select>
-              </label>
-              <button onClick={topluEtiketBas} disabled={basiliyor}
-                className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
-                🖨️ {basiliyor ? 'Basılıyor…' : `Seçili Etiketleri Bas (${secili.size})`}
-              </button>
-            </div>
+            <button onClick={topluEtiketBas} disabled={basiliyor}
+              className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
+              🖨️ {basiliyor ? 'Basılıyor…' : `Seçili Etiketleri Bas (${secili.size})`}
+            </button>
           )}
           <button onClick={() => setFormAcik(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ Yeni Gönderi</button>
@@ -149,7 +138,16 @@ export default function Kargo() {
             className="border rounded px-2 py-1.5 text-sm mt-0.5 block" />
         </label>
         <button onClick={filtreTemizle} className="text-xs text-gray-500 hover:text-gray-800 underline pb-2">Temizle</button>
-        <span className="text-xs text-gray-400 pb-2 ml-auto">{gosterilen.length} / {kargolar.length} gönderi</span>
+        {/* Etiket düzeni — hem tekli "Etiket" hem toplu basımda geçerli. */}
+        <label className="text-xs text-gray-500 ml-auto">🖨️ Sayfa başına etiket
+          <select value={sayfaBasina} onChange={e => setSayfaBasina(Number(e.target.value))}
+            className="border rounded px-2 py-1.5 text-sm bg-white mt-0.5 block">
+            <option value={1}>1 — termal etiket (100×150mm)</option>
+            <option value={2}>2 — A4 sayfa</option>
+            <option value={4}>4 — A4 sayfa</option>
+          </select>
+        </label>
+        <span className="text-xs text-gray-400 pb-2">{gosterilen.length} / {kargolar.length} gönderi</span>
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">
