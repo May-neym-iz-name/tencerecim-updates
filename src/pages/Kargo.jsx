@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
+import { usePersistentState } from '../hooks/usePersistentState'
 
 const DURUM_RENK = {
   olusturuldu: 'bg-blue-100 text-blue-700',
@@ -20,6 +21,7 @@ export default function Kargo() {
   const [filtre, setFiltre] = useState({ takip: '', musteri: '', bas: '', bit: '' })
   const [secili, setSecili] = useState(() => new Set()) // toplu basım için seçili kargo id'leri
   const [basiliyor, setBasiliyor] = useState(false)
+  const [sayfaBasina, setSayfaBasina] = usePersistentState('kargo_etiket_sayfa_basina', 1) // 1|2|4
 
   function filtreAlan(k, v) { setFiltre(f => ({ ...f, [k]: v })) }
   function filtreTemizle() { setFiltre({ takip: '', musteri: '', bas: '', bit: '' }) }
@@ -95,7 +97,7 @@ export default function Kargo() {
       const { pngler, kargoSayisi, etiketSayisi } = await kargoApi.etiketToplu(idler)
       if (!pngler.length) { toast.error('Seçili kargoların kayıtlı etiketi yok', { id: bekle }); return }
       const ayar = await upsApi.ayarGetir()
-      await kargoApi.etiketYazdir(pngler, ayar?.etiket_yazici || undefined)
+      await kargoApi.etiketYazdir(pngler, ayar?.etiket_yazici || undefined, Number(sayfaBasina) || 1)
       toast.success(`${kargoSayisi} kargo · ${etiketSayisi} etiket yazıcıya gönderildi`, { id: bekle })
       setSecili(new Set())
     } catch (e) { toast.error('Toplu etiket yazdırılamadı: ' + e.message, { id: bekle }) }
@@ -108,10 +110,21 @@ export default function Kargo() {
         <h2 className="text-2xl font-bold text-gray-800">📦 Kargo</h2>
         <div className="flex gap-2">
           {secili.size > 0 && (
-            <button onClick={topluEtiketBas} disabled={basiliyor}
-              className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
-              🖨️ {basiliyor ? 'Basılıyor…' : `Seçili Etiketleri Bas (${secili.size})`}
-            </button>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500 flex items-center gap-1">
+                Sayfa başına
+                <select value={sayfaBasina} onChange={e => setSayfaBasina(Number(e.target.value))}
+                  className="border rounded px-2 py-1.5 text-sm bg-white">
+                  <option value={1}>1 (termal etiket)</option>
+                  <option value={2}>2 (A4)</option>
+                  <option value={4}>4 (A4)</option>
+                </select>
+              </label>
+              <button onClick={topluEtiketBas} disabled={basiliyor}
+                className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
+                🖨️ {basiliyor ? 'Basılıyor…' : `Seçili Etiketleri Bas (${secili.size})`}
+              </button>
+            </div>
           )}
           <button onClick={() => setFormAcik(true)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ Yeni Gönderi</button>
