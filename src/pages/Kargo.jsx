@@ -153,16 +153,18 @@ export default function Kargo() {
           </select>
         </label>
         <button onClick={filtreTemizle} className="text-xs text-gray-500 hover:text-gray-800 underline pb-2">Temizle</button>
-        {/* Etiket düzeni — hem tekli "Etiket" hem toplu basımda geçerli. */}
-        <label className="text-xs text-gray-500 ml-auto">🖨️ Sayfa başına etiket
-          <select value={sayfaBasina} onChange={e => setSayfaBasina(Number(e.target.value))}
-            className="border rounded px-2 py-1.5 text-sm bg-white mt-0.5 block">
-            <option value={1}>1 — termal etiket (100×150mm)</option>
-            <option value={2}>2 — A4 sayfa</option>
-            <option value={4}>4 — A4 sayfa</option>
-          </select>
-        </label>
-        <span className="text-xs text-gray-400 pb-2">{gosterilen.length} / {kargolar.length} gönderi</span>
+        {/* Sağ küme: sayaç + etiket düzeni (hem tekli hem toplu basımda geçerli) */}
+        <div className="ml-auto flex items-end gap-3">
+          <span className="text-xs text-gray-400 pb-2 whitespace-nowrap">{gosterilen.length} / {kargolar.length} gönderi</span>
+          <label className="text-xs text-gray-500" title="Etiket önizlemesinde sayfa başına kaç etiket dizilsin">🖨️ Etiket/sayfa
+            <select value={sayfaBasina} onChange={e => setSayfaBasina(Number(e.target.value))}
+              className="border rounded px-2 py-1.5 text-sm bg-white mt-0.5 block w-28">
+              <option value={1}>1 · Termal</option>
+              <option value={2}>2 · A4</option>
+              <option value={4}>4 · A4</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">
