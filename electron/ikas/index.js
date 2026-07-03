@@ -478,8 +478,14 @@ module.exports = {
       LEFT JOIN urunler u ON k.urun_id = u.id
       WHERE k.siparis_id = ?`).all(id)
     const takip = db.prepare(
-      "SELECT takip_no FROM kargolar WHERE online_siparis_id = ? ORDER BY id DESC LIMIT 1"
+      "SELECT takip_no, barkod_png FROM kargolar WHERE online_siparis_id = ? ORDER BY id DESC LIMIT 1"
     ).get(id)
+    // barkod_png: koli başına bir base64 PNG içeren JSON dizisi.
+    let barkodlar = []
+    if (takip?.barkod_png) {
+      try { barkodlar = JSON.parse(takip.barkod_png) } catch { barkodlar = [] }
+      if (!Array.isArray(barkodlar)) barkodlar = []
+    }
     const gon = db.prepare('SELECT ad, yetkili FROM lokasyon_gonderici WHERE ad IS NOT NULL LIMIT 1').get()
 
     let satisKanali = null, kargoKurali = null, kargoUcreti = null
@@ -520,6 +526,7 @@ module.exports = {
       teslimat_adres: s.teslimat_adres,
       takip_no: takip?.takip_no || s.kargo_takip_no || null,
       kargo_firma: s.kargo_firma || 'UPS',
+      barkodlar,
       satisKanali,
       kargoKurali,
       kargoUcreti,

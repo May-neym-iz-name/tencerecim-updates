@@ -21,6 +21,11 @@ export function kargoEtiketHtml(d) {
   const adres = [d.teslimat_adres, [d.teslimat_ilce, d.teslimat_il].filter(Boolean).join(' / ')]
     .filter(Boolean).join('\n')
 
+  const barkodlar = (d.barkodlar || []).map(b => {
+    const src = String(b).startsWith('data:') ? String(b) : `data:image/png;base64,${b}`
+    return `<div class="barkod"><img src="${src}" alt="Kargo barkodu"></div>`
+  }).join('')
+
   const kalemler = (d.kalemler || []).map(k => `
     <tr>
       <td class="img">${k.resim ? `<img src="${esc(k.resim)}" alt="">` : '<div class="ph"></div>'}</td>
@@ -55,6 +60,10 @@ export function kargoEtiketHtml(d) {
   td.ad { font-size: 13px; }
   td.marka, td.sku { font-size: 11px; color: #666; white-space: nowrap; }
   td.fiyat { text-align: right; white-space: nowrap; font-size: 12px; }
+  .barkodlar { margin-top: 28px; border-top: 1px solid #e5e5e5; padding-top: 16px; }
+  .barkodlar .baslik { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #666; margin-bottom: 10px; }
+  .barkod { text-align: center; page-break-inside: avoid; margin-bottom: 14px; }
+  .barkod img { max-width: 100%; max-height: 360px; }
   @media print { .toolbar { display: none; } body { padding: 12px 18px; } }
 </style></head>
 <body>
@@ -81,5 +90,6 @@ export function kargoEtiketHtml(d) {
     <div class="ucret">${d.kargoKurali ? `${esc(d.kargoKurali)}: ${tl(d.kargoUcreti)}` : ''}</div>
   </div>
   <table><tbody>${kalemler}</tbody></table>
+  ${barkodlar ? `<div class="barkodlar"><div class="baslik">Kargo Barkodu</div>${barkodlar}</div>` : ''}
 </body></html>`
 }
