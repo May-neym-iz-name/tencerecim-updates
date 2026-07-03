@@ -478,8 +478,10 @@ module.exports = {
       LEFT JOIN urunler u ON k.urun_id = u.id
       WHERE k.siparis_id = ?`).all(id)
     const takip = db.prepare(
-      "SELECT takip_no, barkod_png FROM kargolar WHERE online_siparis_id = ? ORDER BY id DESC LIMIT 1"
-    ).get(id)
+      `SELECT takip_no, barkod_png FROM kargolar
+       WHERE online_siparis_id = ? OR (ikas_siparis_id IS NOT NULL AND ikas_siparis_id = ?)
+       ORDER BY id DESC LIMIT 1`
+    ).get(id, s.ikas_siparis_id)
     // barkod_png: koli başına bir base64 PNG içeren JSON dizisi.
     let barkodlar = []
     if (takip?.barkod_png) {

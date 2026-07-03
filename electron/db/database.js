@@ -362,6 +362,10 @@ function migrate() {
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_durumu TEXT") } catch {}
   // kargolar — online sipariş bağlantısı (hangi siparişin kargosu).
   try { db.exec("ALTER TABLE kargolar ADD COLUMN online_siparis_id INTEGER REFERENCES online_siparisler(id)") } catch {}
+  // Çok-PC senkron + lokasyon kapsama için: gönderici mağaza (lokasyon_id) ve
+  // PC'ler arası sipariş eşleme için stabil ikas_siparis_id.
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN lokasyon_id INTEGER REFERENCES lokasyonlar(id)") } catch {}
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN ikas_siparis_id TEXT") } catch {}
   // online_siparis_kalemleri — ikas sipariş kalemi id'si (iptal/iade için).
   try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN ikas_kalem_id TEXT") } catch {}
   // online_siparisler — ikas'tan okunan kargo takip bilgisi (orderPackages.trackingInfo).

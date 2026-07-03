@@ -33,6 +33,11 @@ const TABLOLAR = {
   sabit_giderler:     { kolonlar: ['lokasyon_id', 'kategori', 'aciklama', 'tutar', 'odeme_tipi', 'aktif'], fk: {}, dogal: [] },
   mal_kabuller:       { kolonlar: ['lokasyon_id', 'fatura_no', 'tarih', 'toplam_maliyet', 'kullanici', 'notlar'], fk: { tedarikci_id: 'tedarikciler' }, dogal: [] },
   mal_kabul_kalemleri:{ kolonlar: ['miktar', 'birim_maliyet'], fk: { mal_kabul_id: 'mal_kabuller', urun_id: 'urunler' }, zorunluFk: ['mal_kabul_id', 'urun_id'], dogal: [] },
+
+  // Kargo gönderileri: çok-PC senkron. online_siparis_id YERİNE ikas_siparis_id
+  // (stabil, PC'ler arası) taşınır; lokasyon_id gönderici mağaza (kapsam filtresi).
+  // takip_no UPS'ten benzersiz → doğal anahtar (dedup güvenli).
+  kargolar: { kolonlar: ['takip_no', 'durum', 'lokasyon_id', 'ikas_siparis_id', 'alici_ad', 'alici_telefon', 'alici_adres', 'il', 'ilce', 'il_kodu', 'ilce_kodu', 'koli_adedi', 'agirlik', 'servis_seviyesi', 'odeme_tipi', 'aciklama', 'barkod_png', 'son_durum', 'son_durum_tarihi', 'olusturma_tarihi'], fk: { musteri_id: 'musteriler', satis_id: 'satislar' }, dogal: ['takip_no'] },
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
@@ -40,6 +45,7 @@ const SIRA = [
   'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
+  'kargolar',
 ]
 
 function kur(db) {

@@ -14,7 +14,7 @@ const DURUM_RENK = {
 }
 
 export default function Kargo() {
-  const { yetkiVar } = useAuth()
+  const { yetkiVar, lokasyonErisim } = useAuth()
   const iptalYetkisi = yetkiVar('kargo_iptal')
   const [kargolar, setKargolar] = useState([])
   const [formAcik, setFormAcik] = useState(false)
@@ -28,6 +28,9 @@ export default function Kargo() {
   function filtreTemizle() { setFiltre({ takip: '', musteri: '', bas: '', bit: '' }) }
 
   const gosterilen = kargolar.filter(k => {
+    // Lokasyon kapsamı: kullanıcı yalnızca yetkili olduğu mağazanın gönderilerini
+    // görür (lokasyonsuz/eski kayıtlar herkese açık). Yönetici/admin hepsini görür.
+    if (k.lokasyon_id != null && !lokasyonErisim(k.lokasyon_id)) return false
     if (filtre.takip && !(k.takip_no || '').toLowerCase().includes(filtre.takip.toLowerCase())) return false
     if (filtre.musteri && !(k.alici_ad || '').toLowerCase().includes(filtre.musteri.toLowerCase())) return false
     const gun = (k.olusturma_tarihi || '').slice(0, 10) // YYYY-MM-DD

@@ -86,14 +86,20 @@ module.exports = {
     const sonuc = await soap.createShipment(session, istek)
 
     const db = getDb()
+    // PC'ler arası sipariş eşleme için stabil ikas_siparis_id (online siparişten).
+    const ikasSiparisId = veri.onlineSiparisId
+      ? (db.prepare('SELECT ikas_siparis_id FROM online_siparisler WHERE id=?').get(veri.onlineSiparisId)?.ikas_siparis_id || null)
+      : null
     const ekle = db.prepare(`INSERT INTO kargolar
-      (takip_no, durum, musteri_id, satis_id, online_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png)
-      VALUES (@takip_no, 'olusturuldu', @musteri_id, @satis_id, @online_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png)`)
+      (takip_no, durum, musteri_id, satis_id, online_siparis_id, lokasyon_id, ikas_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png)
+      VALUES (@takip_no, 'olusturuldu', @musteri_id, @satis_id, @online_siparis_id, @lokasyon_id, @ikas_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png)`)
     const r = ekle.run({
       takip_no: sonuc.shipmentNo,
       musteri_id: veri.musteriId || null,
       satis_id: veri.satisId || null,
       online_siparis_id: veri.onlineSiparisId || null,
+      lokasyon_id: veri.gondericiLokasyonId || null,
+      ikas_siparis_id: ikasSiparisId,
       alici_ad: veri.aliciAd,
       alici_telefon: veri.aliciTelefon || veri.aliciCep || '',
       alici_adres: veri.aliciAdres,

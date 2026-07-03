@@ -17,7 +17,8 @@ module.exports = {
     const sorgu = `
       SELECT s.*, (
         SELECT k.takip_no FROM kargolar k
-        WHERE k.online_siparis_id = s.id AND k.durum != 'iptal'
+        WHERE (k.online_siparis_id = s.id OR (k.ikas_siparis_id IS NOT NULL AND k.ikas_siparis_id = s.ikas_siparis_id))
+          AND k.durum != 'iptal'
         ORDER BY k.id DESC LIMIT 1
       ) AS kargo_takip_no
       FROM online_siparisler s ${where} ORDER BY s.siparis_tarihi DESC ${limitsiz ? '' : 'LIMIT ? OFFSET ?'}`
@@ -75,8 +76,10 @@ module.exports = {
       WHERE k.siparis_id = ?
     `).all(id)
     siparis.kargolar = db.prepare(
-      "SELECT id, takip_no, durum FROM kargolar WHERE online_siparis_id = ? ORDER BY id DESC"
-    ).all(id)
+      `SELECT id, takip_no, durum FROM kargolar
+       WHERE online_siparis_id = ? OR (ikas_siparis_id IS NOT NULL AND ikas_siparis_id = ?)
+       ORDER BY id DESC`
+    ).all(id, siparis.ikas_siparis_id)
     return siparis
   },
 }
