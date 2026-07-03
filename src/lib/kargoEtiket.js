@@ -23,6 +23,17 @@ export function kargoEtiketHtml(d) {
     .filter(Boolean).join('\n')
   const firma = d.kargo_firma || 'UPS'
 
+  // Toplamlar: fiyatlar KDV dahil kabul edilir; ürün başına KDV oranıyla ayrıştırılır.
+  let araToplam = 0, kdvToplam = 0
+  for (const k of (d.kalemler || [])) {
+    const dahil = (Number(k.birim_fiyat) || 0) * (Number(k.miktar) || 1)
+    const oran = (Number(k.kdv) || 20) / 100
+    const haric = dahil / (1 + oran)
+    araToplam += haric
+    kdvToplam += dahil - haric
+  }
+  const netToplam = araToplam + kdvToplam
+
   const kalemler = (d.kalemler || []).map(k => `
     <tr>
       <td class="img">${k.resim ? `<img src="${esc(k.resim)}" alt="">` : '<div class="ph"></div>'}</td>
@@ -77,6 +88,9 @@ export function kargoEtiketHtml(d) {
   td.ad { font-size: 13px; }
   td.marka, td.sku { font-size: 11px; color: #666; white-space: nowrap; }
   td.fiyat { text-align: right; white-space: nowrap; font-size: 12px; }
+  .toplamlar { width: 280px; margin-left: auto; margin-top: 14px; font-size: 13px; }
+  .toplamlar > div { display: flex; justify-content: space-between; padding: 6px 2px; border-bottom: 1px solid #eee; }
+  .toplamlar .net { font-weight: 800; font-size: 15px; border-bottom: none; border-top: 2px solid #333; margin-top: 2px; }
   @media print { .toolbar { display: none; } body { padding: 12px 18px; } }
 </style></head>
 <body>
@@ -104,5 +118,10 @@ export function kargoEtiketHtml(d) {
     ${barkodKutu}
   </div>
   <table><tbody>${kalemler}</tbody></table>
+  <div class="toplamlar">
+    <div><span>Ara Toplam (KDV Hariç)</span><span>${tl(araToplam)}</span></div>
+    <div><span>KDV</span><span>${tl(kdvToplam)}</span></div>
+    <div class="net"><span>Net Toplam</span><span>${tl(netToplam)}</span></div>
+  </div>
 </body></html>`
 }

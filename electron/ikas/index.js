@@ -473,7 +473,7 @@ module.exports = {
     const s = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     if (!s) throw new Error('Sipariş bulunamadı')
     const kalemler = db.prepare(`
-      SELECT k.*, u.sku AS urun_sku, u.marka AS urun_marka
+      SELECT k.*, u.sku AS urun_sku, u.marka AS urun_marka, u.kdv_orani AS urun_kdv
       FROM online_siparis_kalemleri k
       LEFT JOIN urunler u ON k.urun_id = u.id
       WHERE k.siparis_id = ?`).all(id)
@@ -537,6 +537,7 @@ module.exports = {
         sku: k.urun_sku || '',
         miktar: k.miktar || 1,
         birim_fiyat: k.birim_fiyat || 0,
+        kdv: k.urun_kdv != null ? k.urun_kdv : 20,
         resim: resimMap[k.ikas_varyant_id] || null,
       })),
     }
