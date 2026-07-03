@@ -36,6 +36,23 @@ function webDurumKosulu(webDurum) {
   }
 }
 
+// Mağaza içi satışlar için durum filtresi (SQL parçası). Web tarafındaki
+// webDurumKosulu'nun eşdeğeri. tip NULL olabilir → COALESCE ile 'satis' sayılır.
+function magazaDurumKosulu(magazaDurum) {
+  switch (magazaDurum) {
+    case 'iptal':
+      return "s.durum = 'iptal'"
+    case 'iade':
+      return "COALESCE(s.tip,'satis') = 'iade'"
+    case 'tumu':
+      return '1=1'
+    case 'gecerli':
+    default:
+      // Tamamlanan satışlar; iptal ve iadeler hariç.
+      return "s.durum = 'tamamlandi' AND COALESCE(s.tip,'satis') != 'iade'"
+  }
+}
+
 /**
  * Birleşik kalem CTE'sini ve parametrelerini üretir.
  * @param {{ baslangic?: string, bitis?: string, lokasyon_id?: number,
@@ -43,7 +60,7 @@ function webDurumKosulu(webDurum) {
  * @returns {{ cte: string, params: any[] }}
  */
 function kalemlerCte(f = {}) {
-  const { baslangic, bitis, lokasyon_id, kaynak = 'hepsi', webDurum = 'gecerli' } = f
+  const { baslangic, bitis, lokasyon_id, kaynak = 'hepsi', webDurum = 'gecerli', magazaDurum = 'gecerli' } = f
   tarihDogrula(baslangic, bitis)
   const params = []
 
@@ -62,7 +79,7 @@ function kalemlerCte(f = {}) {
     LEFT JOIN urunler u ON sk.urun_id = u.id
     LEFT JOIN markalar mk ON u.marka_id = mk.id
     LEFT JOIN kategoriler kt ON u.kategori_id = kt.id
-    WHERE s.durum = 'tamamlandi' AND s.tip != 'iade'`
+    WHERE ${magazaDurumKosulu(magazaDurum)}`
   const magazaParams = []
   if (baslangic) { magaza += ' AND substr(s.tarih,1,10) >= ?'; magazaParams.push(baslangic) }
   if (bitis) { magaza += ' AND substr(s.tarih,1,10) <= ?'; magazaParams.push(bitis) }

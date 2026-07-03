@@ -57,6 +57,7 @@ export default function Raporlar() {
   const [tarihBit, setTarihBit] = useState(() => TARIH_KISAYOLLARI[2].hesapla()[1])
   const [kaynak, setKaynak] = useState('hepsi')
   const [webDurum, setWebDurum] = useState('gecerli')
+  const [magazaDurum, setMagazaDurum] = useState('gecerli')
   const [lokasyonId, setLokasyonId] = useState('')
   const [lokasyonlar, setLokasyonlar] = useState([])
 
@@ -75,8 +76,9 @@ export default function Raporlar() {
     bitis: tarihBit || undefined,
     kaynak,
     webDurum,
+    magazaDurum,
     lokasyon_id: lokasyonId ? Number(lokasyonId) : undefined,
-  }), [tarihBas, tarihBit, kaynak, webDurum, lokasyonId])
+  }), [tarihBas, tarihBit, kaynak, webDurum, magazaDurum, lokasyonId])
 
   // Özet KPI'ları her filtre değişiminde tazele. cancelled bayrağı: hızlı filtre
   // değişiminde geç gelen yanıtın güncel KPI'ları ezmesini önler (yarış koşulu).
@@ -159,6 +161,15 @@ export default function Raporlar() {
               className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5 bg-white disabled:opacity-50">
               <option value="gecerli">İptal/iade hariç</option>
               <option value="odenmis">Sadece ödenmiş</option>
+              <option value="tumu">Tümü</option>
+            </select>
+          </label>
+          <label className="text-xs text-gray-500">Mağaza Durumu
+            <select value={magazaDurum} onChange={e => setMagazaDurum(e.target.value)} disabled={kaynak === 'web'}
+              className="block border rounded-lg px-2 py-1.5 text-sm mt-0.5 bg-white disabled:opacity-50">
+              <option value="gecerli">İptal/iade hariç</option>
+              <option value="iptal">Sadece iptaller</option>
+              <option value="iade">Sadece iadeler</option>
               <option value="tumu">Tümü</option>
             </select>
           </label>
