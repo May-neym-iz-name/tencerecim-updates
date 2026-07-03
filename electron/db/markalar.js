@@ -1,7 +1,10 @@
 const { getDb } = require('./database')
 
 module.exports = {
-  'markalar:listele': () => getDb().prepare('SELECT * FROM markalar WHERE aktif=1 ORDER BY ad').all(),
+  'markalar:listele': () => getDb().prepare(
+    `SELECT m.*, (SELECT COUNT(*) FROM urunler u WHERE u.marka_id = m.id AND u.aktif = 1) AS urun_sayisi
+     FROM markalar m WHERE m.aktif = 1 ORDER BY m.ad`
+  ).all(),
   'markalar:olustur': ({ ad }) => {
     const db = getDb()
     try {

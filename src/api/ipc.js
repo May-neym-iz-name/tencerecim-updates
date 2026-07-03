@@ -65,6 +65,7 @@ export const lokasyonApi = {
 export const markaApi = {
   listele: () => invoke('markalar:listele'),
   olustur: (ad) => invoke('markalar:olustur', { ad }),
+  guncelle: (id, ad) => invoke('markalar:guncelle', { id, ad }),
   sil: (id) => invoke('markalar:sil', id),
 }
 
@@ -77,6 +78,7 @@ export const tedarikciApi = {
 export const kategoriApi = {
   listele: () => invoke('kategoriler:listele'),
   olustur: (veri) => invoke('kategoriler:olustur', veri),
+  guncelle: (id, ad) => invoke('kategoriler:guncelle', { id, ad }),
   sil: (id) => invoke('kategoriler:sil', id),
 }
 

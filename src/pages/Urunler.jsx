@@ -5,6 +5,8 @@ import { useAuth } from '../auth/AuthContext'
 import BarkodModal from '../components/BarkodModal'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
+import KategoriYonetim from '../components/KategoriYonetim'
+import MarkaYonetim from '../components/MarkaYonetim'
 
 const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20 }
 
@@ -52,6 +54,7 @@ export default function Urunler() {
   const [excelYukleniyor, setExcelYukleniyor] = useState(false)
   const [excelSonuc, setExcelSonuc] = useState(null)
   const [barkodUrun, setBarkodUrun] = useState(null)
+  const [sekme, setSekme] = useState('urunler')
 
   const yukle = useCallback(async () => {
     try {
@@ -115,8 +118,29 @@ export default function Urunler() {
     try { await kategoriApi.olustur({ ad }); await yukleYardimcilar(); toast.success('Kategori eklendi') } catch (e) { toast.error(e.message) }
   }
 
+  const sekmeler = (
+    <div className="flex gap-1 mb-4 flex-shrink-0 border-b">
+      {[['urunler', 'Ürünler'], ['kategoriler', 'Kategoriler'], ['markalar', 'Markalar']].map(([k, l]) => (
+        <button key={k} onClick={() => setSekme(k)}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${sekme === k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          {l}
+        </button>
+      ))}
+    </div>
+  )
+
+  if (sekme !== 'urunler') {
+    return (
+      <div className="p-4 h-full flex flex-col">
+        {sekmeler}
+        {sekme === 'kategoriler' ? <KategoriYonetim /> : <MarkaYonetim />}
+      </div>
+    )
+  }
+
   return (
     <div className="p-4 h-full flex flex-col">
+      {sekmeler}
       {/* Toolbar */}
       <div className="flex justify-between items-center mb-4 flex-shrink-0">
         <h2 className="text-xl font-bold text-gray-800">Ürünler</h2>
