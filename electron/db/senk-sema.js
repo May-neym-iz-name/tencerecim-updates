@@ -40,7 +40,7 @@ const TABLOLAR = {
   // barkod_png (UPS etiket görseli, ~97KB/kargo) SENKRONLANMAZ: Supabase'i çok şişirir
   // ve etiket zaten oluşturan mağazanın PC'sinde yerelde durur. Diğer alanlar (takip no,
   // alıcı, adres, durum, lokasyon) senkronlanır → görünürlük + takip + WhatsApp çalışır.
-  kargolar: { kolonlar: ['takip_no', 'durum', 'lokasyon_id', 'ikas_siparis_id', 'alici_ad', 'alici_telefon', 'alici_adres', 'il', 'ilce', 'il_kodu', 'ilce_kodu', 'koli_adedi', 'agirlik', 'servis_seviyesi', 'odeme_tipi', 'aciklama', 'son_durum', 'son_durum_tarihi', 'olusturma_tarihi'], fk: { musteri_id: 'musteriler', satis_id: 'satislar' }, dogal: ['takip_no'] },
+  kargolar: { kolonlar: ['takip_no', 'durum', 'lokasyon_id', 'ikas_siparis_id', 'alici_ad', 'alici_telefon', 'alici_adres', 'il', 'ilce', 'il_kodu', 'ilce_kodu', 'koli_adedi', 'agirlik', 'servis_seviyesi', 'odeme_tipi', 'aciklama', 'etiket_link', 'son_durum', 'son_durum_tarihi', 'olusturma_tarihi'], fk: { musteri_id: 'musteriler', satis_id: 'satislar' }, dogal: ['takip_no'] },
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.

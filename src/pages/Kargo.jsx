@@ -78,9 +78,17 @@ export default function Kargo() {
   async function etiketBas(k) {
     try {
       const pngler = await kargoApi.etiket(k.id)
-      if (!pngler.length) { toast.error('Bu gönderinin kayıtlı etiketi yok'); return }
-      await kargoApi.etiketOnizle(pngler, Number(sayfaBasina) || 1)
-      toast.success('Önizleme açıldı')
+      if (pngler.length) {
+        await kargoApi.etiketOnizle(pngler, Number(sayfaBasina) || 1)
+        toast.success('Önizleme açıldı')
+      } else if (k.etiket_link) {
+        // Bu bilgisayarda kayıtlı PNG yok (etiket başka PC'de oluşturuldu) →
+        // UPS'in etiket yazdırma linkini aç (her PC'den basılabilir).
+        sistemApi.linkAc(k.etiket_link).catch(e => toast.error(e.message))
+        toast.success('UPS etiket sayfası açıldı')
+      } else {
+        toast.error('Bu gönderinin bu bilgisayarda kayıtlı etiketi ve UPS etiket linki yok. Etiketi oluşturan bilgisayardan basın.')
+      }
     } catch (e) { toast.error('Etiket açılamadı: ' + e.message) }
   }
 

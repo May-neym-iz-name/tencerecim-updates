@@ -91,8 +91,8 @@ module.exports = {
       ? (db.prepare('SELECT ikas_siparis_id FROM online_siparisler WHERE id=?').get(veri.onlineSiparisId)?.ikas_siparis_id || null)
       : null
     const ekle = db.prepare(`INSERT INTO kargolar
-      (takip_no, durum, musteri_id, satis_id, online_siparis_id, lokasyon_id, ikas_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png)
-      VALUES (@takip_no, 'olusturuldu', @musteri_id, @satis_id, @online_siparis_id, @lokasyon_id, @ikas_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png)`)
+      (takip_no, durum, musteri_id, satis_id, online_siparis_id, lokasyon_id, ikas_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png, etiket_link)
+      VALUES (@takip_no, 'olusturuldu', @musteri_id, @satis_id, @online_siparis_id, @lokasyon_id, @ikas_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png, @etiket_link)`)
     const r = ekle.run({
       takip_no: sonuc.shipmentNo,
       musteri_id: veri.musteriId || null,
@@ -113,6 +113,7 @@ module.exports = {
       odeme_tipi: veri.odemeTipi || 2,
       aciklama: veri.aciklama || '',
       barkod_png: JSON.stringify(sonuc.barkodPng || []),
+      etiket_link: sonuc.etiketLink || null,
     })
     const kayit = db.prepare('SELECT * FROM kargolar WHERE id = ?').get(r.lastInsertRowid)
     return { ...kayit, barkodPng: sonuc.barkodPng, etiketLink: sonuc.etiketLink }

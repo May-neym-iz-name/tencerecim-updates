@@ -366,6 +366,9 @@ function migrate() {
   // PC'ler arası sipariş eşleme için stabil ikas_siparis_id.
   try { db.exec("ALTER TABLE kargolar ADD COLUMN lokasyon_id INTEGER REFERENCES lokasyonlar(id)") } catch {}
   try { db.exec("ALTER TABLE kargolar ADD COLUMN ikas_siparis_id TEXT") } catch {}
+  // UPS etiket yazdırma linki (LinkForLabelPrinting) — ağır barkod_png'yi senkrona
+  // sokmadan her PC'den etiket basılabilsin diye saklanır ve senkronlanır (minik URL).
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN etiket_link TEXT") } catch {}
   // online_siparis_kalemleri — ikas sipariş kalemi id'si (iptal/iade için).
   try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN ikas_kalem_id TEXT") } catch {}
   // online_siparisler — ikas'tan okunan kargo takip bilgisi (orderPackages.trackingInfo).
