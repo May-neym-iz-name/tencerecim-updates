@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { kargoApi, upsApi } from '../api/ipc'
+import { kargoApi, upsApi, sistemApi, whatsappLink } from '../api/ipc'
 import { upsTakipUrl } from '../lib/kargo'
 import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
@@ -44,14 +44,14 @@ export default function Kargo() {
   }
   useEffect(yenile, [])
 
-  async function takip(takipNo) {
-    if (!takipNo) return
-    const bekle = toast.loading('Takip sorgulanıyor…')
-    try {
-      const d = await kargoApi.takip(takipNo)
-      toast.success(`${takipNo}: ${d.aciklama || 'Durum bilgisi alındı'}`, { id: bekle })
-      yenile()
-    } catch (e) { toast.error(e.message, { id: bekle }) }
+  function whatsappGonder(k) {
+    if (!k.alici_telefon) { toast.error('Bu gönderide alıcı telefonu yok.'); return }
+    const url = upsTakipUrl(k.takip_no)
+    const mesaj = `Merhaba ${k.alici_ad || ''}, siparişiniz kargoya verildi. ` +
+      `UPS takip no: ${k.takip_no}` + (url ? `\nTakip: ${url}` : '')
+    const link = whatsappLink(k.alici_telefon, mesaj)
+    if (!link) { toast.error('Geçersiz telefon numarası.'); return }
+    sistemApi.linkAc(link).catch(e => toast.error(e.message))
   }
 
   async function iptal(k) {
@@ -191,7 +191,7 @@ export default function Kargo() {
                 <td className="px-3 py-2 text-gray-500 text-xs max-w-[200px] truncate">{k.son_durum || '—'}</td>
                 <td className="px-3 py-2 text-gray-400 text-xs">{(k.olusturma_tarihi || '').slice(0, 16)}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <button onClick={() => takip(k.takip_no)} className="text-blue-600 hover:underline text-xs mr-2">Takip</button>
+                  <button onClick={() => whatsappGonder(k)} className="text-green-700 hover:underline text-xs mr-2 font-medium">💬 WhatsApp</button>
                   <button onClick={() => etiketBas(k)} className="text-gray-600 hover:underline text-xs mr-2">Etiket</button>
                   {k.durum !== 'iptal' && iptalYetkisi && (
                     <button onClick={() => iptal(k)} className="text-red-600 hover:underline text-xs">İptal</button>
