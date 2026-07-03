@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi, sistemApi, whatsappLink } from '../api/ipc'
 import { upsTakipUrl } from '../lib/kargo'
+import { senkTetikle } from '../lib/veriSenk'
 import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
 import Sayfalama from '../components/Sayfalama'
@@ -70,6 +71,7 @@ export default function Kargo() {
       await kargoApi.iptal(k.id)
       toast.success('Gönderi iptal edildi', { id: bekle })
       yenile()
+      senkTetikle() // durum değişikliğini anında Supabase'e gönder
     } catch (e) { toast.error(e.message, { id: bekle }) }
   }
 
@@ -227,7 +229,7 @@ export default function Kargo() {
       </div>
       <Sayfalama {...sayfalama} />
 
-      <KargoFormu acik={formAcik} kapat={() => setFormAcik(false)} onTamam={yenile} />
+      <KargoFormu acik={formAcik} kapat={() => setFormAcik(false)} onTamam={() => { yenile(); senkTetikle() }} />
     </div>
   )
 }

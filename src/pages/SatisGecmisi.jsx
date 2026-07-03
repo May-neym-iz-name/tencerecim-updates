@@ -3,6 +3,7 @@ import Sayfalama from '../components/Sayfalama'
 import toast from 'react-hot-toast'
 import { satisApi, lokasyonApi, fisApi, sistemApi, whatsappLink } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
+import { senkTetikle } from '../lib/veriSenk'
 
 export default function SatisGecmisi() {
   const { yetkiVar, erisilebilirLokasyonlar } = useAuth()
@@ -48,7 +49,7 @@ export default function SatisGecmisi() {
 
   async function satisIptal(id) {
     if (!confirm('Bu satışı iptal etmek istediğinize emin misiniz? Stoklar geri yüklenecek.')) return
-    try { await satisApi.iptal(id); toast.success('Satış iptal edildi'); yukle(); setSeciliSatis(null); setSatisDetay(null) }
+    try { await satisApi.iptal(id); toast.success('Satış iptal edildi'); yukle(); setSeciliSatis(null); setSatisDetay(null); senkTetikle() }
     catch (e) { toast.error(e.message) }
   }
 
@@ -71,7 +72,7 @@ export default function SatisGecmisi() {
     try {
       await satisApi.iade({ satis_id: iadeModal.satis.id, kalemler })
       toast.success('İade işlendi, stok güncellendi')
-      setIadeModal(null); setSeciliSatis(null); setSatisDetay(null); yukle()
+      setIadeModal(null); setSeciliSatis(null); setSatisDetay(null); yukle(); senkTetikle()
     } catch (e) { toast.error(e.message) }
   }
 

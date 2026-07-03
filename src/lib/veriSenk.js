@@ -20,10 +20,18 @@ const SIRA = [
 const SAYFA = 1000
 
 let calisiyor = false
+let tekrarIstendi = false
+
+// Durum değişikliği (iptal/iade vb.) sonrası anında senkron tetikler. Zaten bir
+// tur çalışıyorsa, o turdan hemen sonra bir tur daha koşulmasını garanti eder
+// (değişikliğin bu turda kaçırılmaması için). Supabase'i şişirmez — aynı upsert.
+export function senkTetikle() {
+  veriSenk().catch(() => {})
+}
 
 // Tek bir tam senkron turu (push + pull). Aynı anda tek tur çalışır.
 export async function veriSenk() {
-  if (calisiyor) return { atlandi: true }
+  if (calisiyor) { tekrarIstendi = true; return { atlandi: true } }
   calisiyor = true
   try {
     // --- PUSH: imleçten beri değişen yerel satırları yükle ---
@@ -81,5 +89,7 @@ export async function veriSenk() {
     return { gonderilen, alinan }
   } finally {
     calisiyor = false
+    // Tur sırasında yeni bir değişiklik tetiklendiyse hemen bir tur daha koş.
+    if (tekrarIstendi) { tekrarIstendi = false; setTimeout(() => veriSenk().catch(() => {}), 150) }
   }
 }

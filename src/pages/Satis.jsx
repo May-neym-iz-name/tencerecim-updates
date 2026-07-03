@@ -6,6 +6,7 @@ import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import { usePersistentState } from '../hooks/usePersistentState'
 import KargoFormu from '../components/KargoFormu'
+import { senkTetikle } from '../lib/veriSenk'
 
 const MUSTERI_BOSH = {
   ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '',
@@ -248,6 +249,7 @@ export default function Satis() {
         kalemler: sepet.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) })),
       })
       toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
+      senkTetikle() // yeni satışı anında Supabase'e gönder
       // Kargo butonu için bu satışı ve müşterisini sakla (sepet temizlenmeden önce).
       setSonSatis({ satisId: satis.id, fisNo: satis.fis_no, musteri: secilenMusteri })
       setSepet([]); setSecilenMusteri(null); setMusteriArama(''); setManuelIskonto(0)
