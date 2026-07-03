@@ -60,10 +60,11 @@ export function kargoEtiketHtml(d) {
   td.ad { font-size: 13px; }
   td.marka, td.sku { font-size: 11px; color: #666; white-space: nowrap; }
   td.fiyat { text-align: right; white-space: nowrap; font-size: 12px; }
-  .barkodlar { margin-top: 28px; border-top: 1px solid #e5e5e5; padding-top: 16px; }
-  .barkodlar .baslik { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #666; margin-bottom: 10px; }
-  .barkod { text-align: center; page-break-inside: avoid; margin-bottom: 14px; }
-  .barkod img { max-width: 100%; max-height: 360px; }
+  .sag { text-align: right; min-width: 300px; }
+  .barkod-kutu { margin-top: 16px; }
+  .barkod-kutu .takip-no { font-family: 'Consolas', monospace; font-weight: 700; font-size: 15px; letter-spacing: 1px; margin-bottom: 4px; }
+  .barkod { page-break-inside: avoid; margin-bottom: 10px; }
+  .barkod img { max-width: 320px; width: 100%; height: auto; }
   @media print { .toolbar { display: none; } body { padding: 12px 18px; } }
 </style></head>
 <body>
@@ -87,9 +88,14 @@ export function kargoEtiketHtml(d) {
       ${satir('Sipariş Tarihi ve Saati:', d.siparis_tarihi)}
       ${satir('Ödeme Yöntemi:', d.odeme_yontemi)}
     </div>
-    <div class="ucret">${d.kargoKurali ? `${esc(d.kargoKurali)}: ${tl(d.kargoUcreti)}` : ''}</div>
+    <div class="sag">
+      <div class="ucret">${d.kargoKurali ? `${esc(d.kargoKurali)}: ${tl(d.kargoUcreti)}` : ''}</div>
+      ${barkodlar ? `<div class="barkod-kutu">
+        ${d.takip_no ? `<div class="takip-no">${esc(d.takip_no)}</div>` : ''}
+        ${barkodlar}
+      </div>` : ''}
+    </div>
   </div>
   <table><tbody>${kalemler}</tbody></table>
-  ${barkodlar ? `<div class="barkodlar"><div class="baslik">Kargo Barkodu</div>${barkodlar}</div>` : ''}
 </body></html>`
 }
