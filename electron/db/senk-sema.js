@@ -85,6 +85,17 @@ function kur(db) {
       db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('kargolar_restamp', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
     }
   } catch (e) { console.error('kargolar restamp:', e.message) }
+
+  // Bir kerelik düzeltme: yukarıdaki tek-seferlik yeniden damgalama, senkronla gelen
+  // kopyaları "daha yeni" yapıp sonradan gelen İPTAL güncellemelerinin son-yazan-kazanır
+  // ile atlanmasına yol açmış olabilir. İptal terminal bir durum → iptal edilmiş
+  // kargoları taze ts ile yeniden damgala ki 'iptal' tüm PC'lerde kesin kazansın.
+  try {
+    if (!db.prepare("SELECT deger FROM senk_durum WHERE anahtar = 'kargolar_iptal_retouch'").get()) {
+      db.exec(`UPDATE kargolar SET senk_guncelleme = ${NOWMS} WHERE durum = 'iptal' AND senk_id IS NOT NULL`)
+      db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('kargolar_iptal_retouch', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
+    }
+  } catch (e) { console.error('kargolar iptal retouch:', e.message) }
 }
 
 module.exports = { kur, TABLOLAR, SIRA }

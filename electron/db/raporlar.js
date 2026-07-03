@@ -62,7 +62,7 @@ function kalemlerCte(f = {}) {
     LEFT JOIN urunler u ON sk.urun_id = u.id
     LEFT JOIN markalar mk ON u.marka_id = mk.id
     LEFT JOIN kategoriler kt ON u.kategori_id = kt.id
-    WHERE s.durum = 'tamamlandi'`
+    WHERE s.durum = 'tamamlandi' AND s.tip != 'iade'`
   const magazaParams = []
   if (baslangic) { magaza += ' AND substr(s.tarih,1,10) >= ?'; magazaParams.push(baslangic) }
   if (bitis) { magaza += ' AND substr(s.tarih,1,10) <= ?'; magazaParams.push(bitis) }
