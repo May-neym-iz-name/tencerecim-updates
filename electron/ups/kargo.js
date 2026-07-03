@@ -121,8 +121,10 @@ module.exports = {
   // Kayıtlı kargoları listeler (en yeni önce).
   'kargo:listele': () => {
     const satirlar = getDb().prepare(`
-      SELECT k.*, m.ad AS musteri_ad, m.soyad AS musteri_soyad
-      FROM kargolar k LEFT JOIN musteriler m ON m.id = k.musteri_id
+      SELECT k.*, m.ad AS musteri_ad, m.soyad AS musteri_soyad, l.ad AS lokasyon_ad
+      FROM kargolar k
+      LEFT JOIN musteriler m ON m.id = k.musteri_id
+      LEFT JOIN lokasyonlar l ON l.id = k.lokasyon_id
       ORDER BY k.id DESC LIMIT 500`).all()
     return satirlar
   },

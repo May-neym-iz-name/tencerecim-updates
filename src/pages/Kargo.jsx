@@ -19,18 +19,24 @@ export default function Kargo() {
   const [kargolar, setKargolar] = useState([])
   const [formAcik, setFormAcik] = useState(false)
   const [yukleniyor, setYukleniyor] = useState(false)
-  const [filtre, setFiltre] = useState({ takip: '', musteri: '', bas: '', bit: '' })
+  const [filtre, setFiltre] = useState({ takip: '', musteri: '', bas: '', bit: '', lokasyon: '' })
   const [secili, setSecili] = useState(() => new Set()) // toplu basım için seçili kargo id'leri
   const [basiliyor, setBasiliyor] = useState(false)
   const [sayfaBasina, setSayfaBasina] = usePersistentState('kargo_etiket_sayfa_basina', 1) // 1|2|4
 
   function filtreAlan(k, v) { setFiltre(f => ({ ...f, [k]: v })) }
-  function filtreTemizle() { setFiltre({ takip: '', musteri: '', bas: '', bit: '' }) }
+  function filtreTemizle() { setFiltre({ takip: '', musteri: '', bas: '', bit: '', lokasyon: '' }) }
+
+  // Filtre açılırında gösterilecek lokasyonlar (görünür kargolardan türetilir).
+  const filtreLokasyonlar = [...new Map(
+    kargolar.filter(k => k.lokasyon_id != null).map(k => [k.lokasyon_id, k.lokasyon_ad || `#${k.lokasyon_id}`])
+  )].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'tr'))
 
   const gosterilen = kargolar.filter(k => {
     // Lokasyon kapsamı: kullanıcı yalnızca yetkili olduğu mağazanın gönderilerini
     // görür (lokasyonsuz/eski kayıtlar herkese açık). Yönetici/admin hepsini görür.
     if (k.lokasyon_id != null && !lokasyonErisim(k.lokasyon_id)) return false
+    if (filtre.lokasyon && String(k.lokasyon_id ?? '') !== filtre.lokasyon) return false
     if (filtre.takip && !(k.takip_no || '').toLowerCase().includes(filtre.takip.toLowerCase())) return false
     if (filtre.musteri && !(k.alici_ad || '').toLowerCase().includes(filtre.musteri.toLowerCase())) return false
     const gun = (k.olusturma_tarihi || '').slice(0, 10) // YYYY-MM-DD
@@ -139,6 +145,13 @@ export default function Kargo() {
           <input type="date" value={filtre.bit} onChange={e => filtreAlan('bit', e.target.value)}
             className="border rounded px-2 py-1.5 text-sm mt-0.5 block" />
         </label>
+        <label className="text-xs text-gray-500">Lokasyon (çıkış)
+          <select value={filtre.lokasyon} onChange={e => filtreAlan('lokasyon', e.target.value)}
+            className="border rounded px-2 py-1.5 text-sm bg-white mt-0.5 block w-40">
+            <option value="">Tümü</option>
+            {filtreLokasyonlar.map(([id, ad]) => <option key={id} value={String(id)}>{ad}</option>)}
+          </select>
+        </label>
         <button onClick={filtreTemizle} className="text-xs text-gray-500 hover:text-gray-800 underline pb-2">Temizle</button>
         {/* Etiket düzeni — hem tekli "Etiket" hem toplu basımda geçerli. */}
         <label className="text-xs text-gray-500 ml-auto">🖨️ Sayfa başına etiket
@@ -163,6 +176,7 @@ export default function Kargo() {
               <th className="px-3 py-2 font-medium">Takip No</th>
               <th className="px-3 py-2 font-medium">Alıcı</th>
               <th className="px-3 py-2 font-medium">Adres</th>
+              <th className="px-3 py-2 font-medium">Lokasyon</th>
               <th className="px-3 py-2 font-medium">Durum</th>
               <th className="px-3 py-2 font-medium">Son Durum</th>
               <th className="px-3 py-2 font-medium">Tarih</th>
@@ -184,6 +198,7 @@ export default function Kargo() {
                 </td>
                 <td className="px-3 py-2">{k.alici_ad}</td>
                 <td className="px-3 py-2 text-gray-500 text-xs max-w-[180px] truncate">{[k.ilce, k.il].filter(Boolean).join(', ')}</td>
+                <td className="px-3 py-2 text-xs text-gray-600">{k.lokasyon_ad || '—'}</td>
                 <td className="px-3 py-2">
                   <span className={`px-2 py-0.5 rounded-full text-xs ${DURUM_RENK[k.durum] || 'bg-gray-100 text-gray-600'}`}>
                     {k.durum === 'iptal' ? 'İptal' : 'Oluşturuldu'}
@@ -201,7 +216,7 @@ export default function Kargo() {
               </tr>
             ))}
             {gosterilen.length === 0 && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-400">
                 {yukleniyor ? 'Yükleniyor…' : (kargolar.length ? 'Filtreye uyan gönderi yok.' : 'Henüz kargo gönderisi yok.')}
               </td></tr>
             )}

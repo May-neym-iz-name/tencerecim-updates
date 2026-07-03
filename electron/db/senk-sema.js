@@ -37,7 +37,10 @@ const TABLOLAR = {
   // Kargo gönderileri: çok-PC senkron. online_siparis_id YERİNE ikas_siparis_id
   // (stabil, PC'ler arası) taşınır; lokasyon_id gönderici mağaza (kapsam filtresi).
   // takip_no UPS'ten benzersiz → doğal anahtar (dedup güvenli).
-  kargolar: { kolonlar: ['takip_no', 'durum', 'lokasyon_id', 'ikas_siparis_id', 'alici_ad', 'alici_telefon', 'alici_adres', 'il', 'ilce', 'il_kodu', 'ilce_kodu', 'koli_adedi', 'agirlik', 'servis_seviyesi', 'odeme_tipi', 'aciklama', 'barkod_png', 'son_durum', 'son_durum_tarihi', 'olusturma_tarihi'], fk: { musteri_id: 'musteriler', satis_id: 'satislar' }, dogal: ['takip_no'] },
+  // barkod_png (UPS etiket görseli, ~97KB/kargo) SENKRONLANMAZ: Supabase'i çok şişirir
+  // ve etiket zaten oluşturan mağazanın PC'sinde yerelde durur. Diğer alanlar (takip no,
+  // alıcı, adres, durum, lokasyon) senkronlanır → görünürlük + takip + WhatsApp çalışır.
+  kargolar: { kolonlar: ['takip_no', 'durum', 'lokasyon_id', 'ikas_siparis_id', 'alici_ad', 'alici_telefon', 'alici_adres', 'il', 'ilce', 'il_kodu', 'ilce_kodu', 'koli_adedi', 'agirlik', 'servis_seviyesi', 'odeme_tipi', 'aciklama', 'son_durum', 'son_durum_tarihi', 'olusturma_tarihi'], fk: { musteri_id: 'musteriler', satis_id: 'satislar' }, dogal: ['takip_no'] },
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
@@ -72,6 +75,16 @@ function kur(db) {
   }
   // Senkron imleçleri (push/pull) için kv tablosu.
   db.exec('CREATE TABLE IF NOT EXISTS senk_durum (anahtar TEXT PRIMARY KEY, deger TEXT)')
+
+  // Bir kerelik: kargolar senkrona sonradan eklendi ve mevcut satırlar temel ts
+  // ('2000-01-01') ile damgalandığı için push imlecini geçemiyor, hiç gönderilmiyordu.
+  // senk_guncelleme'yi NOW yaparak bir defa push'a sok → diğer PC'ler mevcut kargoları alır.
+  try {
+    if (!db.prepare("SELECT deger FROM senk_durum WHERE anahtar = 'kargolar_restamp'").get()) {
+      db.exec(`UPDATE kargolar SET senk_guncelleme = ${NOWMS} WHERE senk_id IS NOT NULL`)
+      db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('kargolar_restamp', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
+    }
+  } catch (e) { console.error('kargolar restamp:', e.message) }
 }
 
 module.exports = { kur, TABLOLAR, SIRA }
