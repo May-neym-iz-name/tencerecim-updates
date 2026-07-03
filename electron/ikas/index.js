@@ -478,7 +478,7 @@ module.exports = {
       LEFT JOIN urunler u ON k.urun_id = u.id
       WHERE k.siparis_id = ?`).all(id)
     const takip = db.prepare(
-      "SELECT takip_no, kargo_firma FROM kargolar WHERE online_siparis_id = ? ORDER BY id DESC LIMIT 1"
+      "SELECT takip_no FROM kargolar WHERE online_siparis_id = ? ORDER BY id DESC LIMIT 1"
     ).get(id)
     const gon = db.prepare('SELECT ad, yetkili FROM lokasyon_gonderici WHERE ad IS NOT NULL LIMIT 1').get()
 
@@ -519,7 +519,7 @@ module.exports = {
       teslimat_ilce: s.teslimat_ilce,
       teslimat_adres: s.teslimat_adres,
       takip_no: takip?.takip_no || s.kargo_takip_no || null,
-      kargo_firma: takip?.kargo_firma || s.kargo_firma || 'UPS',
+      kargo_firma: s.kargo_firma || 'UPS',
       satisKanali,
       kargoKurali,
       kargoUcreti,
