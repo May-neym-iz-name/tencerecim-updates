@@ -15,6 +15,7 @@ const SIRA = [
   'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
+  'kargolar',
 ]
 const SAYFA = 1000
 
@@ -38,6 +39,15 @@ export async function veriSenk() {
       }
     }
     if (enYeni && enYeni !== (pushImlec || '')) await invoke('veri-senk:imlec-yaz', { anahtar: 'push', deger: enYeni })
+
+    // Bir kerelik: kargolar senkrona sonradan eklendi. Önceki sürümde bu satırlar
+    // Supabase'den çekilmiş ama uygulanmadan pull imleci ilerlemiş olabilir → bir
+    // defa imleci sıfırlayıp tümünü yeniden çek (apply idempotent: son-yazan-kazanır).
+    const { deger: kargoReset } = await invoke('veri-senk:imlec-al', { anahtar: 'kargolar_reset' })
+    if (!kargoReset) {
+      await invoke('veri-senk:imlec-yaz', { anahtar: 'pull', deger: '' })
+      await invoke('veri-senk:imlec-yaz', { anahtar: 'kargolar_reset', deger: '1' })
+    }
 
     // --- PULL: yuklenme imlecinden (sunucu saati) beri tüm uzak değişiklikler ---
     const { deger: pullImlec } = await invoke('veri-senk:imlec-al', { anahtar: 'pull' })
