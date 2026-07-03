@@ -3,6 +3,8 @@ import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink } from '../api/ipc'
 import { takipUrl } from '../lib/kargo'
 import { kargoEtiketHtml } from '../lib/kargoEtiket'
+import { barkodSvg } from '../lib/barkod'
+import logo from '../assets/logo.png'
 import KargoFormu from '../components/KargoFormu'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
@@ -132,7 +134,19 @@ export default function OnlineSiparisler() {
     const bekle = toast.loading('Kargo etiketi hazırlanıyor…')
     try {
       const veri = await onlineSiparisApi.etiketVeri(id)
-      await onlineSiparisApi.etiketOnizle(kargoEtiketHtml(veri), `Kargo Etiketi ${veri.siparis_no || ''}`)
+      let svg = null
+      try { if (veri.takip_no) svg = barkodSvg(veri.takip_no) } catch { svg = null }
+      let logoData = null
+      try {
+        const blob = await (await fetch(logo)).blob()
+        logoData = await new Promise(r => {
+          const fr = new FileReader()
+          fr.onload = () => r(fr.result); fr.onerror = () => r(null)
+          fr.readAsDataURL(blob)
+        })
+      } catch { logoData = null }
+      const html = kargoEtiketHtml({ ...veri, barkodSvg: svg, logo: logoData })
+      await onlineSiparisApi.etiketOnizle(html, `Kargo Etiketi ${veri.siparis_no || ''}`)
       toast.success('Önizleme açıldı.', { id: bekle })
     } catch (e) {
       toast.error('Etiket oluşturulamadı: ' + e.message, { id: bekle })

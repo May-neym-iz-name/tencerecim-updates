@@ -1,5 +1,6 @@
 // Online sipariş için "TENCERECİM KARGO ETİKET" çıktısı HTML'i üretir.
-// Veri electron 'kargo-etiket:veri' handler'ından gelir; burada yalnızca sunum.
+// Veri electron 'kargo-etiket:veri' handler'ından; barkod (takip no'dan üretilen
+// CODE128 SVG) ve logo (base64) çağıran tarafça hazırlanıp geçilir.
 
 function esc(s) {
   return String(s == null ? '' : s)
@@ -20,11 +21,7 @@ function satir(label, deger) {
 export function kargoEtiketHtml(d) {
   const adres = [d.teslimat_adres, [d.teslimat_ilce, d.teslimat_il].filter(Boolean).join(' / ')]
     .filter(Boolean).join('\n')
-
-  const barkodlar = (d.barkodlar || []).map(b => {
-    const src = String(b).startsWith('data:') ? String(b) : `data:image/png;base64,${b}`
-    return `<div class="barkod"><img src="${src}" alt="Kargo barkodu"></div>`
-  }).join('')
+  const firma = d.kargo_firma || 'UPS'
 
   const kalemler = (d.kalemler || []).map(k => `
     <tr>
@@ -35,6 +32,18 @@ export function kargoEtiketHtml(d) {
       <td class="fiyat">${tl(k.birim_fiyat)}</td>
     </tr>`).join('')
 
+  // Sağ üst kutu: takip barkodu + numara + kargo firması + kargo ücreti.
+  const barkodKutu = d.takip_no ? `
+    <div class="sag">
+      ${d.barkodSvg ? `<div class="barkod-svg">${d.barkodSvg}</div>` : ''}
+      <div class="takip-no">${esc(d.takip_no)}</div>
+      <div class="firma">Paket Kargo Firması / ${esc(firma)} Kargo</div>
+      ${d.kargoKurali ? `<div class="ucret">${esc(d.kargoKurali)}: ${tl(d.kargoUcreti)}</div>` : ''}
+    </div>` : `
+    <div class="sag">
+      ${d.kargoKurali ? `<div class="ucret">${esc(d.kargoKurali)}: ${tl(d.kargoUcreti)}</div>` : ''}
+    </div>`
+
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
 <title>Kargo Etiketi ${esc(d.siparis_no || '')}</title>
 <style>
@@ -43,15 +52,23 @@ export function kargoEtiketHtml(d) {
   .toolbar { position: sticky; top: 0; text-align: right; margin: -10px -10px 10px; }
   .toolbar button { font-size: 14px; padding: 8px 18px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
   .head { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e5e5; padding-bottom: 10px; }
-  .head .tarih { font-size: 12px; color: #333; }
-  .head .mark { font-weight: 800; letter-spacing: 1px; color: #1a1a1a; }
-  h1 { font-size: 26px; font-weight: 800; margin: 22px 0 18px; letter-spacing: .5px; }
-  .grid { display: flex; justify-content: space-between; gap: 20px; }
+  .head .tarih { font-size: 12px; color: #333; flex: 1; }
+  .head .logo { flex: 1; text-align: center; }
+  .head .logo img { height: 46px; width: auto; }
+  .head .bos { flex: 1; }
+  h1 { font-size: 26px; font-weight: 800; margin: 22px 0 6px; letter-spacing: .5px; }
+  .firma-ust { color: #333; margin-bottom: 16px; font-size: 13px; }
+  .grid { display: flex; justify-content: space-between; gap: 24px; }
   .ln { margin: 4px 0; line-height: 1.5; }
   .lbl { color: #333; }
-  .val { color: #000; font-weight: 500; }
+  .val { color: #000; font-weight: 600; }
   .adres { white-space: pre-line; }
-  .ucret { font-weight: 600; white-space: nowrap; }
+  .sag { text-align: center; min-width: 290px; }
+  .barkod-svg { line-height: 0; }
+  .barkod-svg svg { width: 280px; height: auto; max-height: 90px; }
+  .takip-no { font-family: 'Consolas', monospace; font-weight: 700; font-size: 13px; letter-spacing: 1.5px; color: #1a4bd8; margin-top: 2px; }
+  .firma { margin-top: 14px; font-size: 13px; color: #222; }
+  .ucret { font-weight: 600; margin-top: 2px; }
   table { width: 100%; border-collapse: collapse; margin-top: 26px; }
   td { padding: 12px 6px; border-bottom: 1px solid #eee; vertical-align: middle; }
   td.img { width: 54px; }
@@ -60,23 +77,19 @@ export function kargoEtiketHtml(d) {
   td.ad { font-size: 13px; }
   td.marka, td.sku { font-size: 11px; color: #666; white-space: nowrap; }
   td.fiyat { text-align: right; white-space: nowrap; font-size: 12px; }
-  .sag { text-align: right; min-width: 300px; }
-  .barkod-kutu { margin-top: 16px; }
-  .barkod-kutu .takip-no { font-family: 'Consolas', monospace; font-weight: 700; font-size: 15px; letter-spacing: 1px; margin-bottom: 4px; }
-  .barkod { page-break-inside: avoid; margin-bottom: 10px; }
-  .barkod img { max-width: 320px; width: 100%; height: auto; }
   @media print { .toolbar { display: none; } body { padding: 12px 18px; } }
 </style></head>
 <body>
   <div class="toolbar"><button onclick="window.print()">🖨 Yazdır</button></div>
   <div class="head">
     <span class="tarih">${esc(d.siparis_tarihi || '')}</span>
-    <span class="mark">TENCERECİM</span>
-    <span style="width:80px"></span>
+    <span class="logo">${d.logo ? `<img src="${esc(d.logo)}" alt="">` : ''}</span>
+    <span class="bos"></span>
   </div>
   <h1>TENCERECİM KARGO ETİKET</h1>
+  <div class="firma-ust">${esc(firma)} Kargo</div>
   <div class="grid">
-    <div>
+    <div class="sol">
       ${satir('Sipariş No:', d.siparis_no)}
       ${satir('Takip Numarası:', d.takip_no)}
       ${satir('Kargo Kural İsmi:', d.kargoKurali)}
@@ -88,13 +101,7 @@ export function kargoEtiketHtml(d) {
       ${satir('Sipariş Tarihi ve Saati:', d.siparis_tarihi)}
       ${satir('Ödeme Yöntemi:', d.odeme_yontemi)}
     </div>
-    <div class="sag">
-      <div class="ucret">${d.kargoKurali ? `${esc(d.kargoKurali)}: ${tl(d.kargoUcreti)}` : ''}</div>
-      ${barkodlar ? `<div class="barkod-kutu">
-        ${d.takip_no ? `<div class="takip-no">${esc(d.takip_no)}</div>` : ''}
-        ${barkodlar}
-      </div>` : ''}
-    </div>
+    ${barkodKutu}
   </div>
   <table><tbody>${kalemler}</tbody></table>
 </body></html>`
