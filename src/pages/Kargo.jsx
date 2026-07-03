@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { kargoApi, upsApi, sistemApi, whatsappLink } from '../api/ipc'
+import { kargoApi, sistemApi, whatsappLink } from '../api/ipc'
 import { upsTakipUrl } from '../lib/kargo'
 import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
@@ -71,10 +71,9 @@ export default function Kargo() {
     try {
       const pngler = await kargoApi.etiket(k.id)
       if (!pngler.length) { toast.error('Bu gönderinin kayıtlı etiketi yok'); return }
-      const ayar = await upsApi.ayarGetir()
-      await kargoApi.etiketYazdir(pngler, ayar?.etiket_yazici || undefined, Number(sayfaBasina) || 1)
-      toast.success('Etiket yazıcıya gönderildi')
-    } catch (e) { toast.error('Etiket yazdırılamadı: ' + e.message) }
+      await kargoApi.etiketOnizle(pngler, Number(sayfaBasina) || 1)
+      toast.success('Önizleme açıldı')
+    } catch (e) { toast.error('Etiket açılamadı: ' + e.message) }
   }
 
   // Toplu basım için seçilebilir kargolar: iptal olmayan + takip no'lu.
@@ -100,9 +99,8 @@ export default function Kargo() {
     try {
       const { pngler, kargoSayisi, etiketSayisi } = await kargoApi.etiketToplu(idler)
       if (!pngler.length) { toast.error('Seçili kargoların kayıtlı etiketi yok', { id: bekle }); return }
-      const ayar = await upsApi.ayarGetir()
-      await kargoApi.etiketYazdir(pngler, ayar?.etiket_yazici || undefined, Number(sayfaBasina) || 1)
-      toast.success(`${kargoSayisi} kargo · ${etiketSayisi} etiket yazıcıya gönderildi`, { id: bekle })
+      await kargoApi.etiketOnizle(pngler, Number(sayfaBasina) || 1)
+      toast.success(`${kargoSayisi} kargo · ${etiketSayisi} etiket önizlemede açıldı`, { id: bekle })
       setSecili(new Set())
     } catch (e) { toast.error('Toplu etiket yazdırılamadı: ' + e.message, { id: bekle }) }
     finally { setBasiliyor(false) }

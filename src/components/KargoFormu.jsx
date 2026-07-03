@@ -42,10 +42,10 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
     try {
       const kargo = await kargoApi.olustur(form)
       toast.success(`✓ Kargo oluşturuldu — Takip No: ${kargo.takip_no}`)
-      // Etiketi otomatik yazdır (hata olursa gönderiyi engellemesin).
+      // Etiketi önizleme penceresinde aç (hata olursa gönderiyi engellemesin).
       if (kargo.barkodPng?.length) {
-        kargoApi.etiketYazdir(kargo.barkodPng, etiketYazici || undefined)
-          .catch(err => toast.error('Etiket yazdırılamadı: ' + err.message))
+        kargoApi.etiketOnizle(kargo.barkodPng, 1)
+          .catch(err => toast.error('Etiket önizleme açılamadı: ' + err.message))
       }
       onTamam?.(kargo)
       kapat()

@@ -116,6 +116,7 @@ export const kargoApi = {
   etiket: (id) => invoke('kargo:etiket', id),
   etiketToplu: (idler) => invoke('kargo:etiket-toplu', idler),
   etiketYazdir: (pngler, yazici, sayfaBasina) => invoke('kargo:etiket-yazdir', { pngler, yazici, sayfaBasina }),
+  etiketOnizle: (pngler, sayfaBasina) => invoke('kargo:etiket-onizle', { pngler, sayfaBasina }),
   takip: (takipNo) => invoke('kargo:takip', takipNo),
   iptal: (id) => invoke('kargo:iptal', id),
   pickup: (veri) => invoke('kargo:pickup', veri),

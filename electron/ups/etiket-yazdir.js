@@ -23,7 +23,7 @@ async function gizliPencereyle(is) {
 
 // PNG'leri sayfa-başına adete göre ızgara sayfalara böler. Her sayfa fiziksel mm
 // ölçüsünde bir kutudur; böylece page-break her fiziksel sayfaya tam oturur.
-function etiketHtml(pngler, duzen) {
+function etiketHtml(pngler, duzen, { onizleme = false } = {}) {
   const perPage = duzen.kolon * duzen.satir
   const sayfalar = []
   for (let i = 0; i < pngler.length; i += perPage) sayfalar.push(pngler.slice(i, i + perPage))
@@ -38,13 +38,35 @@ function etiketHtml(pngler, duzen) {
       grid-template-columns:repeat(${duzen.kolon},1fr);grid-template-rows:repeat(${duzen.satir},1fr);${sayfaSonu}">${hucreler}</div>`
   }).join('')
 
+  // Önizlemede üstte ekran-içi bir "Yazdır" çubuğu; baskıda gizlenir (blok olduğu
+  // için baskıda etiketler sayfa başından başlar).
+  const toolbar = onizleme
+    ? `<div class="toolbar"><button onclick="window.print()">🖨 Yazdır</button>
+         <span class="bilgi">${pngler.length} etiket</span></div>`
+    : ''
+
   return `<!doctype html><html><head><meta charset="utf-8"><style>
     @page{margin:0;size:${duzen.pageW}mm ${duzen.pageH}mm}
     html,body{margin:0;padding:0}
-    .sayfa{display:grid;box-sizing:border-box;}
+    .toolbar{text-align:center;padding:10px;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;}
+    .toolbar button{font-size:14px;padding:8px 22px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}
+    .toolbar .bilgi{margin-left:12px;color:#555;font-size:13px}
+    .sayfa{display:grid;box-sizing:border-box;margin:0 auto;}
     .hucre{display:flex;align-items:center;justify-content:center;overflow:hidden;padding:${duzen.kolon > 1 || duzen.satir > 1 ? '3mm' : '0'};}
     .hucre img{max-width:100%;max-height:100%;object-fit:contain;display:block;}
-    </style></head><body>${sayfaHtml}</body></html>`
+    @media print{.toolbar{display:none}.sayfa{margin:0}}
+    </style></head><body>${toolbar}${sayfaHtml}</body></html>`
+}
+
+// Etiketleri görünür bir pencerede önizler (yazdırma butonlu). Yazdırma seçilince
+// pencere içinden window.print() ile @page ölçüsünde basılır.
+async function etiketOnizle({ pngler, sayfaBasina = 1 }) {
+  if (!pngler || !pngler.length) throw new Error('Önizlenecek etiket bulunamadı')
+  const duzen = DUZENLER[sayfaBasina] || DUZENLER[1]
+  const html = etiketHtml(pngler, duzen, { onizleme: true })
+  const win = new BrowserWindow({ width: 560, height: 800, title: 'Kargo Etiketi Önizleme', autoHideMenuBar: true })
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+  return { acildi: true }
 }
 
 // pngler: base64 dizisi. sayfaBasina: 1|2|4 (sayfa başına etiket). yazici verilirse sessiz basar.
@@ -76,4 +98,5 @@ async function etiketYazdir({ pngler, yazici, sayfaBasina = 1 }) {
 
 module.exports = {
   'kargo:etiket-yazdir': ({ pngler, yazici, sayfaBasina }) => etiketYazdir({ pngler, yazici, sayfaBasina }),
+  'kargo:etiket-onizle': ({ pngler, sayfaBasina }) => etiketOnizle({ pngler, sayfaBasina }),
 }
