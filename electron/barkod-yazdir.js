@@ -54,7 +54,20 @@ async function barkodYazdir({ html, yazici }) {
   })
 }
 
+// Verilen HTML'i görünür bir pencerede açar (kargo etiketi önizleme + yazdırma).
+// Pencere içindeki "Yazdır" butonu window.print() çağırır.
+async function onizlemeAc({ html, baslik }) {
+  if (!html) throw new Error('Önizlenecek içerik boş')
+  const win = new BrowserWindow({
+    width: 820, height: 1000, title: baslik || 'Önizleme',
+    autoHideMenuBar: true, webPreferences: { offscreen: false },
+  })
+  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+  return { acildi: true }
+}
+
 module.exports = {
   'barkod:yazicilar': () => yazicilariGetir(),
   'barkod:yazdir': ({ html, yazici }) => barkodYazdir({ html, yazici }),
+  'kargo-etiket:onizle': ({ html, baslik }) => onizlemeAc({ html, baslik }),
 }

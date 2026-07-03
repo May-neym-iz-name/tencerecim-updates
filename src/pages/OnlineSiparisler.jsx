@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink } from '../api/ipc'
+import { takipUrl } from '../lib/kargo'
+import { kargoEtiketHtml } from '../lib/kargoEtiket'
 import KargoFormu from '../components/KargoFormu'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
@@ -123,6 +125,18 @@ export default function OnlineSiparisler() {
       gondericiLokasyonId: ilkLok,
     })
     setKargoAcik(true)
+  }
+
+  // Kargo etiketi: sipariş verisini derle (ikas'tan zenginleştir) → önizleme penceresi.
+  async function kargoEtiketYazdir(id) {
+    const bekle = toast.loading('Kargo etiketi hazırlanıyor…')
+    try {
+      const veri = await onlineSiparisApi.etiketVeri(id)
+      await onlineSiparisApi.etiketOnizle(kargoEtiketHtml(veri), `Kargo Etiketi ${veri.siparis_no || ''}`)
+      toast.success('Önizleme açıldı.', { id: bekle })
+    } catch (e) {
+      toast.error('Etiket oluşturulamadı: ' + e.message, { id: bekle })
+    }
   }
 
   // ikas'a "kargolandı" + takip no bildir (siparişin oluşturulmuş kargosundan).
@@ -425,7 +439,13 @@ export default function OnlineSiparisler() {
                 </div>
                 <p className="text-xs text-gray-400 mt-1">{TARIH(secili.siparis_tarihi)}</p>
               </div>
-              <button onClick={() => setSecili(null)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">✕</button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => kargoEtiketYazdir(secili.id)}
+                  className="bg-slate-700 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-slate-800 whitespace-nowrap">
+                  🖨 Kargo Etiketi
+                </button>
+                <button onClick={() => setSecili(null)} className="text-gray-400 hover:text-gray-700 text-lg leading-none">✕</button>
+              </div>
             </div>
 
             {/* Kaydırılabilir gövde */}
@@ -507,8 +527,9 @@ export default function OnlineSiparisler() {
                 <div className="bg-white rounded-xl border p-3 text-sm">
                   <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold mb-1">ikas Kargo Takip</p>
                   <span className="text-gray-700 font-medium">{secili.kargo_firma ? `${secili.kargo_firma}: ` : ''}{secili.kargo_takip_no}</span>
-                  {secili.kargo_takip_link && (
-                    <a href={secili.kargo_takip_link} target="_blank" rel="noopener noreferrer"
+                  {takipUrl({ takipNo: secili.kargo_takip_no, link: secili.kargo_takip_link, firma: secili.kargo_firma }) && (
+                    <a href={takipUrl({ takipNo: secili.kargo_takip_no, link: secili.kargo_takip_link, firma: secili.kargo_firma })}
+                      target="_blank" rel="noopener noreferrer"
                       className="text-blue-600 hover:underline text-xs ml-2">takip et ↗</a>
                   )}
                   {secili.musteri_telefon && (

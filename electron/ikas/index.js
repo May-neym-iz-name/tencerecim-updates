@@ -98,6 +98,18 @@ function pushArkaPlan(urunIdler) {
 
 const ONLINE_KANAL_TIPI = 1 // salesChannel.type: 1 = web mağaza (storefront)
 
+// Görsel URL'si cdn.myikas.com/images/<merchantId>/<imageId>/image_1950.webp
+// biçiminde. merchantId mağaza sabiti; getMerchant ile bir kez alınıp cache'lenir.
+let _merchantIdCache = null
+async function merchantIdAl() {
+  if (_merchantIdCache) return _merchantIdCache
+  try {
+    const d = await graphql('{ getMerchant { id } }', {})
+    _merchantIdCache = d?.getMerchant?.id || null
+  } catch { _merchantIdCache = null }
+  return _merchantIdCache
+}
+
 // Kalem birim fiyatı: finalUnitPrice bazen null gelir → price, yoksa finalPrice/adet.
 // İptal/iade ikas'a gerçek fiyatı göndermek zorunda (fiyat uyuşmazlığı reddedilir).
 function birimFiyatHesapla(kalem) {
@@ -452,6 +464,76 @@ module.exports = {
   // satislar.js / stok.js arka plan push için kullanır (main.js _ önekini atlar).
   _pushArkaPlan: pushArkaPlan,
   _pullSiparisler: pullSiparisler,
+
+  // Kargo etiketi için sipariş verisini derler: yerel alanlar + ikas zenginleştirme
+  // (satış kanalı adı, kargo kuralı/ücreti, ürün görselleri). ikas erişilemezse
+  // yerel veriyle (görselsiz) devam eder — hata fırlatmaz.
+  'kargo-etiket:veri': async (id) => {
+    const db = getDb()
+    const s = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
+    if (!s) throw new Error('Sipariş bulunamadı')
+    const kalemler = db.prepare(`
+      SELECT k.*, u.sku AS urun_sku, u.marka AS urun_marka
+      FROM online_siparis_kalemleri k
+      LEFT JOIN urunler u ON k.urun_id = u.id
+      WHERE k.siparis_id = ?`).all(id)
+    const takip = db.prepare(
+      "SELECT takip_no, kargo_firma FROM kargolar WHERE online_siparis_id = ? ORDER BY id DESC LIMIT 1"
+    ).get(id)
+    const gon = db.prepare('SELECT ad, yetkili FROM lokasyon_gonderici WHERE ad IS NOT NULL LIMIT 1').get()
+
+    let satisKanali = null, kargoKurali = null, kargoUcreti = null
+    const resimMap = {}
+    const a = ayarGetir()
+    if (a.store_name && a.client_id && a.client_secret && s.ikas_siparis_id) {
+      try {
+        const mid = await merchantIdAl()
+        const d = await graphql(
+          `query P($eq:String){ listOrder(id:{eq:$eq}, pagination:{page:1,limit:1}){ data {
+             salesChannel { name } shippingLines { title price }
+             orderLineItems { variant { id mainImageId } } } } }`,
+          { eq: s.ikas_siparis_id },
+        )
+        const o = d?.listOrder?.data?.[0]
+        if (o) {
+          satisKanali = o.salesChannel?.name || null
+          const sl = (o.shippingLines || [])[0]
+          if (sl) { kargoKurali = sl.title || null; kargoUcreti = Number(sl.price) || 0 }
+          for (const li of (o.orderLineItems || [])) {
+            const v = li.variant
+            if (v?.id && v?.mainImageId && mid) {
+              resimMap[v.id] = `https://cdn.myikas.com/images/${mid}/${v.mainImageId}/image_1950.webp`
+            }
+          }
+        }
+      } catch { /* ikas erişilemezse yerel veriyle devam */ }
+    }
+
+    return {
+      siparis_no: s.siparis_no,
+      siparis_tarihi: s.siparis_tarihi,
+      odeme_yontemi: s.odeme_yontemi,
+      musteri_ad: s.musteri_ad,
+      musteri_telefon: s.musteri_telefon,
+      teslimat_il: s.teslimat_il,
+      teslimat_ilce: s.teslimat_ilce,
+      teslimat_adres: s.teslimat_adres,
+      takip_no: takip?.takip_no || s.kargo_takip_no || null,
+      kargo_firma: takip?.kargo_firma || s.kargo_firma || 'UPS',
+      satisKanali,
+      kargoKurali,
+      kargoUcreti,
+      gonderen: (gon?.ad || a.store_name || 'Tencerecim'),
+      kalemler: kalemler.map(k => ({
+        ad: k.urun_adi || '',
+        marka: k.urun_marka || '',
+        sku: k.urun_sku || '',
+        miktar: k.miktar || 1,
+        birim_fiyat: k.birim_fiyat || 0,
+        resim: resimMap[k.ikas_varyant_id] || null,
+      })),
+    }
+  },
 
   // Bağlantıyı test eder ve lokasyonları eşler.
   'ikas:test': async () => {

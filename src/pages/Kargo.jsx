@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi, upsApi } from '../api/ipc'
+import { upsTakipUrl } from '../lib/kargo'
 import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
 import Sayfalama from '../components/Sayfalama'
@@ -174,7 +175,12 @@ export default function Kargo() {
                   <input type="checkbox" checked={secili.has(k.id)} onChange={() => secimDegistir(k.id)}
                     disabled={k.durum === 'iptal' || !k.takip_no} />
                 </td>
-                <td className="px-3 py-2 font-mono text-xs">{k.takip_no || '—'}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  {k.takip_no
+                    ? <a href={upsTakipUrl(k.takip_no)} target="_blank" rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline" title="UPS takip penceresini aç">{k.takip_no} ↗</a>
+                    : '—'}
+                </td>
                 <td className="px-3 py-2">{k.alici_ad}</td>
                 <td className="px-3 py-2 text-gray-500 text-xs max-w-[180px] truncate">{[k.ilce, k.il].filter(Boolean).join(', ')}</td>
                 <td className="px-3 py-2">

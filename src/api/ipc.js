@@ -147,6 +147,8 @@ export const onlineSiparisApi = {
   listele: (params) => invoke('online-siparis:listele', params),
   getir: (id) => invoke('online-siparis:getir', id),
   kalemLokasyon: (kalemId, lokasyonId) => invoke('online-siparis:kalem-lokasyon', { kalemId, lokasyonId }),
+  etiketVeri: (id) => invoke('kargo-etiket:veri', id),
+  etiketOnizle: (html, baslik) => invoke('kargo-etiket:onizle', { html, baslik }),
 }
 
 export const raporApi = {
