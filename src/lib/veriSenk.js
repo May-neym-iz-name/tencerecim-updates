@@ -10,13 +10,25 @@ const invoke = async (channel, ...args) => {
   return r.data
 }
 
-// FK bağımlılık sırası (senk-sema.js SIRA ile aynı): referanslar önce uygulanır.
-const SIRA = [
+// FK bağımlılık sırası — TEK KAYNAK backend (senk-sema.js). Backend'den çekilir ki
+// senkrona tablo eklenince renderer listesi eskimesin (kargolar bug'ının kök nedeni).
+// Backend erişilemezse bu yedek kullanılır.
+const SIRA_YEDEK = [
   'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',
 ]
+let siraCache = null
+async function siraAl() {
+  if (!siraCache) {
+    try {
+      const r = await invoke('veri-senk:sira')
+      siraCache = Array.isArray(r) && r.length ? r : SIRA_YEDEK
+    } catch { siraCache = SIRA_YEDEK }
+  }
+  return siraCache
+}
 const SAYFA = 1000
 
 let calisiyor = false
@@ -77,6 +89,7 @@ export async function veriSenk() {
       // Tüm delta'yı tabloya göre grupla; FK sırasında uygula (parent önce).
       const grup = {}
       for (const r of tum) (grup[r.tablo] ||= []).push(r)
+      const SIRA = await siraAl()
       for (const tablo of SIRA) {
         if (grup[tablo]?.length) {
           const sonuc = await invoke('veri-senk:uygula', { tablo, kayitlar: grup[tablo] })

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { kargoApi, upsApi, lokasyonApi } from '../api/ipc'
+import { kargoApi, lokasyonApi } from '../api/ipc'
 import IlIlceSecici from './IlIlceSecici'
 
 const BOS = {
@@ -16,13 +16,11 @@ const BOS = {
 export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
   const [form, setForm] = useState(BOS)
   const [gonderiliyor, setGonderiliyor] = useState(false)
-  const [etiketYazici, setEtiketYazici] = useState('')
   const [magazalar, setMagazalar] = useState([])
 
   useEffect(() => {
     if (acik) {
       setForm({ ...BOS, ...(baslangic || {}) })
-      upsApi.ayarGetir().then(a => setEtiketYazici(a?.etiket_yazici || '')).catch(() => {})
       lokasyonApi.listele().then(setMagazalar).catch(() => {})
     }
   }, [acik, baslangic])

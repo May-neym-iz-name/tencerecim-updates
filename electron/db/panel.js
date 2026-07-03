@@ -14,7 +14,7 @@ module.exports = {
       SELECT s.lokasyon_id, l.ad AS lokasyon_adi,
              COUNT(*) AS satis_sayisi, COALESCE(SUM(s.genel_toplam),0) AS ciro
       FROM satislar s JOIN lokasyonlar l ON s.lokasyon_id = l.id
-      WHERE s.durum = 'tamamlandi' AND DATE(s.tarih) = ${BUGUN}
+      WHERE s.durum = 'tamamlandi' AND COALESCE(s.tip,'satis') != 'iade' AND DATE(s.tarih) = ${BUGUN}
       GROUP BY s.lokasyon_id ORDER BY ciro DESC
     `).all()
     const bugunGenel = bugun.reduce((a, b) => ({
@@ -39,7 +39,7 @@ module.exports = {
              l.ad AS lokasyon_adi, COALESCE(m.ad || ' ' || m.soyad, '') AS musteri_adi
       FROM satislar s JOIN lokasyonlar l ON s.lokasyon_id = l.id
       LEFT JOIN musteriler m ON s.musteri_id = m.id
-      WHERE s.durum = 'tamamlandi'
+      WHERE s.durum = 'tamamlandi' AND COALESCE(s.tip,'satis') != 'iade'
       ORDER BY s.id DESC LIMIT 8
     `).all()
 
@@ -47,7 +47,7 @@ module.exports = {
     const haftalik = db.prepare(`
       SELECT DATE(tarih) AS gun, COALESCE(SUM(genel_toplam),0) AS ciro
       FROM satislar
-      WHERE durum = 'tamamlandi' AND DATE(tarih) >= DATE('now','localtime','-6 days')
+      WHERE durum = 'tamamlandi' AND COALESCE(tip,'satis') != 'iade' AND DATE(tarih) >= DATE('now','localtime','-6 days')
       GROUP BY DATE(tarih) ORDER BY gun ASC
     `).all()
 

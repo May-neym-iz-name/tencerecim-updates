@@ -129,6 +129,10 @@ module.exports = {
     return { uygulanan, atlanan }
   },
 
+  // Tablo uygulama sırası (tek kaynak: senk-sema.js). Renderer bunu kullanır ki
+  // backend'e tablo eklenince renderer listesi eskimesin (kargolar bug'ının kök nedeni).
+  'veri-senk:sira': () => SIRA,
+
   'veri-senk:imlec-al': ({ anahtar }) => ({ deger: imlecAl(getDb(), anahtar) }),
   'veri-senk:imlec-yaz': ({ anahtar, deger }) => { imlecYaz(getDb(), anahtar, deger); return { ok: true } },
 }

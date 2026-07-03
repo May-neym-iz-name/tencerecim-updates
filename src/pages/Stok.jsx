@@ -235,10 +235,10 @@ function StokTablosu({ satirlar, duzenleYetkisi, onDuzenle }) {
         </tr>
       </thead>
       <tbody>
-        {dilim.map((s, i) => {
+        {dilim.map((s) => {
           const kritik = s.miktar <= s.minimum_stok
           return (
-            <tr key={i} className={`border-b ${kritik && s.miktar === 0 ? 'bg-red-50' : kritik ? 'bg-orange-50' : 'hover:bg-gray-50'}`}>
+            <tr key={s.id ?? `${s.urun_id}-${s.lokasyon_id}`} className={`border-b ${kritik && s.miktar === 0 ? 'bg-red-50' : kritik ? 'bg-orange-50' : 'hover:bg-gray-50'}`}>
               <td className="px-4 py-2.5 font-medium">{s.urun_adi}</td>
               <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{s.barkod || '—'}</td>
               <td className="px-4 py-2.5 text-gray-500">{s.kategori || '—'}</td>
