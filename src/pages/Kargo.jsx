@@ -30,6 +30,7 @@ export default function Kargo() {
   const [basiliyor, setBasiliyor] = useState(false)
   const [detayId, setDetayId] = useState(null)
   const [iadeBaslangic, setIadeBaslangic] = useState(null) // listeden iade: müşteri bilgileri dolu form
+  const [gorunum, setGorunum] = useState('aktif') // 'aktif' | 'iptal' — iptaller ayrı listede
 
   // UPS kurye rezervasyon sayfasını program içi pencerede aç (takip gibi).
   function kuryeCagir() { window.open(UPS_PICKUP_URL, '_blank') }
@@ -71,7 +72,12 @@ export default function Kargo() {
     return true
   })
 
-  const { dilim: sayfaKargolar, ...sayfalama } = useSayfalama(gosterilen, 50)
+  // İptaller ayrı görünümde: filtreye uyanları duruma göre böl, seçili sekmeyi listele.
+  const aktifKargolar = gosterilen.filter(k => k.durum !== 'iptal')
+  const iptalKargolar = gosterilen.filter(k => k.durum === 'iptal')
+  const listelenen = gorunum === 'iptal' ? iptalKargolar : aktifKargolar
+
+  const { dilim: sayfaKargolar, ...sayfalama } = useSayfalama(listelenen, 50)
 
   function yenile() {
     setYukleniyor(true)
@@ -82,11 +88,24 @@ export default function Kargo() {
   function whatsappGonder(k) {
     if (!k.alici_telefon) { toast.error('Bu gönderide alıcı telefonu yok.'); return }
     const url = upsTakipUrl(k.takip_no)
-    const mesaj = `Merhaba ${k.alici_ad || ''}, siparişiniz kargoya verildi. ` +
-      `UPS takip no: ${k.takip_no}` + (url ? `\nTakip: ${url}` : '')
+    // İade ve normal gönderi farklı akış → farklı mesaj metni.
+    const mesaj = k.tip === 'iade'
+      ? `Merhaba ${k.alici_ad || ''}, iade kargonuz için gönderi oluşturuldu. ` +
+        `Kurye adresinizden alacaktır; dilerseniz en yakın UPS şubesine de bırakabilirsiniz. ` +
+        `Kargo etiketini bu mesajla birlikte paylaşıyoruz — paketin üzerine yapıştırın.` +
+        `\nUPS takip no: ${k.takip_no}` + (url ? `\nTakip: ${url}` : '')
+      : `Merhaba ${k.alici_ad || ''}, siparişiniz kargoya verildi. ` +
+        `UPS takip no: ${k.takip_no}` + (url ? `\nTakip: ${url}` : '')
     const link = whatsappLink(k.alici_telefon, mesaj)
     if (!link) { toast.error('Geçersiz telefon numarası.'); return }
     sistemApi.linkAc(link).catch(e => toast.error(e.message))
+    // İadede etiket görseli de paylaşılmak isteniyor. WhatsApp bağlantısı görsel EKLEYEMEZ
+    // (yalnızca metin); bu yüzden etiketi önizlemede açarız → personel sohbete sürükleyip
+    // ekleyebilir. (Otomatik görsel gönderimi WhatsApp Business API ister — ayrı faz.)
+    if (k.tip === 'iade') {
+      etiketBas(k)
+      toast('Etiket önizlemesi açıldı — WhatsApp sohbetine sürükleyip ekleyebilirsiniz.', { icon: '🏷️' })
+    }
   }
 
   async function iptal(k) {
@@ -122,8 +141,8 @@ export default function Kargo() {
     } catch (e) { toast.error('Etiket açılamadı: ' + e.message) }
   }
 
-  // Toplu basım için seçilebilir kargolar: iptal olmayan + takip no'lu.
-  const secilebilir = gosterilen.filter(k => k.durum !== 'iptal' && k.takip_no)
+  // Toplu basım için seçilebilir kargolar: görüntülenen (aktif) + takip no'lu.
+  const secilebilir = listelenen.filter(k => k.durum !== 'iptal' && k.takip_no)
   const tumuSecili = secilebilir.length > 0 && secilebilir.every(k => secili.has(k.id))
 
   function secimDegistir(id) {
@@ -198,7 +217,7 @@ export default function Kargo() {
         <button onClick={filtreTemizle} className="text-xs text-gray-500 hover:text-gray-800 underline pb-2">Temizle</button>
         {/* Sağ küme: sayaç + etiket düzeni (hem tekli hem toplu basımda geçerli) */}
         <div className="ml-auto flex items-end gap-3">
-          <span className="text-xs text-gray-400 pb-2 whitespace-nowrap">{gosterilen.length} / {kargolar.length} gönderi</span>
+          <span className="text-xs text-gray-400 pb-2 whitespace-nowrap">{listelenen.length} / {kargolar.length} gönderi</span>
           <label className="text-xs text-gray-500" title="Etiket önizlemesinde sayfa başına kaç etiket dizilsin">🖨️ Etiket/sayfa
             <select value={sayfaBasina} onChange={e => setSayfaBasina(Number(e.target.value))}
               className="border rounded px-2 py-1.5 text-sm bg-white mt-0.5 block w-28">
@@ -208,6 +227,32 @@ export default function Kargo() {
             </select>
           </label>
         </div>
+      </div>
+
+      {/* Aktif / İptal sekmesi: iptal edilen kargolar ayrı listede. */}
+      <div className="flex items-center gap-1 mb-3">
+        {[
+          { kod: 'aktif', ad: 'Aktif', sayi: aktifKargolar.length },
+          { kod: 'iptal', ad: 'İptal Edilenler', sayi: iptalKargolar.length },
+        ].map(t => {
+          const secili = gorunum === t.kod
+          const iptalSekmesi = t.kod === 'iptal'
+          return (
+            <button key={t.kod} onClick={() => setGorunum(t.kod)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5
+                ${secili
+                  ? (iptalSekmesi ? 'bg-red-600 text-white' : 'bg-blue-600 text-white')
+                  : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
+              {t.ad}
+              {t.sayi > 0 && (
+                <span className={`text-[11px] rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center
+                  ${secili ? 'bg-white/25' : (iptalSekmesi ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700')}`}>
+                  {t.sayi}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       <div className="bg-white rounded-xl border overflow-hidden">
@@ -272,9 +317,11 @@ export default function Kargo() {
                 </td>
               </tr>
             ))}
-            {gosterilen.length === 0 && (
+            {listelenen.length === 0 && (
               <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">
-                {yukleniyor ? 'Yükleniyor…' : (kargolar.length ? 'Filtreye uyan gönderi yok.' : 'Henüz kargo gönderisi yok.')}
+                {yukleniyor ? 'Yükleniyor…'
+                  : gorunum === 'iptal' ? 'İptal edilen kargo yok.'
+                  : (kargolar.length ? 'Filtreye uyan gönderi yok.' : 'Henüz kargo gönderisi yok.')}
               </td></tr>
             )}
           </tbody>
