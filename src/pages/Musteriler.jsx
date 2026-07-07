@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { musteriApi } from '../api/ipc'
+import { telefonGoster, telefonHam, sadeceRakam, telefonHatasi, tcHatasi, vergiHatasi } from '../lib/girdiMaske'
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
@@ -38,6 +39,9 @@ export default function Musteriler() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    // Sabit uzunluklu alan denetimleri (boş = geçerli, doluysa tam uzunluk).
+    const hata = telefonHatasi(form.telefon) || tcHatasi(form.tc_kimlik) || vergiHatasi(form.vergi_no)
+    if (hata) { toast.error(hata); return }
     const veri = Object.fromEntries(Object.entries(form).filter(([, v]) => v !== ''))
     try {
       if (duzenlenenId) await musteriApi.guncelle(duzenlenenId, veri)
@@ -134,11 +138,22 @@ export default function Musteriler() {
                   {satir.map(([name, label, req]) => (
                     <div key={name}>
                       <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                      <input name={name} required={req} value={form[name]}
+                      <input name={name} required={req}
+                        value={name === 'telefon' ? telefonGoster(form.telefon) : form[name]}
                         type={name === 'iskonto_orani' ? 'number' : 'text'}
                         min={name === 'iskonto_orani' ? 0 : undefined}
                         max={name === 'iskonto_orani' ? 100 : undefined}
-                        onChange={e => setForm(f => ({ ...f, [name]: e.target.value }))}
+                        inputMode={['telefon', 'tc_kimlik', 'vergi_no'].includes(name) ? 'numeric' : undefined}
+                        placeholder={name === 'telefon' ? '(5xx) xxx xx xx' : name === 'tc_kimlik' ? '11 hane' : name === 'vergi_no' ? '10 hane' : undefined}
+                        maxLength={name === 'telefon' ? 15 : name === 'tc_kimlik' ? 11 : name === 'vergi_no' ? 10 : undefined}
+                        onChange={e => {
+                          const v = e.target.value
+                          // Maskeli alanlar: yalnız rakam + sabit uzunluk (depoda ham rakam durur).
+                          const deger = name === 'telefon' ? telefonHam(v)
+                            : name === 'tc_kimlik' ? sadeceRakam(v, 11)
+                            : name === 'vergi_no' ? sadeceRakam(v, 10) : v
+                          setForm(f => ({ ...f, [name]: deger }))
+                        }}
                         className="w-full border rounded-lg px-3 py-2 text-sm" />
                     </div>
                   ))}

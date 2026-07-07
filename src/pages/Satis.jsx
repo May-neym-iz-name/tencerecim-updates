@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, setApi, fisApi, kasaApi } from '../api/ipc'
+import { telefonGoster, telefonHam, sadeceRakam, telefonHatasi, tcHatasi, vergiHatasi } from '../lib/girdiMaske'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import { usePersistentState } from '../hooks/usePersistentState'
@@ -209,6 +210,9 @@ export default function Satis() {
       toast.error('Ad, soyad, il ve ilçe zorunludur')
       return
     }
+    // Sabit uzunluklu alan denetimleri (boş = geçerli, doluysa tam uzunluk).
+    const maskeHata = telefonHatasi(musteriForm.telefon) || tcHatasi(musteriForm.tc_kimlik) || vergiHatasi(musteriForm.vergi_no)
+    if (maskeHata) { toast.error(maskeHata); return }
     setMusteriKayitYukleniyor(true)
     try {
       const veri = Object.fromEntries(
@@ -771,12 +775,23 @@ export default function Satis() {
                   {satir.map(([name, label, req], j) => (
                     <div key={name}>
                       <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                      <input name={name} required={req} value={musteriForm[name]}
+                      <input name={name} required={req}
+                        value={name === 'telefon' ? telefonGoster(musteriForm.telefon) : musteriForm[name]}
                         autoFocus={i === 0 && j === 0}
                         type={name === 'iskonto_orani' ? 'number' : 'text'}
                         min={name === 'iskonto_orani' ? 0 : undefined}
                         max={name === 'iskonto_orani' ? 100 : undefined}
-                        onChange={e => setMusteriForm(f => ({ ...f, [name]: e.target.value }))}
+                        inputMode={['telefon', 'tc_kimlik', 'vergi_no'].includes(name) ? 'numeric' : undefined}
+                        placeholder={name === 'telefon' ? '(5xx) xxx xx xx' : name === 'tc_kimlik' ? '11 hane' : name === 'vergi_no' ? '10 hane' : undefined}
+                        maxLength={name === 'telefon' ? 15 : name === 'tc_kimlik' ? 11 : name === 'vergi_no' ? 10 : undefined}
+                        onChange={e => {
+                          const v = e.target.value
+                          // Maskeli alanlar: yalnız rakam + sabit uzunluk (depoda ham rakam durur).
+                          const deger = name === 'telefon' ? telefonHam(v)
+                            : name === 'tc_kimlik' ? sadeceRakam(v, 11)
+                            : name === 'vergi_no' ? sadeceRakam(v, 10) : v
+                          setMusteriForm(f => ({ ...f, [name]: deger }))
+                        }}
                         className="w-full border rounded-lg px-3 py-2 text-sm" />
                     </div>
                   ))}

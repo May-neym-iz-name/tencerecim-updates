@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi, lokasyonApi } from '../api/ipc'
+import { telefonGoster, telefonHam, telefonHatasi } from '../lib/girdiMaske'
 import IlIlceSecici from './IlIlceSecici'
 
 const BOS = {
@@ -36,6 +37,9 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
     if (!form.aliciAdres.trim()) { toast.error('Alıcı adresi zorunlu'); return }
     if (!form.ilKodu || !form.ilceKodu) { toast.error('İl ve ilçe/semt seçin'); return }
     if (!form.aliciTelefon.trim() && !form.aliciCep.trim()) { toast.error('Telefon veya cep numarası girin'); return }
+    // Dolu telefonlar tam 10 hane olmalı: (5xx) xxx xx xx.
+    const telHata = telefonHatasi(form.aliciTelefon) || telefonHatasi(form.aliciCep, 'Cep telefonu')
+    if (telHata) { toast.error(telHata); return }
 
     setGonderiliyor(true)
     try {
@@ -86,10 +90,12 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
           <input value={form.aliciAd} onChange={e => alan('aliciAd', e.target.value)}
             placeholder="Alıcı adı soyadı *" className="border rounded px-2 py-1.5 text-sm w-full" />
           <div className="grid grid-cols-2 gap-2">
-            <input value={form.aliciTelefon} onChange={e => alan('aliciTelefon', e.target.value)}
-              placeholder="Telefon" className="border rounded px-2 py-1.5 text-sm" />
-            <input value={form.aliciCep} onChange={e => alan('aliciCep', e.target.value)}
-              placeholder="Cep telefonu" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={telefonGoster(form.aliciTelefon)} onChange={e => alan('aliciTelefon', telefonHam(e.target.value))}
+              inputMode="numeric" maxLength={15}
+              placeholder="(5xx) xxx xx xx" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={telefonGoster(form.aliciCep)} onChange={e => alan('aliciCep', telefonHam(e.target.value))}
+              inputMode="numeric" maxLength={15}
+              placeholder="Cep (5xx) xxx xx xx" className="border rounded px-2 py-1.5 text-sm" />
           </div>
           <input value={form.aliciEmail} onChange={e => alan('aliciEmail', e.target.value)}
             placeholder="E-posta (opsiyonel)" className="border rounded px-2 py-1.5 text-sm w-full" />
