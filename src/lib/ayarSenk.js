@@ -21,9 +21,10 @@ export async function buluttanAl() {
   const map = {}
   for (const r of data) map[r.anahtar] = r.deger
 
-  // Yerel SQLite ayarları (ups/ikas/gonderici/lokasyon_ikas)
+  // Yerel SQLite ayarları (ups/ikas/gonderici/lokasyon_ikas/hizli_yanitlar)
   await invoke('ayar-senk:uygula', {
     ups: map.ups, ikas: map.ikas, gonderici: map.gonderici, lokasyon_ikas: map.lokasyon_ikas,
+    hizli_yanitlar: map.hizli_yanitlar,
   })
 
   // Genel app ayarları (localStorage)
@@ -35,7 +36,7 @@ export async function buluttanAl() {
 
 // Yerel ayarları buluta yükler (her grup tek satır → şişmez). Son-yazan kazanır.
 export async function bulutaYukle() {
-  const yerel = await invoke('ayar-senk:topla') // { ups, ikas, gonderici, lokasyon_ikas }
+  const yerel = await invoke('ayar-senk:topla') // { ups, ikas, gonderici, lokasyon_ikas, hizli_yanitlar }
   let genel = {}
   try { genel = JSON.parse(localStorage.getItem(GENEL_ANAHTAR) || '{}') } catch { /* yok */ }
 
@@ -44,6 +45,7 @@ export async function bulutaYukle() {
     { anahtar: 'ikas', deger: yerel.ikas || {} },
     { anahtar: 'gonderici', deger: yerel.gonderici || {} },
     { anahtar: 'lokasyon_ikas', deger: yerel.lokasyon_ikas || {} },
+    { anahtar: 'hizli_yanitlar', deger: yerel.hizli_yanitlar || [] },
     { anahtar: 'genel', deger: genel },
   ].map(s => ({ ...s, guncelleme: new Date().toISOString() }))
 

@@ -25,7 +25,16 @@ function topla() {
   for (const r of db.prepare('SELECT id, ikas_lokasyon_id FROM lokasyonlar WHERE ikas_lokasyon_id IS NOT NULL').all()) {
     lokasyon_ikas[r.id] = r.ikas_lokasyon_id
   }
-  return { ups: kv('ups_ayarlar'), ikas, gonderici, lokasyon_ikas }
+  // Sosyal medya hazır yanıtları: meta_ayarlar.hizli_yanitlar (JSON dizi). Yalnızca
+  // BU anahtar senkronlanır — Meta gizli anahtarları (app_secret/sayfa_token) cihaza özel.
+  let hizli_yanitlar = []
+  try {
+    const row = db.prepare("SELECT deger FROM meta_ayarlar WHERE anahtar = 'hizli_yanitlar'").get()
+    const arr = row ? JSON.parse(row.deger || '[]') : []
+    if (Array.isArray(arr)) hizli_yanitlar = arr.filter(x => typeof x === 'string')
+  } catch { /* bozuksa boş dizi */ }
+
+  return { ups: kv('ups_ayarlar'), ikas, gonderici, lokasyon_ikas, hizli_yanitlar }
 }
 
 function uygula(veri = {}) {
@@ -64,6 +73,15 @@ function uygula(veri = {}) {
     const st = db.prepare('UPDATE lokasyonlar SET ikas_lokasyon_id = ? WHERE id = ?')
     const tx = db.transaction(() => { for (const [lokId, ikasId] of Object.entries(veri.lokasyon_ikas)) st.run(ikasId, lokId) })
     tx()
+  }
+  // Sosyal medya hazır yanıtları (buluttan gelen dizi → meta_ayarlar). Yalnızca dizi
+  // geldiğinde yaz; tanımsızsa mevcut yerel listeyi koru (eski istemcilerle uyumlu).
+  if (Array.isArray(veri.hizli_yanitlar)) {
+    const temiz = veri.hizli_yanitlar.filter(x => typeof x === 'string')
+    db.prepare(
+      "INSERT INTO meta_ayarlar (anahtar, deger) VALUES ('hizli_yanitlar', ?) " +
+      'ON CONFLICT(anahtar) DO UPDATE SET deger = excluded.deger'
+    ).run(JSON.stringify(temiz))
   }
   // ikas kimlik bilgisi değişmiş olabilir → token cache sıfırla.
   try { require('../ikas/client').tokenSifirla() } catch {}

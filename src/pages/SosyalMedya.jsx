@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { sosyalApi, metaApi } from '../api/ipc'
+import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
 
 // Üst sekmeler — Meta Business Suite düzeni. mod: 'karma'|'dm'|'yorum'
@@ -13,7 +14,9 @@ const SEKMELER = [
 ]
 
 // Personelin tek dokunuşla ekleyebileceği hazır yanıtlar (mağaza sık kullanılan cevaplar).
-const HIZLI_YANITLAR = [
+// Yalnızca ilk kurulumda tohum olarak kullanılır; asıl liste meta_ayarlar.hizli_yanitlar'da
+// (JSON dizi) saklanır ve personel açılır menüden ekleyip/silebilir.
+const VARSAYILAN_YANITLAR = [
   'Merhaba, size nasıl yardımcı olabiliriz? 😊',
   'İlginiz için teşekkürler! En kısa sürede dönüş yapacağız.',
   'Ürünümüz stoklarımızda mevcuttur. 🙌',
@@ -21,6 +24,15 @@ const HIZLI_YANITLAR = [
   'Siparişiniz hazırlanıyor, kargoya verilince bilgilendireceğiz. 📦',
   'Değerli yorumunuz için teşekkür ederiz! ❤️',
 ]
+
+// meta_ayarlar.hizli_yanitlar değerini güvenle diziye çevirir (bozuk/boşsa varsayılana döner).
+function yanitlariCoz(deger) {
+  if (!deger) return VARSAYILAN_YANITLAR
+  try {
+    const arr = JSON.parse(deger)
+    return Array.isArray(arr) ? arr.filter(x => typeof x === 'string' && x.trim()) : VARSAYILAN_YANITLAR
+  } catch { return VARSAYILAN_YANITLAR }
+}
 
 // Token dolmadan bu kadar gün önce sarı uyarı göster.
 const TOKEN_UYARI_GUN = 10
@@ -70,7 +82,23 @@ export default function SosyalMedya() {
   const [mesgul, setMesgul] = useState(false)
   const [durum, setDurum] = useState(null)       // bağlantı durumu (token günü, kurulu mu)
   const [sonDurum, setSonDurum] = useState(null) // son arka plan senkron turunun özeti
+  const [hizliYanitlar, setHizliYanitlar] = useState(VARSAYILAN_YANITLAR) // personel hazır yanıtları
   const kaydirmaRef = useRef(null)
+
+  // Hazır yanıtları ayarlardan yükle (meta_ayarlar.hizli_yanitlar).
+  useEffect(() => {
+    metaApi.ayarGetir().then(a => setHizliYanitlar(yanitlariCoz(a?.hizli_yanitlar))).catch(() => {})
+  }, [])
+
+  // Ekle/sil sonrası: önce ekranı güncelle, sonra yerel'e yaz (gizli anahtarlara
+  // dokunmaz), sonra diğer PC'ler görsün diye buluta yükle (Ayarlar deseniyle aynı).
+  const hizliKaydet = useCallback(async (yeniListe) => {
+    setHizliYanitlar(yeniListe)
+    try {
+      await metaApi.ayarKaydet({ hizli_yanitlar: JSON.stringify(yeniListe) })
+      bulutaYukle().catch(() => {}) // sessiz: yerel kayıt yeterli, bulut fırsatçı
+    } catch (e) { toast.error('Hazır yanıt kaydedilemedi: ' + e.message) }
+  }, [])
 
   const sayaclariYukle = useCallback(() => { sosyalApi.sayaclar().then(setSayaclar).catch(() => {}) }, [])
 
@@ -284,12 +312,14 @@ export default function SosyalMedya() {
         ) : seciliKonu.kind === 'dm' ? (
           <DmGorunum konu={seciliKonu} mesajlar={mesajlar} taslak={taslak} setTaslak={setTaslak}
             gonder={dmGonder} mesgul={mesgul} kaydirmaRef={kaydirmaRef}
-            banaAta={banaAta} kullanici={kullanici} />
+            banaAta={banaAta} kullanici={kullanici}
+            hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
         ) : (
           <YorumGorunum konu={seciliKonu} yorumlar={mesajlar} taslak={taslak} setTaslak={setTaslak}
             cevapla={yorumCevapla} mesgul={mesgul}
             ozelMesaj={ozelMesaj} setOzelMesaj={setOzelMesaj} ozelTaslak={ozelTaslak} setOzelTaslak={setOzelTaslak}
-            ozelGonder={ozelMesajGonder} banaAta={banaAta} kullanici={kullanici} />
+            ozelGonder={ozelMesajGonder} banaAta={banaAta} kullanici={kullanici}
+            hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
         )}
       </div>
     </div>
@@ -318,20 +348,62 @@ function AtamaButonu({ konu, banaAta, kullanici }) {
   )
 }
 
-// Hazır yanıt seçici: tıklanınca metni yanıt kutusuna ekler.
-function HizliYanitlar({ onSec }) {
+// Hazır yanıt seçici: tıklanınca metni yanıt kutusuna ekler. Düzenle modunda
+// satır silme (×) ve alttaki kutudan yeni yanıt ekleme yapılabilir.
+function HizliYanitlar({ onSec, yanitlar = [], onKaydet }) {
   const [acik, setAcik] = useState(false)
+  const [duzenle, setDuzenle] = useState(false)
+  const [yeni, setYeni] = useState('')
+
+  const ekle = () => {
+    const t = yeni.trim()
+    if (!t) return
+    if (yanitlar.includes(t)) { setYeni(''); return } // aynısı varsa tekrar ekleme
+    onKaydet?.([...yanitlar, t])
+    setYeni('')
+  }
+  const sil = (i) => onKaydet?.(yanitlar.filter((_, idx) => idx !== i))
+
   return (
     <div className="relative mb-2">
       <button type="button" onClick={() => setAcik(a => !a)} className="text-xs text-blue-600 hover:underline">
         ⚡ Hazır yanıtlar
       </button>
       {acik && (
-        <div className="absolute bottom-full mb-1 left-0 z-10 w-80 bg-white border rounded-lg shadow-lg p-1 max-h-60 overflow-y-auto">
-          {HIZLI_YANITLAR.map((t, i) => (
-            <button key={i} type="button" onClick={() => { onSec(t); setAcik(false) }}
-              className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-blue-50 text-gray-700">{t}</button>
+        <div className="absolute bottom-full mb-1 left-0 z-10 w-80 bg-white border rounded-lg shadow-lg p-1 max-h-72 overflow-y-auto">
+          <div className="flex items-center justify-between px-1.5 py-1">
+            <span className="text-[11px] font-semibold text-gray-500">Hazır yanıtlar</span>
+            <button type="button" onClick={() => setDuzenle(d => !d)}
+              className="text-[11px] text-blue-600 hover:underline">
+              {duzenle ? 'Bitti' : '✎ Düzenle'}
+            </button>
+          </div>
+          {yanitlar.length === 0 && (
+            <p className="text-[11px] text-gray-400 px-2 py-1.5">Henüz hazır yanıt yok. Aşağıdan ekleyin.</p>
+          )}
+          {yanitlar.map((t, i) => (
+            <div key={i} className="group flex items-center gap-1">
+              <button type="button" disabled={duzenle}
+                onClick={() => { onSec(t); setAcik(false) }}
+                className="flex-1 text-left text-xs px-2 py-1.5 rounded hover:bg-blue-50 text-gray-700 disabled:hover:bg-transparent disabled:cursor-default">
+                {t}
+              </button>
+              {duzenle && (
+                <button type="button" onClick={() => sil(i)} title="Sil"
+                  className="text-gray-400 hover:text-red-600 px-1.5 text-sm flex-shrink-0">×</button>
+              )}
+            </div>
           ))}
+          {duzenle && (
+            <div className="flex items-center gap-1 mt-1 p-1 border-t">
+              <input value={yeni} onChange={e => setYeni(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); ekle() } }}
+                placeholder="Yeni hazır yanıt…"
+                className="flex-1 text-xs border rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+              <button type="button" onClick={ekle} disabled={!yeni.trim()}
+                className="text-xs bg-blue-600 text-white px-2.5 py-1.5 rounded hover:bg-blue-700 disabled:opacity-40 flex-shrink-0">Ekle</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -339,7 +411,7 @@ function HizliYanitlar({ onSec }) {
 }
 
 // --- DM görünümü: sohbet balonları ---
-function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirmaRef, banaAta, kullanici }) {
+function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirmaRef, banaAta, kullanici, hizliYanitlar, hizliKaydet }) {
   const kisi = [...mesajlar].reverse().find(m => m.yon === 'gelen')?.gonderen_ad || konu.kisi || 'Müşteri'
   const ekle = (t) => setTaslak(v => v && v.trim() ? `${v.trim()} ${t}` : t)
   return (
@@ -364,7 +436,7 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
         })}
       </div>
       <div className="p-3 border-t">
-        <HizliYanitlar onSec={ekle} />
+        <HizliYanitlar onSec={ekle} yanitlar={hizliYanitlar} onKaydet={hizliKaydet} />
         <div className="flex items-end gap-2 bg-gray-100 rounded-2xl px-3 py-2">
           <textarea value={taslak} onChange={e => setTaslak(e.target.value)} rows={1}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); gonder() } }}
@@ -379,7 +451,7 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
 }
 
 // --- Yorum görünümü: orta yorum listesi + sağ gönderi önizleme ---
-function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozelMesaj, setOzelMesaj, ozelTaslak, setOzelTaslak, ozelGonder, banaAta, kullanici }) {
+function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozelMesaj, setOzelMesaj, ozelTaslak, setOzelTaslak, ozelGonder, banaAta, kullanici, hizliYanitlar, hizliKaydet }) {
   const gelenler = yorumlar.filter(y => y.yon === 'gelen')
   const [cevapId, setCevapId] = useState(null) // yalnızca bu yorumun yanıt kutusu açık
   const ekle = (t) => setTaslak(v => v && v.trim() ? `${v.trim()} ${t}` : t)
@@ -425,7 +497,7 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                   {/* Yoruma yanıt kutusu — yalnızca "Yanıtla" ile açılır */}
                   {cevapId === y.id && (
                     <div className="mt-2">
-                      <HizliYanitlar onSec={ekle} />
+                      <HizliYanitlar onSec={ekle} yanitlar={hizliYanitlar} onKaydet={hizliKaydet} />
                       <div className="flex items-center gap-2">
                         <input value={taslak} onChange={e => setTaslak(e.target.value)} autoFocus
                           onKeyDown={e => { if (e.key === 'Enter') cevapla(y.id) }}
