@@ -153,6 +153,7 @@ const handlerModules = [
   require('./db/ups-ayarlar'),
   require('./db/lokasyon-gonderici'),
   require('./ups/kargo'),
+  require('./ups/yakit'),
   require('./ups/etiket-yazdir'),
   require('./db/ikas-ayarlar'),
   require('./db/ayar-senk'),

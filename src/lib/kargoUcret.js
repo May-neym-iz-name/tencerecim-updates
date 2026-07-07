@@ -55,3 +55,33 @@ export function ucretHesapla({ desi, koli = 1, yakitOrani = 0, konut = true, buy
 }
 
 export const tl = (v) => (Number(v) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₺'
+
+// Hacimsel ağırlık (desi) = U × G × Y / 3000 (cm).
+export const desiHesapla = (u, g, y) => (Number(u) || 0) * (Number(g) || 0) * (Number(y) || 0) / 3000
+
+// UPS il → [bölge, teslim süresi] tablosu (yurtçi bölge tablosu.pdf, İstanbul çıkışlı).
+// Anahtar = UPS şehir kodu (plaka). FLASH tarifesinde fiyat bölgeye göre DEĞİŞMEZ —
+// bölge yalnızca bilgi (teslim süresi + uzak bölge farkındalığı) için gösterilir.
+export const IL_BOLGE = {
+  1: ['3. Bölge', '2 gün'], 2: ['4. Bölge', '2 gün'], 3: ['2. Bölge', '1 gün'], 4: ['4. Bölge', '3 gün'],
+  5: ['3. Bölge', '2 gün'], 6: ['2. Bölge', '1 gün'], 7: ['3. Bölge', '2 gün'], 8: ['4. Bölge', '2 gün'],
+  9: ['3. Bölge', '2 gün'], 10: ['2. Bölge', '1 gün'], 11: ['2. Bölge', '1 gün'], 12: ['4. Bölge', '2 gün'],
+  13: ['4. Bölge', '3 gün'], 14: ['2. Bölge', '1 gün'], 15: ['3. Bölge', '1 gün'], 16: ['2. Bölge', '1 gün'],
+  17: ['2. Bölge', '1 gün'], 18: ['2. Bölge', '1 gün'], 19: ['3. Bölge', '2 gün'], 20: ['3. Bölge', '2 gün'],
+  21: ['4. Bölge', '2 gün'], 22: ['2. Bölge', '1 gün'], 23: ['4. Bölge', '2 gün'], 24: ['4. Bölge', '2 gün'],
+  25: ['4. Bölge', '2 gün'], 26: ['2. Bölge', '1 gün'], 27: ['4. Bölge', '2 gün'], 28: ['3. Bölge', '2 gün'],
+  29: ['4. Bölge', '3 gün'], 30: ['4. Bölge', '4 gün'], 31: ['4. Bölge', '2 gün'], 32: ['3. Bölge', '1 gün'],
+  33: ['3. Bölge', '2 gün'], 34: ['Şehiriçi', '1 gün'], 35: ['2. Bölge', '1 gün'], 36: ['4. Bölge', '3 gün'],
+  37: ['2. Bölge', '2 gün'], 38: ['3. Bölge', '2 gün'], 39: ['2. Bölge', '1 gün'], 40: ['3. Bölge', '1 gün'],
+  41: ['1. Bölge', '1 gün'], 42: ['3. Bölge', '2 gün'], 43: ['2. Bölge', '1 gün'], 44: ['4. Bölge', '2 gün'],
+  45: ['2. Bölge', '1 gün'], 46: ['4. Bölge', '2 gün'], 47: ['4. Bölge', '2 gün'], 48: ['3. Bölge', '2 gün'],
+  49: ['4. Bölge', '3 gün'], 50: ['3. Bölge', '2 gün'], 51: ['3. Bölge', '2 gün'], 52: ['3. Bölge', '2 gün'],
+  53: ['4. Bölge', '2 gün'], 54: ['1. Bölge', '1 gün'], 55: ['3. Bölge', '2 gün'], 56: ['4. Bölge', '3 gün'],
+  57: ['3. Bölge', '2 gün'], 58: ['3. Bölge', '2 gün'], 59: ['1. Bölge', '1 gün'], 60: ['3. Bölge', '2 gün'],
+  61: ['4. Bölge', '2 gün'], 62: ['4. Bölge', '3 gün'], 63: ['4. Bölge', '2 gün'], 64: ['2. Bölge', '1 gün'],
+  65: ['4. Bölge', '3 gün'], 66: ['3. Bölge', '2 gün'], 67: ['2. Bölge', '1 gün'], 68: ['3. Bölge', '2 gün'],
+  69: ['4. Bölge', '3 gün'], 70: ['3. Bölge', '2 gün'], 71: ['2. Bölge', '1 gün'], 72: ['4. Bölge', '2 gün'],
+  73: ['4. Bölge', '3 gün'], 74: ['2. Bölge', '1 gün'], 75: ['4. Bölge', '3 gün'], 76: ['4. Bölge', '3 gün'],
+  77: ['1. Bölge', '1 gün'], 78: ['2. Bölge', '1 gün'], 79: ['4. Bölge', '2 gün'], 80: ['4. Bölge', '2 gün'],
+  81: ['2. Bölge', '1 gün'],
+}

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi, sistemApi, whatsappLink } from '../api/ipc'
 import { upsTakipUrl } from '../lib/kargo'
-import { ucretHesapla, tl } from '../lib/kargoUcret'
+import { ucretHesapla, tl, desiHesapla, IL_BOLGE } from '../lib/kargoUcret'
+import IlIlceSecici from '../components/IlIlceSecici'
 import { senkTetikle } from '../lib/veriSenk'
 import { etiketIndir } from '../lib/etiketDepo'
 import { useAuth } from '../auth/AuthContext'
@@ -32,12 +33,24 @@ export default function Kargo() {
   const [detayId, setDetayId] = useState(null)
   const [iadeBaslangic, setIadeBaslangic] = useState(null) // listeden iade: müşteri bilgileri dolu form
   const [gorunum, setGorunum] = useState('aktif') // 'aktif' | 'iptal' — iptaller ayrı listede
-  // Ücret hesaplayıcı (2026-FLASH): yakıt oranı UPS'te haftalık değişir → kalıcı ayar.
+  // Kargo ücreti hesaplayıcı (2026-FLASH): il/ilçe + ölçülerden otomatik desi.
+  // Yakıt oranı UPS'ten otomatik çekilir (haftalık); çekilemezse elle girilir (kalıcı).
   const [hesapAcik, setHesapAcik] = useState(false)
   const [yakitOrani, setYakitOrani] = usePersistentState('kargo_yakit_orani', 0)
-  const [hesapDesi, setHesapDesi] = useState('')
+  const [yakitDonem, setYakitDonem] = useState('') // otomatik çekilen dönem etiketi
+  const [hesapAdres, setHesapAdres] = useState({ ilKodu: null, il: '', ilceKodu: null, ilce: '' })
+  const [hesapOlcu, setHesapOlcu] = useState({ u: '', g: '', y: '' }) // 1 kolinin cm ölçüleri
+  const [hesapKg, setHesapKg] = useState('')  // 1 kolinin gerçek ağırlığı
   const [hesapKoli, setHesapKoli] = useState(1)
   const [hesapKonut, setHesapKonut] = useState(true)
+
+  // Panel açılınca güncel yakıt oranını UPS'ten çek (başarısızsa mevcut/elle kalır).
+  useEffect(() => {
+    if (!hesapAcik) return
+    kargoApi.yakitOrani().then(r => {
+      if (r?.oran != null) { setYakitOrani(r.oran); setYakitDonem(r.donem || '') }
+    }).catch(() => {})
+  }, [hesapAcik]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // UPS kurye rezervasyon sayfasını program içi pencerede aç (takip gibi).
   function kuryeCagir() { window.open(UPS_PICKUP_URL, '_blank') }
@@ -191,7 +204,7 @@ export default function Kargo() {
           )}
           <button onClick={() => setHesapAcik(a => !a)}
             className={`px-4 py-2 rounded-lg text-sm border ${hesapAcik ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-            title="2026 FLASH tarifesiyle tahmini gönderi ücreti hesapla">💰 Ücret Hesapla</button>
+            title="2026 FLASH tarifesiyle tahmini gönderi ücreti hesapla">💰 Kargo Ücreti Hesapla</button>
           <button onClick={kuryeCagir}
             className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700"
             title="UPS kurye rezervasyon sayfasını aç">🚚 Kurye Çağır</button>
@@ -239,49 +252,90 @@ export default function Kargo() {
         </div>
       </div>
 
-      {/* Ücret hesaplayıcı: 2026-FLASH tarifesi (parça başı, bölge farkı yok) +
-          yakıt (haftalık %, UPS sitesinden) + EHB %2,35 + konut teslimatı + KDV %20. */}
+      {/* Kargo ücreti hesaplayıcı: il/ilçe + ölçülerden OTOMATİK desi (UxGxY/3000);
+          faturalanabilir = desi ile kg'den yüksek olan. 2026-FLASH parça başı tarife
+          + yakıt (UPS'ten otomatik) + EHB %2,35 + konut teslimatı + KDV %20. */}
       {hesapAcik && (() => {
-        const u = ucretHesapla({ desi: Number(hesapDesi) || 0, koli: hesapKoli, yakitOrani, konut: hesapKonut })
+        const desi = desiHesapla(hesapOlcu.u, hesapOlcu.g, hesapOlcu.y)   // 1 koli
+        const faturalanabilir = Math.max(desi, Number(hesapKg) || 0)      // yüksek olan
+        const hazir = faturalanabilir > 0
+        const u = ucretHesapla({ desi: faturalanabilir * hesapKoli, koli: hesapKoli, yakitOrani, konut: hesapKonut })
+        const bolge = hesapAdres.ilKodu ? IL_BOLGE[Number(hesapAdres.ilKodu)] : null
         const kayitlar = aktifKargolar.filter(k => Number(k.agirlik) > 0)
         const listeToplam = kayitlar.reduce((a, k) => a + ucretHesapla({ desi: k.agirlik, koli: k.koli_adedi || 1, yakitOrani, konut: true }).toplam, 0)
         return (
-          <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 mb-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="text-xs text-gray-600">Desi / Kg (yüksek olan)
-                <input type="number" min="0" step="0.5" value={hesapDesi} onChange={e => setHesapDesi(e.target.value)}
-                  placeholder="örn. 8" className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-32 bg-white" />
-              </label>
-              <label className="text-xs text-gray-600">Koli
-                <input type="number" min="1" value={hesapKoli} onChange={e => setHesapKoli(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-20 bg-white" />
-              </label>
-              <label className="text-xs text-gray-600" title="UPS haftalık yakıt ek ücreti — ups.com.tr'den güncelleyin">Yakıt %
-                <input type="number" min="0" step="0.1" value={yakitOrani} onChange={e => setYakitOrani(Number(e.target.value) || 0)}
-                  className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-20 bg-white" />
+          <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 mb-4 space-y-3">
+            <div className="grid md:grid-cols-2 gap-3">
+              {/* Sol: adres */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1.5">📍 Teslimat Adresi</p>
+                <IlIlceSecici ilKodu={hesapAdres.ilKodu} ilceKodu={hesapAdres.ilceKodu}
+                  onChange={(a) => setHesapAdres(a)} />
+                {bolge && (
+                  <p className="text-xs text-emerald-800 mt-1.5">
+                    🗺️ {hesapAdres.il}: <b>{bolge[0]}</b> · tahmini teslim <b>{bolge[1]}</b>
+                    <span className="text-gray-400"> (FLASH tarifesinde bölge fiyatı değiştirmez)</span>
+                  </p>
+                )}
+              </div>
+              {/* Sağ: ölçüler → otomatik desi */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 mb-1.5">📦 1 Kolinin Ölçüleri (cm) ve Ağırlığı</p>
+                <div className="flex flex-wrap items-end gap-2">
+                  {[['u', 'En'], ['g', 'Boy'], ['y', 'Yükseklik']].map(([k, ad]) => (
+                    <label key={k} className="text-xs text-gray-600">{ad}
+                      <input type="number" min="0" value={hesapOlcu[k]}
+                        onChange={e => setHesapOlcu(o => ({ ...o, [k]: e.target.value }))}
+                        className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-20 bg-white" />
+                    </label>
+                  ))}
+                  <label className="text-xs text-gray-600">Kg
+                    <input type="number" min="0" step="0.1" value={hesapKg} onChange={e => setHesapKg(e.target.value)}
+                      className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-20 bg-white" />
+                  </label>
+                  <label className="text-xs text-gray-600">Koli
+                    <input type="number" min="1" value={hesapKoli} onChange={e => setHesapKoli(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-16 bg-white" />
+                  </label>
+                </div>
+                {desi > 0 && (
+                  <p className="text-xs text-gray-600 mt-1.5">
+                    Desi: <b>{desi.toFixed(1)}</b>{Number(hesapKg) > 0 && <> · Kg: <b>{Number(hesapKg)}</b></>} →
+                    faturalanabilir: <b className="text-emerald-800">{Math.ceil(faturalanabilir)} desi/kg</b> × {hesapKoli} koli
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-end gap-3 pt-2 border-t border-emerald-200/70">
+              <label className="text-xs text-gray-600" title={yakitDonem ? `UPS'ten otomatik alındı: ${yakitDonem}` : "UPS'ten alınamadı — elle girin"}>
+                Yakıt % {yakitDonem ? <span className="text-emerald-700">({yakitDonem} · otomatik)</span> : <span className="text-amber-600">(elle)</span>}
+                <input type="number" min="0" step="0.1" value={yakitOrani} onChange={e => { setYakitOrani(Number(e.target.value) || 0); setYakitDonem('') }}
+                  className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-24 bg-white" />
               </label>
               <label className="text-xs text-gray-600 flex items-center gap-1.5 pb-2">
                 <input type="checkbox" checked={hesapKonut} onChange={e => setHesapKonut(e.target.checked)} />
                 Konut teslimatı (+{tl(37.75)})
               </label>
-              {Number(hesapDesi) > 0 && (
+              {hazir && (
                 <div className="ml-auto text-right">
-                  <p className="text-lg font-bold text-emerald-800">≈ {tl(u.toplam)}</p>
+                  <p className="text-xl font-bold text-emerald-800">≈ {tl(u.toplam)}</p>
                   <p className="text-[11px] text-gray-500">
                     navlun {tl(u.navlun)} + yakıt {tl(u.yakit)} + EHB {tl(u.ehb)}{u.ekler ? ` + konut ${tl(u.ekler)}` : ''} + KDV {tl(u.kdv)}
                   </p>
                 </div>
               )}
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-emerald-200/70 text-xs text-gray-600">
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-emerald-200/70 text-xs text-gray-600">
               <span>
-                📊 Listedeki {kayitlar.length} aktif gönderi (ağırlığı girili) için tahmini:
+                📊 Listedeki {kayitlar.length} aktif gönderi için tahmini:
                 <b className="text-emerald-800"> toplam {tl(listeToplam)}</b> ·
                 <b className="text-emerald-800"> ortalama {tl(kayitlar.length ? listeToplam / kayitlar.length : 0)}</b>
               </span>
               <span className="text-[11px] text-gray-400">
-                Tahminidir; UPS faturası desi/kg ölçümüne ve haftalık yakıt oranına göre değişebilir.
-                {!yakitOrani && ' ⚠️ Yakıt oranı girilmedi.'}
+                Tahminidir; UPS faturası ölçüm ve haftalık yakıt oranına göre değişebilir.
+                {!yakitOrani && ' ⚠️ Yakıt oranı yok.'}
               </span>
             </div>
           </div>

@@ -132,6 +132,7 @@ export const kargoApi = {
   pickup: (veri) => invoke('kargo:pickup', veri),
   detay: (id) => invoke('kargo:detay', id),
   koliler: (takipNo) => invoke('kargo:koliler', takipNo),
+  yakitOrani: () => invoke('kargo:yakit-orani'),
 }
 
 export const ikasApi = {
