@@ -25,6 +25,26 @@ function magazaBarkoduUret(cekirdek) {
   return govde + ean13KontrolHanesi(govde)
 }
 
+// Marka-bazlı otomatik stok kodu: TNC.<MARKA_KISA>.<00001> şablonu.
+// Markanın mevcut ürünlerindeki TNC.X.N kodlarından şablonu öğrenir (en yüksek
+// numara + 1). Marka için henüz hiç TNC kodu yoksa null döner → ilk kodu kullanıcı
+// bir kez elle girer (örn. TNC.SFL.00001), sonrakiler otomatik türetilir.
+function sonrakiStokKodu(db, marka_id) {
+  if (!marka_id) return null
+  const satirlar = db.prepare(
+    "SELECT sku FROM urunler WHERE marka_id = ? AND sku LIKE 'TNC.%'"
+  ).all(marka_id)
+  let onek = null, enBuyuk = 0, hane = 5
+  for (const r of satirlar) {
+    const m = /^TNC\.([A-Za-z0-9ÇĞİÖŞÜçğıöşü]+)\.(\d+)$/.exec(String(r.sku).trim())
+    if (!m) continue
+    const num = parseInt(m[2], 10)
+    if (num >= enBuyuk) { enBuyuk = num; onek = m[1]; hane = Math.max(m[2].length, 5) }
+  }
+  if (!onek) return null
+  return `TNC.${onek}.${String(enBuyuk + 1).padStart(hane, '0')}`
+}
+
 const URUN_SELECT = `
   SELECT u.*, m.ad as marka_adi, k.tam_yol as kategori_yol, t.ad as tedarikci_adi
   FROM urunler u
@@ -78,10 +98,17 @@ module.exports = {
     ).get(deger, deger)
   },
 
+  // Marka seçilince formda gösterilecek otomatik stok kodu önerisi.
+  'urunler:sonraki-stok-kodu': (marka_id) => sonrakiStokKodu(getDb(), marka_id),
+
   'urunler:olustur': (veri) => {
     yetkiKontrol('urun_duzenle')
     const db = getDb()
-    const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
+    let { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
+    // SKU boş bırakıldıysa marka şablonundan otomatik türet (TNC.XXX.00001+).
+    if ((!sku || !String(sku).trim()) && marka_id) {
+      sku = sonrakiStokKodu(db, marka_id)
+    }
 
     // Yumuşak silme (aktif=0) nedeniyle aynı barkod/SKU pasif bir üründe kalmış olabilir.
     // UNIQUE kısıtını ihlal etmemek için: pasif eşleşme varsa onu güncelleyip yeniden aktive et.

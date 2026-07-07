@@ -260,7 +260,15 @@ export default function Urunler() {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
                   <AranabilirSecici secenekler={markalar.map(m => ({ deger: m.id, etiket: m.ad }))}
-                    deger={form.marka_id} onChange={v => setForm(f=>({...f,marka_id:v}))} placeholder="Marka seç" />
+                    deger={form.marka_id} onChange={v => {
+                      setForm(f=>({...f,marka_id:v}))
+                      // Yeni ürün + SKU boş → markanın TNC.XXX.NNNNN şablonundan sonraki kodu öner.
+                      if (!duzenlenenId && v) {
+                        urunlerApi.sonrakiStokKodu(v).then(kod => {
+                          if (kod) setForm(f => f.sku ? f : ({ ...f, sku: kod }))
+                        }).catch(() => {})
+                      }
+                    }} placeholder="Marka seç" />
                   <InlineEkle label="marka" onEkle={markaEkle} />
                 </div>
 

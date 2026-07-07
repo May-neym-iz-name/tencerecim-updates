@@ -10,6 +10,7 @@ export const urunlerApi = {
   getir: (id) => invoke('urunler:getir', id),
   barkodla: (barkod) => invoke('urunler:barkodla', barkod),
   barkodUret: (id) => invoke('urunler:barkodUret', id),
+  sonrakiStokKodu: (marka_id) => invoke('urunler:sonraki-stok-kodu', marka_id),
   olustur: (veri) => invoke('urunler:olustur', veri),
   guncelle: (id, veri) => invoke('urunler:guncelle', { id, ...veri }),
   sil: (id) => invoke('urunler:sil', id),
