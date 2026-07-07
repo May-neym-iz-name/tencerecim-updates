@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi, sistemApi, whatsappLink } from '../api/ipc'
 import { upsTakipUrl } from '../lib/kargo'
+import { ucretHesapla, tl } from '../lib/kargoUcret'
 import { senkTetikle } from '../lib/veriSenk'
 import { etiketIndir } from '../lib/etiketDepo'
 import { useAuth } from '../auth/AuthContext'
@@ -31,6 +32,12 @@ export default function Kargo() {
   const [detayId, setDetayId] = useState(null)
   const [iadeBaslangic, setIadeBaslangic] = useState(null) // listeden iade: müşteri bilgileri dolu form
   const [gorunum, setGorunum] = useState('aktif') // 'aktif' | 'iptal' — iptaller ayrı listede
+  // Ücret hesaplayıcı (2026-FLASH): yakıt oranı UPS'te haftalık değişir → kalıcı ayar.
+  const [hesapAcik, setHesapAcik] = useState(false)
+  const [yakitOrani, setYakitOrani] = usePersistentState('kargo_yakit_orani', 0)
+  const [hesapDesi, setHesapDesi] = useState('')
+  const [hesapKoli, setHesapKoli] = useState(1)
+  const [hesapKonut, setHesapKonut] = useState(true)
 
   // UPS kurye rezervasyon sayfasını program içi pencerede aç (takip gibi).
   function kuryeCagir() { window.open(UPS_PICKUP_URL, '_blank') }
@@ -182,6 +189,9 @@ export default function Kargo() {
               🖨️ {basiliyor ? 'Basılıyor…' : `Seçili Etiketleri Bas (${secili.size})`}
             </button>
           )}
+          <button onClick={() => setHesapAcik(a => !a)}
+            className={`px-4 py-2 rounded-lg text-sm border ${hesapAcik ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+            title="2026 FLASH tarifesiyle tahmini gönderi ücreti hesapla">💰 Ücret Hesapla</button>
           <button onClick={kuryeCagir}
             className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700"
             title="UPS kurye rezervasyon sayfasını aç">🚚 Kurye Çağır</button>
@@ -228,6 +238,55 @@ export default function Kargo() {
           </label>
         </div>
       </div>
+
+      {/* Ücret hesaplayıcı: 2026-FLASH tarifesi (parça başı, bölge farkı yok) +
+          yakıt (haftalık %, UPS sitesinden) + EHB %2,35 + konut teslimatı + KDV %20. */}
+      {hesapAcik && (() => {
+        const u = ucretHesapla({ desi: Number(hesapDesi) || 0, koli: hesapKoli, yakitOrani, konut: hesapKonut })
+        const kayitlar = aktifKargolar.filter(k => Number(k.agirlik) > 0)
+        const listeToplam = kayitlar.reduce((a, k) => a + ucretHesapla({ desi: k.agirlik, koli: k.koli_adedi || 1, yakitOrani, konut: true }).toplam, 0)
+        return (
+          <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 mb-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-xs text-gray-600">Desi / Kg (yüksek olan)
+                <input type="number" min="0" step="0.5" value={hesapDesi} onChange={e => setHesapDesi(e.target.value)}
+                  placeholder="örn. 8" className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-32 bg-white" />
+              </label>
+              <label className="text-xs text-gray-600">Koli
+                <input type="number" min="1" value={hesapKoli} onChange={e => setHesapKoli(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-20 bg-white" />
+              </label>
+              <label className="text-xs text-gray-600" title="UPS haftalık yakıt ek ücreti — ups.com.tr'den güncelleyin">Yakıt %
+                <input type="number" min="0" step="0.1" value={yakitOrani} onChange={e => setYakitOrani(Number(e.target.value) || 0)}
+                  className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-20 bg-white" />
+              </label>
+              <label className="text-xs text-gray-600 flex items-center gap-1.5 pb-2">
+                <input type="checkbox" checked={hesapKonut} onChange={e => setHesapKonut(e.target.checked)} />
+                Konut teslimatı (+{tl(37.75)})
+              </label>
+              {Number(hesapDesi) > 0 && (
+                <div className="ml-auto text-right">
+                  <p className="text-lg font-bold text-emerald-800">≈ {tl(u.toplam)}</p>
+                  <p className="text-[11px] text-gray-500">
+                    navlun {tl(u.navlun)} + yakıt {tl(u.yakit)} + EHB {tl(u.ehb)}{u.ekler ? ` + konut ${tl(u.ekler)}` : ''} + KDV {tl(u.kdv)}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-emerald-200/70 text-xs text-gray-600">
+              <span>
+                📊 Listedeki {kayitlar.length} aktif gönderi (ağırlığı girili) için tahmini:
+                <b className="text-emerald-800"> toplam {tl(listeToplam)}</b> ·
+                <b className="text-emerald-800"> ortalama {tl(kayitlar.length ? listeToplam / kayitlar.length : 0)}</b>
+              </span>
+              <span className="text-[11px] text-gray-400">
+                Tahminidir; UPS faturası desi/kg ölçümüne ve haftalık yakıt oranına göre değişebilir.
+                {!yakitOrani && ' ⚠️ Yakıt oranı girilmedi.'}
+              </span>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Aktif / İptal sekmesi: iptal edilen kargolar ayrı listede. */}
       <div className="flex items-center gap-1 mb-3">

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi } from '../api/ipc'
 import { upsTakipUrl } from '../lib/kargo'
+import { ucretHesapla, tl } from '../lib/kargoUcret'
+import { usePersistentState } from '../hooks/usePersistentState'
 
 const SERVIS = { 1: 'Express Plus 09:00', 3: 'Standart', 4: 'Express 10:30', 5: 'Express 12:00', 6: 'Express Saver' }
 const ODEME = { 1: 'Alıcı öder', 2: 'Gönderen öder' }
@@ -23,6 +25,8 @@ export default function KargoDetayModal({ acik, kapat, kargoId }) {
   const [k, setK] = useState(null)
   const [koliler, setKoliler] = useState(null) // null=yüklenmedi, []=hata/yok, [nolar]
   const [koliYukleniyor, setKoliYukleniyor] = useState(false)
+  // UPS haftalık yakıt ek ücreti oranı (%) — Kargo sekmesindeki hesaplayıcıyla ortak anahtar.
+  const [yakitOrani] = usePersistentState('kargo_yakit_orani', 0)
 
   useEffect(() => {
     if (!acik || !kargoId) { setK(null); setKoliler(null); return }
@@ -107,6 +111,24 @@ export default function KargoDetayModal({ acik, kapat, kargoId }) {
             <Satir etiket="Açıklama" deger={k.aciklama} />
             <Satir etiket="İkas Sipariş" deger={k.ikas_siparis_id} />
             <Satir etiket="Bağlı Satış No" deger={k.satis_id} />
+
+            {/* Tahmini ücret: 2026-FLASH tarifesi (desi/kg yüksek olan; elimizde kg var). */}
+            {k.durum !== 'iptal' && (() => {
+              const u = ucretHesapla({ desi: k.agirlik || 1, koli: k.koli_adedi || 1, yakitOrani, konut: true })
+              return (
+                <>
+                  <p className="text-xs font-semibold text-gray-400 uppercase mt-4 mb-1">Tahmini Ücret (2026 FLASH)</p>
+                  <Satir etiket="Ortalama Kargo Tutarı" vurgu deger={
+                    <span title={`Navlun ${tl(u.navlun)} + Yakıt ${tl(u.yakit)} + EHB ${tl(u.ehb)} + Konut ${tl(u.ekler)} + KDV ${tl(u.kdv)}`}>
+                      ≈ {tl(u.toplam)}
+                      <span className="text-xs text-gray-400 font-normal ml-2">
+                        (navlun {tl(u.navlun)}{yakitOrani ? ` · yakıt %${yakitOrani}` : ' · yakıt oranı girilmedi'})
+                      </span>
+                    </span>
+                  } />
+                </>
+              )
+            })()}
 
             <p className="mt-4 text-[11px] text-gray-400 bg-gray-50 rounded-lg p-2.5">
               ℹ️ UPS gönderileri oluşturulduktan sonra düzenlenemez (UPS API kısıtı).
