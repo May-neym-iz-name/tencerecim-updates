@@ -8,6 +8,23 @@ function stokSatirlariOlustur(db, urunId) {
   for (const l of lokasyonlar) ekle.run(urunId, l.id)
 }
 
+// EAN-13 kontrol hanesi: ilk 12 haneden hesaplanır (soldan; tek konum x1, çift konum x3).
+function ean13KontrolHanesi(ilk12) {
+  let toplam = 0
+  for (let i = 0; i < 12; i++) {
+    toplam += Number(ilk12[i]) * (i % 2 === 0 ? 1 : 3)
+  }
+  return String((10 - (toplam % 10)) % 10)
+}
+
+// Mağaza içi (kısıtlı dolaşım) barkodu üretir. EAN-13 önekleri 20-29 dahili kullanım için
+// ayrılmıştır → gerçek üretici barkodlarıyla asla çakışmaz. Çekirdek olarak ürün id'si gömülür
+// (benzersiz); çakışma olursa (olmamalı) rastgele çekirdekle yeniden dener.
+function magazaBarkoduUret(cekirdek) {
+  const govde = ('29' + String(cekirdek).padStart(10, '0')).slice(0, 12)
+  return govde + ean13KontrolHanesi(govde)
+}
+
 const URUN_SELECT = `
   SELECT u.*, m.ad as marka_adi, k.tam_yol as kategori_yol, t.ad as tedarikci_adi
   FROM urunler u
@@ -119,6 +136,26 @@ module.exports = {
     if (fiyatDegisti) {
       try { require('../ikas/ekstra')._pushFiyatArkaPlan([id]) } catch {}
     }
+    return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(id)
+  },
+
+  // Barkodsuz bir ürün için otomatik, benzersiz mağaza içi barkod (EAN-13) üretir.
+  'urunler:barkodUret': (id) => {
+    yetkiKontrol('urun_duzenle')
+    const db = getDb()
+    const urun = db.prepare('SELECT id, barkod FROM urunler WHERE id = ? AND aktif = 1').get(id)
+    if (!urun) throw new Error('Ürün bulunamadı')
+    if (urun.barkod && String(urun.barkod).trim()) throw new Error('Bu ürünün zaten bir barkodu var')
+
+    const barkodVar = db.prepare('SELECT 1 FROM urunler WHERE barkod = ?')
+    let barkod = magazaBarkoduUret(urun.id)
+    // Çakışma teorik olarak imkânsız (29 öneki + benzersiz id); yine de savunmacı kontrol.
+    let deneme = 0
+    while (barkodVar.get(barkod)) {
+      barkod = magazaBarkoduUret(Math.floor(Math.random() * 1e10))
+      if (++deneme > 20) throw new Error('Benzersiz barkod üretilemedi, tekrar deneyin')
+    }
+    db.prepare(`UPDATE urunler SET barkod = ?, guncelleme_tarihi = datetime('now','localtime') WHERE id = ?`).run(barkod, id)
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(id)
   },
 

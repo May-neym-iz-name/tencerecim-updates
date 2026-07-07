@@ -2,6 +2,7 @@
 // senk_kayitlar tablosuna gönderir, uzak değişiklikleri çekip yerele uygular.
 // Yerel okuma/yazma electron IPC (electron/db/senk-veri.js) üzerinden yapılır.
 import { supabase } from './supabase'
+import { etiketleriYukle } from './etiketDepo'
 
 const invoke = async (channel, ...args) => {
   if (!window.api) throw new Error('Electron API bulunamadı')
@@ -98,6 +99,10 @@ export async function veriSenk() {
       }
       await invoke('veri-senk:imlec-yaz', { anahtar: 'pull', deger: cursor })
     }
+
+    // Bu PC'de oluşan yeni etiketleri Storage'a yükle (PC'ler arası basım). Sync'i
+    // yavaşlatmasın diye fire-and-forget; hata olursa sonraki turda tekrar dener.
+    etiketleriYukle().catch(() => {})
 
     return { gonderilen, alinan }
   } finally {

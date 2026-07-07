@@ -94,10 +94,36 @@ function ikasSiparisSenkBaslat() {
   setInterval(calistir, IKAS_SENK_ARALIGI_MS)
 }
 
+// Sosyal medya (Facebook/Instagram) yorum & DM polling. ikas deseniyle aynı:
+// masaüstü uygulama public webhook alamadığı için sık çekme. Kurulu değilse veya
+// otomatik senkron kapalıysa atlanır. Çekilen öğeler yerel önbelleğe idempotent yazılır.
+const META_SENK_ARALIGI_MS = 120 * 1000
+function metaSosyalSenkBaslat() {
+  const { _tumunuCek } = require('./meta')
+  const { _ayarlariGetir } = require('./db/meta-ayarlar')
+  let calisiyor = false // IG çekimi 20-60 sn sürebilir → turların üst üste binmesini önle.
+  const calistir = async () => {
+    if (calisiyor) return
+    try {
+      const a = _ayarlariGetir()
+      if (!a.sayfa_token || a.otomatik_senk === '0') return
+      calisiyor = true
+      await _tumunuCek()
+    } catch (err) {
+      console.error('[meta] çekme hatası:', err.message)
+    } finally {
+      calisiyor = false
+    }
+  }
+  setTimeout(calistir, 15 * 1000) // açılıştan 15 sn sonra ilk çekim
+  setInterval(calistir, META_SENK_ARALIGI_MS)
+}
+
 app.whenReady().then(() => {
   require('./db/database').init()
   createWindow()
   ikasSiparisSenkBaslat()
+  metaSosyalSenkBaslat()
   // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
 })
 
@@ -141,6 +167,11 @@ const handlerModules = [
   require('./sistem'),
   require('./ikas'),
   require('./ikas/ekstra'),
+  require('./db/setler'),
+  require('./db/meta-ayarlar'),
+  require('./db/sosyal-mesajlar'),
+  require('./meta'),
+  require('./meta/giris'),
   require('./fis-yazdir'),
   require('./barkod-yazdir'),
   require('./auth'),

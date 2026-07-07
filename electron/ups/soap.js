@@ -279,6 +279,24 @@ async function trackLast(session, takipNo) {
   }
 }
 
+// Gönderideki TÜM koli takip numaralarını sorgular (çok kolili gönderiler).
+// UPS: ShipmentNo yalnızca "ana" kolinin numarasıdır; diğer kolilerin numaraları
+// GetShipmentInfoByTrackingNumber_V1 ile alınır (her koli için bir kayıt döner).
+async function shipmentPackages(session, takipNo) {
+  const govde =
+    `<SessionID>${xmlKacis(session)}</SessionID>` +
+    '<InformationLevel>1</InformationLevel>' +
+    `<TrackingNumber>${xmlKacis(takipNo)}</TrackingNumber>`
+  const yanit = await soapCagir(TRACKING_URL, TRACKING_NS, 'GetShipmentInfoByTrackingNumber_V1', govde)
+  const hataKod = tagOku(yanit, 'ErrorCode')
+  if (hataKod !== '0' && hataKod !== null) {
+    throw new Error(`Koli sorgusu başarısız (kod ${hataKod}): ${xmlCoz(tagOku(yanit, 'ErrorDefinition')) || 'Bilinmeyen hata'}`)
+  }
+  // Her koli kaydındaki TrackingNumber'ları topla (tekrarsız, boşsuz).
+  const nolar = tumTaglar(yanit, 'TrackingNumber').map(s => s.trim()).filter(Boolean)
+  return [...new Set(nolar)]
+}
+
 // Takip için ayrı login (takip servisi kendi oturumunu ister).
 async function trackingLogin({ musteriKodu, kullaniciKodu, sifre }) {
   const govde =
@@ -294,5 +312,5 @@ async function trackingLogin({ musteriKodu, kullaniciKodu, sifre }) {
 }
 
 module.exports = {
-  login, createShipment, cancelShipment, pickupRequest, trackLast, trackingLogin,
+  login, createShipment, cancelShipment, pickupRequest, trackLast, trackingLogin, shipmentPackages,
 }

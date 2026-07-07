@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { malKabulApi, lokasyonApi, tedarikciApi, urunlerApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
+import AranabilirSecici from '../components/AranabilirSecici'
 
 const PARA = (n) => `₺${(Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const TARIH = (t) => t ? new Date(t).toLocaleString('tr-TR') : '—'
@@ -84,11 +85,8 @@ export default function MalKabul() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
-            <select value={tedarikciId} onChange={e => setTedarikciId(e.target.value)}
-              className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white">
-              <option value="">—</option>
-              {tedarikciler.map(t => <option key={t.id} value={t.id}>{t.ad}</option>)}
-            </select>
+            <AranabilirSecici secenekler={tedarikciler.map(t => ({ deger: t.id, etiket: t.ad }))}
+              deger={tedarikciId} onChange={v => setTedarikciId(v)} placeholder="Tedarikçi ara / seç" />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Fatura/İrsaliye No</label>

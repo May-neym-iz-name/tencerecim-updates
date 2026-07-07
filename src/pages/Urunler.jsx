@@ -7,6 +7,12 @@ import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import KategoriYonetim from '../components/KategoriYonetim'
 import MarkaYonetim from '../components/MarkaYonetim'
+import SetYonetim from '../components/SetYonetim'
+import AranabilirSecici from '../components/AranabilirSecici'
+
+// Kategori ağacını girintili etiketlerle aranabilir seçici seçeneklerine çevirir.
+const kategoriSecenekleri = (kategoriler) =>
+  kategoriHiyerarsik(kategoriler).map(k => ({ deger: k.id, etiket: '   '.repeat(k.derinlik) + k.ad }))
 
 const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20 }
 
@@ -89,6 +95,14 @@ export default function Urunler() {
     } catch (e) { toast.error(e.message) }
   }
 
+  async function handleBarkodUret(u) {
+    try {
+      await urunlerApi.barkodUret(u.id)
+      toast.success('Barkod üretildi')
+      yukle()
+    } catch (e) { toast.error(e.message) }
+  }
+
   async function handleSil(id) {
     if (!confirm('Bu ürünü silmek istediğinize emin misiniz?')) return
     try { await urunlerApi.sil(id); toast.success('Ürün silindi'); yukle() } catch (e) { toast.error(e.message) }
@@ -120,7 +134,7 @@ export default function Urunler() {
 
   const sekmeler = (
     <div className="flex gap-1 mb-4 flex-shrink-0 border-b">
-      {[['urunler', 'Ürünler'], ['kategoriler', 'Kategoriler'], ['markalar', 'Markalar']].map(([k, l]) => (
+      {[['urunler', 'Ürünler'], ['setler', '🎁 Setler'], ['kategoriler', 'Kategoriler'], ['markalar', 'Markalar']].map(([k, l]) => (
         <button key={k} onClick={() => setSekme(k)}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${sekme === k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           {l}
@@ -133,7 +147,7 @@ export default function Urunler() {
     return (
       <div className="p-4 h-full flex flex-col">
         {sekmeler}
-        {sekme === 'kategoriler' ? <KategoriYonetim /> : <MarkaYonetim />}
+        {sekme === 'setler' ? <SetYonetim /> : sekme === 'kategoriler' ? <KategoriYonetim /> : <MarkaYonetim />}
       </div>
     )
   }
@@ -172,16 +186,10 @@ export default function Urunler() {
       <div className="flex gap-2 mb-3 flex-shrink-0 flex-wrap">
         <input value={arama} onChange={e => setArama(e.target.value)}
           placeholder="Ürün, barkod veya SKU ara..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-40" />
-        <select value={filtreMarka} onChange={e => setFiltreMarka(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="">Tüm Markalar</option>
-          {markalar.map(m => <option key={m.id} value={m.id}>{m.ad}</option>)}
-        </select>
-        <select value={filtreKategori} onChange={e => setFiltreKategori(e.target.value)} className="border rounded-lg px-3 py-2 text-sm bg-white max-w-56">
-          <option value="">Tüm Kategoriler</option>
-          {kategoriHiyerarsik(kategoriler).map(k => (
-            <option key={k.id} value={k.id}>{'   '.repeat(k.derinlik)}{k.ad}</option>
-          ))}
-        </select>
+        <AranabilirSecici className="w-44" secenekler={markalar.map(m => ({ deger: m.id, etiket: m.ad }))}
+          deger={filtreMarka} onChange={v => setFiltreMarka(v)} placeholder="Tüm Markalar" />
+        <AranabilirSecici className="w-56" secenekler={kategoriSecenekleri(kategoriler)}
+          deger={filtreKategori} onChange={v => setFiltreKategori(v)} placeholder="Tüm Kategoriler" />
         {(filtreMarka || filtreKategori || arama) && (
           <button onClick={() => { setFiltreMarka(''); setFiltreKategori(''); setArama('') }} className="text-xs text-gray-500 hover:text-red-600 px-2">✕ Temizle</button>
         )}
@@ -202,7 +210,15 @@ export default function Urunler() {
               <tr key={u.id} className="border-b hover:bg-gray-50">
                 <td className="px-3 py-2 font-medium max-w-xs truncate" title={u.ad}>{u.ad}</td>
                 <td className="px-3 py-2 font-mono text-xs text-gray-500">{u.sku||'—'}</td>
-                <td className="px-3 py-2 font-mono text-xs text-gray-500">{u.barkod||'—'}</td>
+                <td className="px-3 py-2 font-mono text-xs text-gray-500">
+                  {u.barkod
+                    ? u.barkod
+                    : duzenleYetkisi
+                      ? <button onClick={() => handleBarkodUret(u)}
+                          className="text-indigo-600 hover:underline whitespace-nowrap"
+                          title="Otomatik benzersiz barkod üret (EAN-13, mağaza içi)">＋ Barkod üret</button>
+                      : '—'}
+                </td>
                 <td className="px-3 py-2 text-xs">{u.marka_adi||'—'}</td>
                 <td className="px-3 py-2 text-xs text-gray-500 max-w-[160px] truncate" title={u.kategori_yol}>{u.kategori_yol||'—'}</td>
                 <td className="px-3 py-2 text-xs text-gray-500">{u.tedarikci_adi||'—'}</td>
@@ -243,32 +259,24 @@ export default function Urunler() {
                 {/* Marka */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Marka</label>
-                  <select value={form.marka_id} onChange={e => setForm(f=>({...f,marka_id:e.target.value}))} className="w-full border rounded-lg px-3 py-2 text-sm">
-                    <option value="">— Seçin —</option>
-                    {markalar.map(m => <option key={m.id} value={m.id}>{m.ad}</option>)}
-                  </select>
+                  <AranabilirSecici secenekler={markalar.map(m => ({ deger: m.id, etiket: m.ad }))}
+                    deger={form.marka_id} onChange={v => setForm(f=>({...f,marka_id:v}))} placeholder="Marka seç" />
                   <InlineEkle label="marka" onEkle={markaEkle} />
                 </div>
 
                 {/* Kategori */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Kategori</label>
-                  <select value={form.kategori_id} onChange={e => setForm(f=>({...f,kategori_id:e.target.value}))} className="w-full border rounded-lg px-3 py-2 text-sm">
-                    <option value="">— Seçin —</option>
-                    {kategoriHiyerarsik(kategoriler).map(k => (
-                      <option key={k.id} value={k.id}>{'   '.repeat(k.derinlik)}{k.ad}</option>
-                    ))}
-                  </select>
+                  <AranabilirSecici secenekler={kategoriSecenekleri(kategoriler)}
+                    deger={form.kategori_id} onChange={v => setForm(f=>({...f,kategori_id:v}))} placeholder="Kategori seç" />
                   <InlineEkle label="kategori" onEkle={kategoriEkle} />
                 </div>
 
                 {/* Tedarikçi */}
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Tedarikçi</label>
-                  <select value={form.tedarikci_id} onChange={e => setForm(f=>({...f,tedarikci_id:e.target.value}))} className="w-full border rounded-lg px-3 py-2 text-sm">
-                    <option value="">— Seçin —</option>
-                    {tedarikciler.map(t => <option key={t.id} value={t.id}>{t.ad}</option>)}
-                  </select>
+                  <AranabilirSecici secenekler={tedarikciler.map(t => ({ deger: t.id, etiket: t.ad }))}
+                    deger={form.tedarikci_id} onChange={v => setForm(f=>({...f,tedarikci_id:v}))} placeholder="Tedarikçi seç" />
                   <InlineEkle label="tedarikçi" onEkle={tedarikciEkle} />
                 </div>
 

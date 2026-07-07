@@ -13,6 +13,39 @@ function kimlik(ayar) {
   }
 }
 
+// Kargo müşterisini müşteriler tablosuna kaydeder (yoksa). Aynı kişi zaten
+// varsa (telefon veya ad-soyad eşleşmesi) DOKUNULMAZ — üzerine yazma/mükerrer yok.
+// Dönen id kargo kaydına bağlanır. Hata olursa kargo oluşturmayı engellemez.
+function musteriKaydet(db, veri) {
+  try {
+    const tamAd = String(veri.aliciAd || '').trim()
+    if (!tamAd) return null
+    const tel = String(veri.aliciTelefon || veri.aliciCep || '').replace(/\D/g, '')
+    // 1) Telefonla eşleşme (en güvenilir; senkronun doğal anahtarı da telefon)
+    if (tel) {
+      const m = db.prepare(
+        "SELECT id FROM musteriler WHERE replace(replace(replace(COALESCE(telefon,''),' ',''),'-',''),'(','') LIKE ?"
+      ).get('%' + tel.slice(-10)) // son 10 hane: 0/+90 önek farklarını tolere eder
+      if (m) return m.id
+    }
+    // 2) Ad-soyad tam eşleşme (Türkçe büyük/küçük duyarsız)
+    const parcalar = tamAd.split(/\s+/)
+    const soyad = parcalar.length > 1 ? parcalar.pop() : ''
+    const ad = parcalar.join(' ') || soyad
+    const e = db.prepare(
+      'SELECT id FROM musteriler WHERE lower(ad || \' \' || COALESCE(soyad,\'\')) = lower(?)'
+    ).get((ad + ' ' + soyad).trim())
+    if (e) return e.id
+    // 3) Yoksa yeni müşteri ekle (kargodaki bilgilerle)
+    const r = db.prepare(`
+      INSERT INTO musteriler (ad, soyad, telefon, email, adres, il, ilce, aktif)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `).run(ad, soyad, veri.aliciTelefon || veri.aliciCep || null, veri.aliciEmail || null,
+           veri.aliciAdres || null, veri.il || null, veri.ilce || null)
+    return r.lastInsertRowid
+  } catch { return null } // müşteri kaydı kargoyu asla engellemesin
+}
+
 // Gönderici (mağaza) bilgilerini soap formatına çevirir. Mağaza override'ı
 // (lokasyon_gonderici) verilmişse onun alanları, yoksa global ups_ayarlar kullanılır.
 function gonderici(ayar, lok) {
@@ -58,8 +91,35 @@ module.exports = {
     const lok = veri.gondericiLokasyonId ? _gondericiGetir(veri.gondericiLokasyonId) : null
     gondericiKontrol(ayar, lok)
 
-    const istek = {
-      ...gonderici(ayar, lok),
+    // İADE gönderisi: paket müşteriden mağazaya gider → UPS isteğinde gönderici=müşteri,
+    // alıcı=mağaza (swap). DB kaydında alici_* alanları MÜŞTERİYİ tutmaya devam eder
+    // (listede kimin iadesi olduğu görünsün); ayrım tip='iade' ile yapılır.
+    const g = gonderici(ayar, lok)
+    const taraflar = veri.iade ? {
+      // gönderici ← müşteri (formdaki "alıcı" alanları iade eden müşteridir)
+      musteriKodu: ayar.musteri_kodu,
+      gondericiHesapNo: ayar.gonderici_hesap_no || ayar.musteri_kodu, // fatura bizim hesaba
+      gondericiAd: veri.aliciAd,
+      gondericiYetkili: veri.aliciYetkili || veri.aliciAd,
+      gondericiAdres: veri.aliciAdres,
+      gondericiIlKodu: veri.ilKodu,
+      gondericiIlceKodu: veri.ilceKodu,
+      gondericiPostaKodu: veri.postaKodu,
+      gondericiTelefon: veri.aliciTelefon,
+      gondericiCep: veri.aliciCep || veri.aliciTelefon,
+      gondericiEmail: veri.aliciEmail,
+      // alıcı ← mağaza
+      aliciAd: g.gondericiAd,
+      aliciYetkili: g.gondericiYetkili,
+      aliciAdres: g.gondericiAdres,
+      aliciIlKodu: g.gondericiIlKodu,
+      aliciIlceKodu: g.gondericiIlceKodu,
+      aliciPostaKodu: g.gondericiPostaKodu,
+      aliciTelefon: g.gondericiTelefon,
+      aliciCep: g.gondericiCep,
+      aliciEmail: g.gondericiEmail,
+    } : {
+      ...g,
       aliciAd: veri.aliciAd,
       aliciYetkili: veri.aliciYetkili,
       aliciAdres: veri.aliciAdres,
@@ -69,6 +129,9 @@ module.exports = {
       aliciTelefon: veri.aliciTelefon,
       aliciCep: veri.aliciCep || veri.aliciTelefon,
       aliciEmail: veri.aliciEmail,
+    }
+    const istek = {
+      ...taraflar,
       aliciSms: veri.aliciSms,
       servisSeviyesi: veri.servisSeviyesi || 3,
       odemeTipi: veri.odemeTipi || 2,
@@ -91,11 +154,14 @@ module.exports = {
       ? (db.prepare('SELECT ikas_siparis_id FROM online_siparisler WHERE id=?').get(veri.onlineSiparisId)?.ikas_siparis_id || null)
       : null
     const ekle = db.prepare(`INSERT INTO kargolar
-      (takip_no, durum, musteri_id, satis_id, online_siparis_id, lokasyon_id, ikas_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png, etiket_link)
-      VALUES (@takip_no, 'olusturuldu', @musteri_id, @satis_id, @online_siparis_id, @lokasyon_id, @ikas_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png, @etiket_link)`)
+      (takip_no, durum, tip, musteri_id, satis_id, online_siparis_id, lokasyon_id, ikas_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png, etiket_link)
+      VALUES (@takip_no, 'olusturuldu', @tip, @musteri_id, @satis_id, @online_siparis_id, @lokasyon_id, @ikas_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png, @etiket_link)`)
+    // Kargo müşterisini müşteri kartına kaydet (varsa mevcut id kullanılır, üzerine yazılmaz).
+    const otoMusteriId = veri.musteriId || musteriKaydet(db, veri)
     const r = ekle.run({
       takip_no: sonuc.shipmentNo,
-      musteri_id: veri.musteriId || null,
+      tip: veri.iade ? 'iade' : 'gonderi',
+      musteri_id: otoMusteriId || null,
       satis_id: veri.satisId || null,
       online_siparis_id: veri.onlineSiparisId || null,
       lokasyon_id: veri.gondericiLokasyonId || null,
@@ -154,6 +220,37 @@ module.exports = {
     return { pngler, kargoSayisi, etiketSayisi: pngler.length }
   },
 
+  // --- Supabase Storage köprüsü (PC'ler arası etiket basımı; DB'yi şişirmez) ---
+  // Yerel PNG'si olan ama henüz Storage'a yüklenmemiş kargoları döndürür (yükleme için).
+  'kargo:etiket-yuklenecekler': () => {
+    return getDb().prepare(
+      "SELECT id, senk_id, barkod_png FROM kargolar " +
+      "WHERE (etiket_storage_yol IS NULL OR etiket_storage_yol = '') " +
+      "AND barkod_png IS NOT NULL AND barkod_png NOT IN ('', '[]') AND senk_id IS NOT NULL"
+    ).all()
+  },
+
+  // Bir kargonun Storage yolunu yazar (yükleme sonrası). senk_guncelleme tetikleyici ile tazelenir → senkron taşır.
+  'kargo:etiket-yol-yaz': ({ id, yol }) => {
+    getDb().prepare('UPDATE kargolar SET etiket_storage_yol = ? WHERE id = ?').run(yol || null, id)
+    return { ok: true }
+  },
+
+  // 5 aydan eski, Storage'a yüklenmiş etiketler (temizlik için). ay: kaç aydan eski.
+  'kargo:etiket-eskiler': (ay = 5) => {
+    return getDb().prepare(
+      "SELECT id, etiket_storage_yol FROM kargolar " +
+      "WHERE etiket_storage_yol IS NOT NULL AND etiket_storage_yol <> '' " +
+      "AND olusturma_tarihi < datetime('now', ?)"
+    ).all(`-${Number(ay) || 5} months`)
+  },
+
+  // Storage'dan silindikten sonra yolu temizler (tekrar silmeye çalışmasın).
+  'kargo:etiket-yol-temizle': (id) => {
+    getDb().prepare("UPDATE kargolar SET etiket_storage_yol = NULL WHERE id = ?").run(id)
+    return { ok: true }
+  },
+
   // Takip durumunu sorgular ve kaydı günceller.
   'kargo:takip': async (takipNo) => {
     const ayar = _ayarlariGetir()
@@ -179,21 +276,42 @@ module.exports = {
     return db.prepare('SELECT * FROM kargolar WHERE id = ?').get(id)
   },
 
-  // Kurye çağırma (on-demand pickup).
+  // Kurye çağırma (on-demand pickup). İki mod:
+  //  - Normal: paket MAĞAZADAN alınır (gönderici = ayarlar/mağaza).
+  //  - İade  : paket MÜŞTERİ adresinden alınır → veri.pickupAdresi verilir
+  //            (ad/adres/ilKodu/ilceKodu/telefon), alıcı mağaza olur.
   'kargo:pickup': async (veri) => {
     yetkiKontrol('kargo_yonet')
     const ayar = _ayarlariGetir()
     gondericiKontrol(ayar)
     const session = await soap.login(kimlik(ayar))
-    const istek = {
-      ...gonderici(ayar),
-      // Pickup için alıcı bilgisi de gerekiyor; kullanıcı vermezse gönderici tekrar.
+    const magaza = gonderici(ayar)
+    const p = veri.pickupAdresi // iade: paketin alınacağı müşteri adresi
+    if (p && (!p.ad || !p.adres || !p.ilKodu || !p.ilceKodu)) {
+      throw new Error('Kurye alım adresi eksik (ad, adres, il ve ilçe gerekli).')
+    }
+    const taraflar = p ? {
+      musteriKodu: ayar.musteri_kodu,
+      gondericiHesapNo: ayar.gonderici_hesap_no || ayar.musteri_kodu,
+      gondericiAd: p.ad, gondericiYetkili: p.ad, gondericiAdres: p.adres,
+      gondericiIlKodu: p.ilKodu, gondericiIlceKodu: p.ilceKodu,
+      gondericiTelefon: p.telefon || '', gondericiCep: p.cep || p.telefon || '',
+      // alıcı = mağaza (iade paketi bize gelir)
+      aliciAd: magaza.gondericiAd, aliciAdres: magaza.gondericiAdres,
+      aliciIlKodu: magaza.gondericiIlKodu, aliciIlceKodu: magaza.gondericiIlceKodu,
+      aliciTelefon: magaza.gondericiTelefon, aliciCep: magaza.gondericiCep,
+    } : {
+      ...magaza,
+      // Normal pickup: alıcı bilgisi de gerekiyor; kullanıcı vermezse gönderici tekrar.
       aliciAd: veri.aliciAd || ayar.gonderici_ad,
       aliciAdres: veri.aliciAdres || ayar.gonderici_adres,
       aliciIlKodu: veri.ilKodu || ayar.gonderici_il_kodu,
       aliciIlceKodu: veri.ilceKodu || ayar.gonderici_ilce_kodu,
       aliciTelefon: veri.aliciTelefon || ayar.gonderici_telefon,
       aliciCep: veri.aliciCep || ayar.gonderici_cep,
+    }
+    const istek = {
+      ...taraflar,
       servisSeviyesi: veri.servisSeviyesi || 3,
       odemeTipi: veri.odemeTipi || 2,
       paketTipi: 'K',
@@ -204,5 +322,27 @@ module.exports = {
       kutular: veri.kutular || [{ kod: 3, adet: veri.koliAdedi || 1 }],
     }
     return await soap.pickupRequest(session, istek)
+  },
+
+  // Çok kolili gönderinin TÜM koli takip numaraları (detay modalı için).
+  // UPS'te ana takip no yalnızca bir kolinindir; diğerleri ayrıca sorgulanır.
+  'kargo:koliler': async (takipNo) => {
+    if (!takipNo) throw new Error('Takip numarası gerekli')
+    const ayar = _ayarlariGetir()
+    const session = await soap.trackingLogin(kimlik(ayar))
+    return await soap.shipmentPackages(session, takipNo)
+  },
+
+  // Kargo detay: tek kaydın tüm alanları (detay modalı için).
+  'kargo:detay': (id) => {
+    const k = getDb().prepare(`
+      SELECT k.*, m.ad AS musteri_ad, m.soyad AS musteri_soyad, l.ad AS lokasyon_ad
+      FROM kargolar k
+      LEFT JOIN musteriler m ON m.id = k.musteri_id
+      LEFT JOIN lokasyonlar l ON l.id = k.lokasyon_id
+      WHERE k.id = ?`).get(id)
+    if (!k) throw new Error('Kargo bulunamadı')
+    delete k.barkod_png // ağır PNG verisini renderer'a taşıma
+    return k
   },
 }

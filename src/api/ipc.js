@@ -9,6 +9,7 @@ export const urunlerApi = {
   listele: (params) => invoke('urunler:listele', params),
   getir: (id) => invoke('urunler:getir', id),
   barkodla: (barkod) => invoke('urunler:barkodla', barkod),
+  barkodUret: (id) => invoke('urunler:barkodUret', id),
   olustur: (veri) => invoke('urunler:olustur', veri),
   guncelle: (id, veri) => invoke('urunler:guncelle', { id, ...veri }),
   sil: (id) => invoke('urunler:sil', id),
@@ -82,6 +83,14 @@ export const kategoriApi = {
   sil: (id) => invoke('kategoriler:sil', id),
 }
 
+// Kendi setlerimiz (tek set fiyatlı ürün paketleri).
+export const setApi = {
+  listele: () => invoke('setler:listele'),
+  olustur: (veri) => invoke('setler:olustur', veri),
+  guncelle: (veri) => invoke('setler:guncelle', veri),
+  sil: (id) => invoke('setler:sil', id),
+}
+
 export const excelApi = {
   dosyaSec: () => invoke('excel:dosya-sec'),
   urunYukle: (yol) => invoke('excel:urun-yukle', yol),
@@ -120,6 +129,8 @@ export const kargoApi = {
   takip: (takipNo) => invoke('kargo:takip', takipNo),
   iptal: (id) => invoke('kargo:iptal', id),
   pickup: (veri) => invoke('kargo:pickup', veri),
+  detay: (id) => invoke('kargo:detay', id),
+  koliler: (takipNo) => invoke('kargo:koliler', takipNo),
 }
 
 export const ikasApi = {
@@ -144,6 +155,34 @@ export const ikasApi = {
   siparisPaketler: (id) => invoke('ikas:siparis-paketler', { id }),
   siparisPaketDurum: (veri) => invoke('ikas:siparis-paket-durum', veri),
   siparisKargoIptal: (veri) => invoke('ikas:siparis-kargo-iptal', veri),
+}
+
+// Meta (Facebook/Instagram) sosyal medya entegrasyonu.
+export const metaApi = {
+  ayarGetir: () => invoke('meta-ayar:getir'),
+  ayarKaydet: (veri) => invoke('meta-ayar:kaydet', veri),
+  kurulum: () => invoke('meta:kurulum'),
+  girisBaslat: (sayfaId) => invoke('meta:girisBaslat', { sayfaId }),
+  durum: () => invoke('meta:durum'),
+  sonDurum: () => invoke('meta:sonDurum'),
+  cek: () => invoke('meta:cek'),
+  yorumCevapla: (veri) => invoke('meta:yorumCevapla', veri),
+  mesajCevapla: (veri) => invoke('meta:mesajCevapla', veri),
+  yorumdanMesaj: (veri) => invoke('meta:yorumdanMesaj', veri),
+}
+
+// Sosyal medya gelen kutusu (yerel önbellek + personel takibi).
+export const sosyalApi = {
+  liste: (params) => invoke('sosyal:liste', params),
+  konu: (konuId) => invoke('sosyal:konu', konuId),
+  durumGuncelle: (veri) => invoke('sosyal:durumGuncelle', veri),
+  ata: (veri) => invoke('sosyal:ata', veri),
+  ataKonu: (veri) => invoke('sosyal:ataKonu', veri),
+  not: (veri) => invoke('sosyal:not', veri),
+  sayac: () => invoke('sosyal:sayac'),
+  sayaclar: () => invoke('sosyal:sayaclar'),
+  gonderiler: (params) => invoke('sosyal:gonderiler', params),
+  konusmalar: (params) => invoke('sosyal:konusmalar', params),
 }
 
 export const onlineSiparisApi = {

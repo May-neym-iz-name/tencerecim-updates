@@ -2,9 +2,10 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
-import { uygulamaApi } from './api/ipc'
+import { uygulamaApi, sosyalApi } from './api/ipc'
 import { buluttanAl } from './lib/ayarSenk'
 import { veriSenk } from './lib/veriSenk'
+import { eskiEtiketleriTemizle } from './lib/etiketDepo'
 import { AyarlarProvider, useAyarlar } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import HataSiniri from './components/HataSiniri'
@@ -19,6 +20,7 @@ import Kargo from './pages/Kargo.jsx'
 import Ayarlar from './pages/Ayarlar.jsx'
 import SatisFinans from './pages/SatisFinans.jsx'
 import OnlineSiparisler from './pages/OnlineSiparisler.jsx'
+import SosyalMedya from './pages/SosyalMedya.jsx'
 import Kullanicilar from './pages/Kullanicilar.jsx'
 
 // Raporlar ağır recharts kütüphanesini içerir → tembel yükle (yalnızca sekme açılınca).
@@ -31,6 +33,7 @@ const navItems = [
   { to: '/urunler', label: '📦 Ürünler', yetki: 'urun_goruntule', el: <Urunler /> },
   { to: '/stok', label: '📊 Stok', yetkiler: ['stok_goruntule', 'mal_kabul_yonet'], el: <StokYonetim /> },
   { to: '/online-siparisler', label: '🛍️ Online Siparişler', yetki: 'online_siparis_goruntule', el: <OnlineSiparisler /> },
+  { to: '/sosyal-medya', label: '💬 Sosyal Medya', yetki: 'sosyal_medya_yonet', el: <SosyalMedya /> },
   { to: '/raporlar', label: '📈 Raporlar', yetki: 'rapor_goruntule', el: <Raporlar /> },
   { to: '/musteriler', label: '👥 Müşteriler', yetki: 'musteri_goruntule', el: <Musteriler /> },
   { to: '/kargo', label: '📦 Kargo', yetki: 'kargo_yonet', el: <Kargo /> },
@@ -48,6 +51,17 @@ function Uygulama() {
   const ilkSayfa = erisilebilir[0]?.to || '/'
   const [surum, setSurum] = useState('')
   useEffect(() => { uygulamaApi.surum().then(setSurum).catch(() => {}) }, [])
+
+  // Sosyal medya okunmamış rozeti: yetki varsa 30 sn'de bir yeni yorum/DM sayısını
+  // çeker. Personel sekmeyi açmadan da bekleyen mesaj olduğunu görür.
+  const [sosyalRozet, setSosyalRozet] = useState(0)
+  useEffect(() => {
+    if (!yetkiVar('sosyal_medya_yonet')) return
+    const yukle = () => sosyalApi.sayac().then(setSosyalRozet).catch(() => {})
+    yukle()
+    const i = setInterval(yukle, 30 * 1000)
+    return () => clearInterval(i)
+  }, [yetkiVar])
   // Girişten sonra ayarları buluttan çek (PC'ler arası senkron) ve state'i tazele
   // ki senkronlanan ayarlar (ödeme oranı, kasa zorunlu vb.) anında etkili olsun.
   useEffect(() => {
@@ -63,6 +77,13 @@ function Uygulama() {
     const t = setTimeout(calistir, 15 * 1000)
     const i = setInterval(calistir, 60 * 1000)
     return () => { clearTimeout(t); clearInterval(i) }
+  }, [])
+
+  // Etiket deposu bakımı: açılıştan 40 sn sonra 5 aydan eski etiketleri Storage'dan
+  // siler (depoyu ~725MB bandında tutar). Oturum başına bir kez yeterli.
+  useEffect(() => {
+    const t = setTimeout(() => eskiEtiketleriTemizle().catch(() => {}), 40 * 1000)
+    return () => clearTimeout(t)
   }, [])
 
   if (erisilebilir.length === 0) {
@@ -96,7 +117,12 @@ function Uygulama() {
                   `flex items-center px-4 py-2.5 text-sm transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}`
                 }
               >
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.to === '/sosyal-medya' && sosyalRozet > 0 && (
+                  <span className="bg-red-600 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center flex-shrink-0">
+                    {sosyalRozet > 99 ? '99+' : sosyalRozet}
+                  </span>
+                )}
               </NavLink>
             ))}
           </div>

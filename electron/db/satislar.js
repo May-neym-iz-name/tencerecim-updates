@@ -54,7 +54,7 @@ module.exports = {
 
       const birimFiyat = (kalem.birim_fiyat ?? urun.satis_fiyati) * odemeCarpani
       hesapKalemleri.push({ miktar: kalem.miktar, birim_fiyat: birimFiyat, kdv_orani: urun.kdv_orani, iskonto_orani: kalem.iskonto_orani })
-      kalemMeta.push({ urun_id: kalem.urun_id, miktar: kalem.miktar, kdv_orani: urun.kdv_orani })
+      kalemMeta.push({ urun_id: kalem.urun_id, miktar: kalem.miktar, kdv_orani: urun.kdv_orani, set_adi: kalem.set_adi || null })
     }
 
     const { araToplam, iskontoToplam, kdvToplam, genelToplam, kalemSonuc } = satisHesapla(hesapKalemleri, genel_iskonto)
@@ -79,8 +79,8 @@ module.exports = {
 
       kalemMeta.forEach((k, i) => {
         const h = kalemSonuc[i]
-        db.prepare(`INSERT INTO satis_kalemleri (satis_id,urun_id,miktar,birim_fiyat,iskonto_orani,kdv_orani,toplam) VALUES (?,?,?,?,?,?,?)`)
-          .run(satis.lastInsertRowid, k.urun_id, k.miktar, h.birimFiyat, h.iskonto, k.kdv_orani, r(h.toplam))
+        db.prepare(`INSERT INTO satis_kalemleri (satis_id,urun_id,miktar,birim_fiyat,iskonto_orani,kdv_orani,toplam,set_adi) VALUES (?,?,?,?,?,?,?,?)`)
+          .run(satis.lastInsertRowid, k.urun_id, k.miktar, h.birimFiyat, h.iskonto, k.kdv_orani, r(h.toplam), k.set_adi)
         // Stok satırı yoksa oluştur (stok_zorla durumunda eksik olabilir); 0 altına düşürme.
         db.prepare('INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok) VALUES (?, ?, 0, 0)').run(k.urun_id, lokasyon_id)
         db.prepare('UPDATE urun_stoklar SET miktar=MAX(0, miktar-?) WHERE urun_id=? AND lokasyon_id=?').run(k.miktar, k.urun_id, lokasyon_id)

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { upsApi } from '../api/ipc'
+import AranabilirSecici from './AranabilirSecici'
 
 // UPS il/ilçe (semt) seçici. Değer olarak il_kodu ve ilce_kodu döndürür.
+// Artık aranabilir: uzun il/ilçe listelerinde kaydırmak yerine yazarak bulunur.
 // props: ilKodu, ilceKodu, onChange({ ilKodu, il, ilceKodu, ilce })
 export default function IlIlceSecici({ ilKodu, ilceKodu, onChange, disabled }) {
   const [iller, setIller] = useState([])
@@ -14,31 +16,26 @@ export default function IlIlceSecici({ ilKodu, ilceKodu, onChange, disabled }) {
     upsApi.ilceler(Number(ilKodu)).then(setIlceler).catch(() => {})
   }, [ilKodu])
 
-  function ilSec(e) {
-    const kod = e.target.value
-    const il = iller.find(i => String(i.il_kodu) === kod)
+  const ilSecenekleri = useMemo(() => iller.map(i => ({ deger: i.il_kodu, etiket: i.il })), [iller])
+  const ilceSecenekleri = useMemo(() => ilceler.map(i => ({ deger: i.ilce_kodu, etiket: i.ilce })), [ilceler])
+
+  function ilSec(kod) {
+    const il = iller.find(i => String(i.il_kodu) === String(kod))
     onChange({ ilKodu: kod ? Number(kod) : null, il: il?.il || '', ilceKodu: null, ilce: '' })
   }
 
-  function ilceSec(e) {
-    const kod = e.target.value
-    const ilce = ilceler.find(i => String(i.ilce_kodu) === kod)
+  function ilceSec(kod) {
+    const ilce = ilceler.find(i => String(i.ilce_kodu) === String(kod))
     const il = iller.find(i => String(i.il_kodu) === String(ilKodu))
     onChange({ ilKodu: ilKodu ? Number(ilKodu) : null, il: il?.il || '', ilceKodu: kod ? Number(kod) : null, ilce: ilce?.ilce || '' })
   }
 
   return (
     <div className="grid grid-cols-2 gap-2">
-      <select value={ilKodu || ''} onChange={ilSec} disabled={disabled}
-        className="border rounded px-2 py-1.5 text-sm bg-white">
-        <option value="">İl seçin</option>
-        {iller.map(i => <option key={i.il_kodu} value={i.il_kodu}>{i.il}</option>)}
-      </select>
-      <select value={ilceKodu || ''} onChange={ilceSec} disabled={disabled || !ilKodu}
-        className="border rounded px-2 py-1.5 text-sm bg-white">
-        <option value="">İlçe / Semt seçin</option>
-        {ilceler.map(i => <option key={i.ilce_kodu} value={i.ilce_kodu}>{i.ilce}</option>)}
-      </select>
+      <AranabilirSecici secenekler={ilSecenekleri} deger={ilKodu || ''} onChange={ilSec}
+        placeholder="İl ara / seç" disabled={disabled} />
+      <AranabilirSecici secenekler={ilceSecenekleri} deger={ilceKodu || ''} onChange={ilceSec}
+        placeholder="İlçe / semt ara / seç" disabled={disabled || !ilKodu} />
     </div>
   )
 }

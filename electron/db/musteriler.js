@@ -7,8 +7,14 @@ module.exports = {
     let sorgu = 'SELECT * FROM musteriler WHERE aktif = 1'
     const params = []
     if (arama) {
-      sorgu += ' AND (ad LIKE ? OR soyad LIKE ? OR telefon LIKE ? OR vergi_no LIKE ?)'
-      params.push(`%${arama}%`, `%${arama}%`, `%${arama}%`, `%${arama}%`)
+      // Kelime bazlı arama: "ömer keskin" gibi tam ad sorguları için her kelime,
+      // ad+soyad+telefon+vergi birleşiminde ayrı ayrı aranır (hepsi eşleşmeli).
+      // tr_kucuk: Türkçe duyarlı küçük harf (Ö/ö, İ/i LIKE'ta eşleşsin diye).
+      const kelimeler = String(arama).trim().split(/\s+/).filter(Boolean)
+      for (const kelime of kelimeler) {
+        sorgu += " AND tr_kucuk(ad || ' ' || COALESCE(soyad,'') || ' ' || COALESCE(telefon,'') || ' ' || COALESCE(vergi_no,'')) LIKE tr_kucuk(?)"
+        params.push(`%${kelime}%`)
+      }
     }
     const toplam = db.prepare(`SELECT COUNT(*) as n FROM (${sorgu})`).get(...params).n
     sorgu += ' ORDER BY ad, soyad'

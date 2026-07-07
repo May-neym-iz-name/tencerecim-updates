@@ -3,9 +3,14 @@ import toast from 'react-hot-toast'
 import { kargoApi, sistemApi, whatsappLink } from '../api/ipc'
 import { upsTakipUrl } from '../lib/kargo'
 import { senkTetikle } from '../lib/veriSenk'
+import { etiketIndir } from '../lib/etiketDepo'
 import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
+import KargoDetayModal from '../components/KargoDetayModal'
 import Sayfalama from '../components/Sayfalama'
+
+// UPS kurye rezervasyon sayfası — takip penceresi gibi program içi pencerede açılır.
+const UPS_PICKUP_URL = 'https://apps.ups.com.tr/PickupRequest'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { usePersistentState } from '../hooks/usePersistentState'
 
@@ -23,6 +28,26 @@ export default function Kargo() {
   const [filtre, setFiltre] = useState({ takip: '', musteri: '', bas: '', bit: '', lokasyon: '' })
   const [secili, setSecili] = useState(() => new Set()) // toplu basım için seçili kargo id'leri
   const [basiliyor, setBasiliyor] = useState(false)
+  const [detayId, setDetayId] = useState(null)
+  const [iadeBaslangic, setIadeBaslangic] = useState(null) // listeden iade: müşteri bilgileri dolu form
+
+  // UPS kurye rezervasyon sayfasını program içi pencerede aç (takip gibi).
+  function kuryeCagir() { window.open(UPS_PICKUP_URL, '_blank') }
+
+  // Listedeki bir kargonun müşterisi için iade gönderisi formunu (bilgiler dolu) aç.
+  function iadeOlustur(k) {
+    setIadeBaslangic({
+      iade: true,
+      aliciAd: k.alici_ad || '',
+      aliciTelefon: k.alici_telefon || '',
+      aliciAdres: k.alici_adres || '',
+      ilKodu: k.il_kodu || null, il: k.il || '',
+      ilceKodu: k.ilce_kodu || null, ilce: k.ilce || '',
+      musteriId: k.musteri_id || null,
+      gondericiLokasyonId: k.lokasyon_id || null, // teslim mağazası: kargonun çıkış mağazası varsayılan
+    })
+    setFormAcik(true)
+  }
   const [sayfaBasina, setSayfaBasina] = usePersistentState('kargo_etiket_sayfa_basina', 1) // 1|2|4
 
   function filtreAlan(k, v) { setFiltre(f => ({ ...f, [k]: v })) }
@@ -77,17 +102,22 @@ export default function Kargo() {
 
   async function etiketBas(k) {
     try {
-      const pngler = await kargoApi.etiket(k.id)
+      let pngler = await kargoApi.etiket(k.id)
+      // Yerelde yoksa (başka PC'de oluşturuldu) → Supabase Storage'dan indir.
+      if (!pngler.length && k.etiket_storage_yol) {
+        const bekle = toast.loading('Etiket indiriliyor…')
+        try { pngler = await etiketIndir(k.etiket_storage_yol) }
+        finally { toast.dismiss(bekle) }
+      }
       if (pngler.length) {
         await kargoApi.etiketOnizle(pngler, Number(sayfaBasina) || 1)
         toast.success('Önizleme açıldı')
       } else if (k.etiket_link) {
-        // Bu bilgisayarda kayıtlı PNG yok (etiket başka PC'de oluşturuldu) →
-        // UPS'in etiket yazdırma linkini aç (her PC'den basılabilir).
+        // Son çare: UPS linki (güvenilmez, oturum/sürede geçersiz olabilir).
         sistemApi.linkAc(k.etiket_link).catch(e => toast.error(e.message))
         toast.success('UPS etiket sayfası açıldı')
       } else {
-        toast.error('Bu gönderinin bu bilgisayarda kayıtlı etiketi ve UPS etiket linki yok. Etiketi oluşturan bilgisayardan basın.')
+        toast.error('Bu gönderinin etiketi bu bilgisayarda yok ve Storage\'a henüz yüklenmemiş. Etiketi oluşturan bilgisayar senkronladıktan sonra tekrar deneyin.')
       }
     } catch (e) { toast.error('Etiket açılamadı: ' + e.message) }
   }
@@ -133,7 +163,10 @@ export default function Kargo() {
               🖨️ {basiliyor ? 'Basılıyor…' : `Seçili Etiketleri Bas (${secili.size})`}
             </button>
           )}
-          <button onClick={() => setFormAcik(true)}
+          <button onClick={kuryeCagir}
+            className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700"
+            title="UPS kurye rezervasyon sayfasını aç">🚚 Kurye Çağır</button>
+          <button onClick={() => { setIadeBaslangic(null); setFormAcik(true) }}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ Yeni Gönderi</button>
         </div>
       </div>
@@ -190,7 +223,6 @@ export default function Kargo() {
               <th className="px-3 py-2 font-medium">Adres</th>
               <th className="px-3 py-2 font-medium">Lokasyon</th>
               <th className="px-3 py-2 font-medium">Durum</th>
-              <th className="px-3 py-2 font-medium">Son Durum</th>
               <th className="px-3 py-2 font-medium">Tarih</th>
               <th className="px-3 py-2 font-medium text-right">İşlem</th>
             </tr>
@@ -211,14 +243,27 @@ export default function Kargo() {
                 <td className="px-3 py-2">{k.alici_ad}</td>
                 <td className="px-3 py-2 text-gray-500 text-xs max-w-[180px] truncate">{[k.ilce, k.il].filter(Boolean).join(', ')}</td>
                 <td className="px-3 py-2 text-xs text-gray-600">{k.lokasyon_ad || '—'}</td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2 whitespace-nowrap">
                   <span className={`px-2 py-0.5 rounded-full text-xs ${DURUM_RENK[k.durum] || 'bg-gray-100 text-gray-600'}`}>
                     {k.durum === 'iptal' ? 'İptal' : 'Oluşturuldu'}
                   </span>
+                  {k.tip === 'iade' && (
+                    <span className="ml-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700" title="İade gönderisi: müşteriden mağazaya">↩ İade</span>
+                  )}
                 </td>
-                <td className="px-3 py-2 text-gray-500 text-xs max-w-[200px] truncate">{k.son_durum || '—'}</td>
                 <td className="px-3 py-2 text-gray-400 text-xs">{(k.olusturma_tarihi || '').slice(0, 16)}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <button onClick={() => setDetayId(k.id)} className="text-blue-600 hover:underline text-xs mr-2 font-medium">Detay</button>
+                  {k.tip !== 'iade' && (
+                    <button onClick={() => iadeOlustur(k)}
+                      className="text-purple-700 hover:underline text-xs mr-2 font-medium"
+                      title="Bu müşteri için iade gönderisi oluştur (bilgiler otomatik dolar)">↩ İade</button>
+                  )}
+                  {k.tip === 'iade' && k.durum !== 'iptal' && (
+                    <button onClick={kuryeCagir}
+                      className="text-amber-700 hover:underline text-xs mr-2 font-medium"
+                      title="UPS kurye rezervasyon sayfasını aç">🚚 Kurye</button>
+                  )}
                   <button onClick={() => whatsappGonder(k)} className="text-green-700 hover:underline text-xs mr-2 font-medium">💬 WhatsApp</button>
                   <button onClick={() => etiketBas(k)} className="text-gray-600 hover:underline text-xs mr-2">Etiket</button>
                   {k.durum !== 'iptal' && iptalYetkisi && (
@@ -228,7 +273,7 @@ export default function Kargo() {
               </tr>
             ))}
             {gosterilen.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-gray-400">
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-gray-400">
                 {yukleniyor ? 'Yükleniyor…' : (kargolar.length ? 'Filtreye uyan gönderi yok.' : 'Henüz kargo gönderisi yok.')}
               </td></tr>
             )}
@@ -237,7 +282,14 @@ export default function Kargo() {
       </div>
       <Sayfalama {...sayfalama} />
 
-      <KargoFormu acik={formAcik} kapat={() => setFormAcik(false)} onTamam={() => { yenile(); senkTetikle() }} />
+      <KargoFormu acik={formAcik} baslangic={iadeBaslangic}
+        kapat={() => { setFormAcik(false); setIadeBaslangic(null) }}
+        onTamam={(kargo) => {
+          yenile(); senkTetikle()
+          // İade barkodu oluşturuldu → UPS kurye rezervasyon sayfasını program içi pencerede aç.
+          if (kargo?.tip === 'iade') kuryeCagir()
+        }} />
+      <KargoDetayModal acik={detayId != null} kapat={() => setDetayId(null)} kargoId={detayId} />
     </div>
   )
 }

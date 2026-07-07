@@ -6,3 +6,7 @@ dist-electron/
 *.db-journal
 .env
 ecc-kaynak/
+
+# Calisma artefaktlari (kaynak degil)
+Ekran görüntüsü*.png
+TEDARIKCIDEN LISTELER/

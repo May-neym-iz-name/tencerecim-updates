@@ -12,6 +12,9 @@ function init() {
   db = new Database(getDbPath())
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  // Türkçe duyarlı küçük harf — SQLite lower()/LIKE yalnız ASCII'de büyük/küçük
+  // duyarsızdır (Ö/ö, İ/i, Ş/ş eşleşmez). Aramalarda tr_kucuk(alan) LIKE tr_kucuk(?) kullanılır.
+  db.function('tr_kucuk', { deterministic: true }, (s) => (s == null ? null : String(s).toLocaleLowerCase('tr')))
   createTables()
   migrate()
   try { require('./senk-sema').kur(db) } catch (e) { console.error('senk-sema kur:', e.message) }
@@ -340,6 +343,41 @@ function createTables() {
       aktif INTEGER DEFAULT 1,
       olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
     );
+
+    -- Meta (Facebook/Instagram) entegrasyon ayarları (anahtar-değer). ikas ile aynı model.
+    -- app_id, app_secret (hassas), sayfa_id, ig_id, sayfa_token (hassas, uzun ömürlü),
+    -- token_gecerlilik (epoch ms), otomatik_senk ('1'/'0'). Yerel *.db gitignore'da.
+    CREATE TABLE IF NOT EXISTS meta_ayarlar (
+      anahtar TEXT PRIMARY KEY,
+      deger TEXT
+    );
+
+    -- Sosyal medya gelen kutusu ÖNBELLEĞİ (kaynak Meta; burada saklamak Supabase'i şişirmez).
+    -- harici_id: Meta comment/message id (UNIQUE → aynı öğe iki kez düşmez, idempotent çekim).
+    -- tur: 'yorum' | 'dm'. platform: 'facebook' | 'instagram'. yon: 'gelen' | 'giden'.
+    -- konu_id: gönderi id (yorum) veya konuşma id (DM) — cevap için grup anahtarı.
+    -- durum: 'yeni' | 'okundu' | 'cevaplandi'. atanan_kullanici/cevaplayan_kullanici:
+    -- "kim neye baktı/cevapladı" personel takibi (yerel; Supabase'e gitmez).
+    CREATE TABLE IF NOT EXISTS sosyal_mesajlar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      platform TEXT NOT NULL,
+      tur TEXT NOT NULL,
+      harici_id TEXT UNIQUE,
+      konu_id TEXT,
+      ust_id TEXT,
+      gonderen_id TEXT,
+      gonderen_ad TEXT,
+      metin TEXT,
+      yon TEXT DEFAULT 'gelen',
+      durum TEXT DEFAULT 'yeni',
+      atanan_kullanici TEXT,
+      cevaplayan_kullanici TEXT,
+      ic_not TEXT,
+      mesaj_tarihi TEXT,
+      cekilme_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sosyal_konu ON sosyal_mesajlar(konu_id);
+    CREATE INDEX IF NOT EXISTS idx_sosyal_durum ON sosyal_mesajlar(durum);
   `)
 }
 
@@ -385,6 +423,32 @@ function migrate() {
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_toplam_harcama REAL") } catch {}
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_ilk_siparis TEXT") } catch {}
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_son_siparis TEXT") } catch {}
+  // kargolar — etiket PNG'sinin Supabase Storage yolu (PC'ler arası basım; DB'yi şişirmez).
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN etiket_storage_yol TEXT") } catch {}
+  // kargolar — gönderi tipi: 'gonderi' (mağaza→müşteri) | 'iade' (müşteri→mağaza, UPS'te swap).
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN tip TEXT DEFAULT 'gonderi'") } catch {}
+  // Kendi setlerimiz: set = ad + tek SET fiyatı; bileşenler set_urunler'de.
+  // Satışta set, bileşen ürünlere açılır (stok bileşenlerden düşer); fişte yalnız set fiyatı görünür.
+  db.exec(`CREATE TABLE IF NOT EXISTS setler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ad TEXT NOT NULL UNIQUE,
+    fiyat REAL NOT NULL DEFAULT 0,
+    aktif INTEGER DEFAULT 1,
+    olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+  )`)
+  db.exec(`CREATE TABLE IF NOT EXISTS set_urunler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    set_id INTEGER NOT NULL REFERENCES setler(id),
+    urun_id INTEGER NOT NULL REFERENCES urunler(id),
+    miktar INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(set_id, urun_id)
+  )`)
+  // satis_kalemleri — kalem bir sete aitse set adı (fişte gruplama + fiyat gizleme için).
+  try { db.exec("ALTER TABLE satis_kalemleri ADD COLUMN set_adi TEXT") } catch {}
+  // sosyal_mesajlar — yorumun geldiği gönderi bağlamı (Meta Business Suite tarzı görünüm).
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN konu_baslik TEXT") } catch {}
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN konu_gorsel TEXT") } catch {}
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN konu_link TEXT") } catch {}
 }
 
 function seedLokasyonlar() {

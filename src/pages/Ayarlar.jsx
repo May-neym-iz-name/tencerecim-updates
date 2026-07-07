@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi } from '../api/ipc'
+import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { veriSenk } from '../lib/veriSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
@@ -20,6 +20,7 @@ export default function Ayarlar() {
     { kod: 'satis', ad: '🛒 Satış' },
     { kod: 'kargo', ad: '📦 Kargo / UPS' },
     { kod: 'ikas', ad: '🛍️ ikas' },
+    { kod: 'meta', ad: '💬 Sosyal Medya' },
     { kod: 'yedek', ad: '💾 Yedekleme' },
   ]
 
@@ -193,6 +194,60 @@ export default function Ayarlar() {
       toast.success(`${r.toplam} müşteri tarandı: ${r.eslesen} güncellendi, ${r.eklenen} eklendi.`)
     } catch (e) { toast.error('Müşteri çekme hatası: ' + e.message) }
     finally { setIkasMesgul('') }
+  }
+
+  // Meta (Facebook/Instagram) entegrasyonu
+  const [meta, setMeta] = useState(null)
+  const [metaDurum, setMetaDurum] = useState(null)
+  const [metaMesgul, setMetaMesgul] = useState('')
+  useEffect(() => {
+    metaApi.ayarGetir().then(setMeta).catch(() => setMeta({}))
+    metaApi.durum().then(setMetaDurum).catch(() => {})
+  }, [])
+  function metaAlan(anahtar, deger) { setMeta(m => ({ ...m, [anahtar]: deger })) }
+  async function metaDurumYenile() {
+    try { setMetaDurum(await metaApi.durum()) } catch {}
+  }
+  async function metaKaydet() {
+    setMetaMesgul('kaydet')
+    try { await metaApi.ayarKaydet(meta); bulutaYukleSessiz(); toast.success('Meta ayarları kaydedildi') }
+    catch (e) { toast.error('Kaydedilemedi: ' + e.message) }
+    finally { setMetaMesgul('') }
+  }
+  async function metaKurulum() {
+    setMetaMesgul('kurulum')
+    try {
+      await metaApi.ayarKaydet(meta) // önce gir (App ID/Secret/kısa token), sonra kur
+      const r = await metaApi.kurulum()
+      toast.success(`Kurulum tamam: ${r.sayfa_ad || r.sayfa_id}${r.ig_bagli ? ' + Instagram' : ' (Instagram bağlı değil)'}`)
+      // Kısa ömürlü token backend'de temizlendi → formu tazele.
+      setMeta(await metaApi.ayarGetir())
+      await metaDurumYenile()
+    } catch (e) { toast.error('Kurulum hatası: ' + e.message) }
+    finally { setMetaMesgul('') }
+  }
+  // Facebook ile Bağlan — OAuth penceresi açar, token'ı otomatik alır (elle token gerekmez).
+  async function metaGiris() {
+    setMetaMesgul('giris')
+    try {
+      await metaApi.ayarKaydet(meta) // App ID + Secret kayıtlı olmalı
+      const r = await metaApi.girisBaslat(meta.sayfa_id || '')
+      toast.success(`Bağlandı: ${r.sayfa_ad || r.sayfa_id}${r.ig_bagli ? ' + Instagram' : ' (Instagram bağlı değil)'}`)
+      setMeta(await metaApi.ayarGetir())
+      await metaDurumYenile()
+    } catch (e) { toast.error('Bağlantı hatası: ' + e.message) }
+    finally { setMetaMesgul('') }
+  }
+  async function metaCek() {
+    setMetaMesgul('cek')
+    try {
+      const r = await metaApi.cek()
+      const dm = (r.fbDm || 0) + (r.igDm || 0)
+      const toplam = (r.fbYorum || 0) + (r.igYorum || 0) + dm
+      toast.success(`Çekildi — FB yorum: ${r.fbYorum}, IG yorum: ${r.igYorum}, DM: ${dm} (toplam ${toplam})`)
+      if (r.hatalar?.length) toast.error('Bazı kaynaklar atlandı: ' + r.hatalar.join(' | '))
+    } catch (e) { toast.error('Çekme hatası: ' + e.message) }
+    finally { setMetaMesgul('') }
   }
 
   async function lokasyonEkle(e) {
@@ -514,6 +569,77 @@ export default function Ayarlar() {
               <span>Kayıtlı online sipariş: {ikasDurum.onlineSiparis}</span>
               <span>Son senkron: {ikasDurum.son_siparis_senk ? new Date(ikasDurum.son_siparis_senk).toLocaleString('tr-TR') : '—'}</span>
             </div>
+          )}
+        </div>
+      )}
+
+      {sekme === 'meta' && yonetici && meta && (
+        <div className="bg-white rounded-xl border p-5 mb-5">
+          <h3 className="font-semibold mb-1">💬 Facebook & Instagram Entegrasyonu</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            Facebook Sayfası ve Instagram yorumlarını/mesajlarını bu ekrandan yönetin. Kimlik bilgileri yalnızca bu bilgisayarda
+            yerel saklanır ve <b>Supabase'e gönderilmez</b>. Kurulum için Meta Developer App bilgilerini girin.
+          </p>
+
+          <p className="text-sm font-medium text-gray-600 mb-1">Kurulum Bilgileri</p>
+          <p className="text-xs text-gray-400 mb-2">
+            App ID + App Secret'ı Meta App → Ayarlar → Temel'den alın. Sonra <b>"Facebook ile Bağlan"</b> ile
+            izin penceresinden bağlanın — token otomatik alınır ve 60 günde bir yenilenir (elle token gerekmez).
+          </p>
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <input value={meta.app_id || ''} onChange={e => metaAlan('app_id', e.target.value)}
+              placeholder="App ID" className="border rounded px-2 py-1.5 text-sm" />
+            <input type="password" value={meta.app_secret || ''} onChange={e => metaAlan('app_secret', e.target.value)}
+              placeholder="App Secret" className="border rounded px-2 py-1.5 text-sm" />
+            <input value={meta.sayfa_id || ''} onChange={e => metaAlan('sayfa_id', e.target.value)}
+              placeholder="Sayfa ID (opsiyonel — boşsa ilk sayfa)" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+          <details className="mb-4">
+            <summary className="text-xs text-gray-400 cursor-pointer">Gelişmiş: elle token ile bağlan (opsiyonel)</summary>
+            <input value={meta.kullanici_token || ''} onChange={e => metaAlan('kullanici_token', e.target.value)}
+              placeholder="Kısa ömürlü Kullanıcı Token (Graph API Explorer)" className="border rounded px-2 py-1.5 text-sm w-full mt-2" />
+          </details>
+
+          <div className="mb-4">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={meta.otomatik_senk !== '0'}
+                onChange={e => metaAlan('otomatik_senk', e.target.checked ? '1' : '0')}
+                className="w-4 h-4" />
+              <span className="font-medium text-gray-800">Otomatik çekme açık (her 2 dakikada bir yorum/DM)</span>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button onClick={metaGiris} disabled={!!metaMesgul}
+              className="bg-[#1877f2] text-white px-4 py-1.5 rounded-lg text-sm hover:bg-[#0f66d0] disabled:opacity-50 flex items-center gap-2">
+              <span className="font-bold">f</span> {metaMesgul === 'giris' ? 'Bağlanıyor…' : 'Facebook ile Bağlan'}
+            </button>
+            <button onClick={metaKaydet} disabled={!!metaMesgul}
+              className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
+              {metaMesgul === 'kaydet' ? 'Kaydediliyor…' : 'Ayarları Kaydet'}
+            </button>
+            <button onClick={metaKurulum} disabled={!!metaMesgul}
+              className="bg-gray-700 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-gray-800 disabled:opacity-50">
+              {metaMesgul === 'kurulum' ? 'Kuruluyor…' : 'Elle Token ile Kur'}
+            </button>
+            <button onClick={metaCek} disabled={!!metaMesgul || !metaDurum?.kurulu}
+              className="bg-amber-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50">
+              {metaMesgul === 'cek' ? 'Çekiliyor…' : 'Yorum & Mesajları Şimdi Çek'}
+            </button>
+          </div>
+
+          {metaDurum && (
+            <div className="text-xs text-gray-500 border-t pt-3 grid grid-cols-2 gap-1">
+              <span>Durum: {metaDurum.kurulu ? '✅ Kurulu' : '⚠️ Kurulum bekliyor'}</span>
+              <span>Sayfa: {metaDurum.sayfa_ad || metaDurum.sayfa_id || '—'}</span>
+              <span>Instagram: {metaDurum.ig_bagli ? '✅ Bağlı' : '⛔ Bağlı değil'}</span>
+              <span>Token kalan süre: {metaDurum.token_gun_kaldi != null ? `${metaDurum.token_gun_kaldi} gün` : '—'}</span>
+            </div>
+          )}
+          {metaDurum?.kurulu && metaDurum.token_gun_kaldi != null && metaDurum.token_gun_kaldi < 7 && (
+            <p className="text-xs text-red-500 mt-2">
+              ⚠️ Token'ın süresi dolmak üzere. Graph API Explorer'dan yeni bir Kullanıcı Token alıp "Kurulumu Tamamla" ile yenileyin.
+            </p>
           )}
         </div>
       )}

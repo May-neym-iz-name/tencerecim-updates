@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, setApi, fisApi, kasaApi } from '../api/ipc'
+import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, kategoriApi, fisApi, kasaApi } from '../api/ipc'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import { usePersistentState } from '../hooks/usePersistentState'
@@ -11,6 +11,13 @@ import { senkTetikle } from '../lib/veriSenk'
 const MUSTERI_BOSH = {
   ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '',
   vergi_dairesi: '', unvan: '', adres: '', il: '', ilce: '', iskonto_orani: '',
+}
+
+// Kategorileri ağaç sırasına dizip her birinin derinliğini (girinti için) hesaplar.
+function kategoriHiyerarsik(kategoriler) {
+  return [...kategoriler]
+    .sort((a, b) => (a.tam_yol || a.ad).localeCompare(b.tam_yol || b.ad, 'tr'))
+    .map(k => ({ ...k, derinlik: ((k.tam_yol || '').match(/>/g) || []).length }))
 }
 
 // Müşteri formu alanları (Müşteriler sayfasıyla aynı) — [name, label, zorunlu]
@@ -25,14 +32,16 @@ const MUSTERI_ALANLARI = [
 ]
 
 export default function Satis() {
-  // Ürün browser — hiyerarşik gezinme: Markalar → Kategoriler → Ürünler (hepsi kart).
+  // Ürün browser
   const [urunler, setUrunler] = useState([])
   const [urunArama, setUrunArama] = useState('')
-  const [secilenKategori, setSecilenKategori] = useState('') // ''=seçilmedi | 'tumu' | 'yok' | kategori id
-  const [secilenMarka, setSecilenMarka] = useState('')       // ''=marka kartları görünümü
+  const [secilenKategori, setSecilenKategori] = useState('')
+  const [secilenMarka, setSecilenMarka] = useState('')
+  const [kategoriler, setKategoriler] = useState([])
   const [markalar, setMarkalar] = useState([])
-  const [setler, setSetler] = useState([]) // kendi setlerimiz (tek set fiyatlı paketler)
   const [urunYukleniyor, setUrunYukleniyor] = useState(false)
+  const [kategoriAcik, setKategoriAcik] = useState(false)
+  const kategoriRef = useRef()
 
   // Lokasyon (seçim kalıcı — sekme değişince kaybolmasın)
   const [lokasyonlar, setLokasyonlar] = useState([])
@@ -99,20 +108,26 @@ export default function Satis() {
       }
     })
     markaApi.listele().then(setMarkalar)
-    setApi.listele().then(setSetler).catch(() => {})
+    kategoriApi.listele().then(setKategoriler)
   }, [])
 
-  // Ürün listesini yükle. Arama modunda tüm ürünlerde arar; gezinmede seçili
-  // markanın ürünleri gelir (kategori kartları da bu listeden türetilir).
+  // Kategori dropdown dışına tıklanınca kapat
+  useEffect(() => {
+    function handler(e) {
+      if (kategoriRef.current && !kategoriRef.current.contains(e.target)) setKategoriAcik(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // Ürün listesini yükle (filtreler değişince)
   const urunleriYukle = useCallback(async () => {
-    if (!urunArama.trim() && (!secilenMarka || secilenMarka === '__setler__')) { setUrunler([]); return } // marka/set kartları görünümü
     setUrunYukleniyor(true)
     try {
       const r = await urunlerApi.listele({
         arama: urunArama || undefined,
-        marka_id: (!urunArama.trim() && secilenMarka) || undefined,
-        // 'tumu'/'yok' özel değerleri backend'e gitmez (yok filtresi aşağıda client-side)
-        kategori_id: /^\d+$/.test(secilenKategori) ? secilenKategori : undefined,
+        marka_id: secilenMarka || undefined,
+        kategori_id: secilenKategori || undefined,
         boyut: 0, // sınırsız — tüm ürünler listelensin
       })
       setUrunler(r.urunler)
@@ -154,47 +169,6 @@ export default function Satis() {
       return [...prev, { urun_id: urun.id, ad: urun.ad, satis_fiyati: urun.satis_fiyati, kdv_orani: urun.kdv_orani, miktar: 1, kalem_iskonto: 0 }]
     })
     toast.success(`${urun.ad.substring(0, 30)} eklendi`, { duration: 900, position: 'bottom-right' })
-  }
-
-  // Set sepete eklenir: TEK kalem, SET fiyatı. urun_id 'set:ID' (ürünlerle çakışmaz);
-  // satışta bileşenlere açılır (stok bileşenlerden düşer, fişte set fiyatı görünür).
-  function setSepeteEkle(s) {
-    if (!s.bilesenler?.length) { toast.error('Bu setin içeriği boş.'); return }
-    const key = 'set:' + s.id
-    setSepet(prev => {
-      const mevcut = prev.find(k => k.urun_id === key)
-      if (mevcut) return prev.map(k => k.urun_id === key ? { ...k, miktar: k.miktar + 1 } : k)
-      return [...prev, {
-        urun_id: key, tip: 'set', set_id: s.id, ad: '🎁 ' + s.ad,
-        satis_fiyati: Number(s.fiyat), kdv_orani: s.bilesenler[0]?.kdv_orani ?? 20,
-        miktar: 1, kalem_iskonto: 0,
-        bilesenler: s.bilesenler.map(b => ({ urun_id: b.urun_id, ad: b.ad, miktar: b.miktar, kdv_orani: b.kdv_orani, satis_fiyati: b.satis_fiyati })),
-      }]
-    })
-    toast.success(`${s.ad} seti eklendi`, { duration: 900, position: 'bottom-right' })
-  }
-
-  // Set kalemini bileşen ürün kalemlerine açar: set fiyatı bileşenlere ürün fiyatı
-  // oranında (fiyatlar 0 ise adet bazlı eşit) dağıtılır; kuruş farkı son kaleme yazılır.
-  function setiAc(k) {
-    const setFiyat = k.satis_fiyati // 1 set için
-    const toplamAdet = k.bilesenler.reduce((t, b) => t + b.miktar, 0)
-    const tabanToplam = k.bilesenler.reduce((t, b) => t + (b.satis_fiyati > 0 ? b.satis_fiyati * b.miktar : 0), 0)
-    let dagitilan = 0
-    return k.bilesenler.map((b, i) => {
-      const son = i === k.bilesenler.length - 1
-      const pay = son ? (setFiyat - dagitilan)
-        : (tabanToplam > 0 ? setFiyat * (b.satis_fiyati * b.miktar) / tabanToplam : setFiyat * b.miktar / toplamAdet)
-      const birim = Math.round((pay / b.miktar) * 100) / 100
-      if (!son) dagitilan += birim * b.miktar
-      return {
-        urun_id: b.urun_id,
-        miktar: b.miktar * k.miktar,
-        birim_fiyat: birim,
-        iskonto_orani: efektifIskonto(k),
-        set_adi: k.ad.replace(/^🎁\s*/, ''),
-      }
-    })
   }
 
   function miktarDegistir(urun_id, miktar) {
@@ -272,11 +246,7 @@ export default function Satis() {
         odeme_oran: odemelerArg ? 0 : odemeOran,
         odemeler: odemelerArg || undefined,
         stok_zorla: !!ayarlar.stok_yetersiz_satis,
-        // Set kalemleri bileşen ürünlere açılır (set fiyatı dağıtılmış birim_fiyat + set_adi);
-        // normal kalemler olduğu gibi gider.
-        kalemler: sepet.flatMap(k => k.tip === 'set'
-          ? setiAc(k)
-          : [{ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) }]),
+        kalemler: sepet.map(k => ({ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) })),
       })
       toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
       senkTetikle() // yeni satışı anında Supabase'e gönder
@@ -291,38 +261,8 @@ export default function Satis() {
     finally { setIslemde(false) }
   }
 
+  const secilenKategoriAdi = kategoriler.find(k => String(k.id) === secilenKategori)?.tam_yol || null
   const sepetteVar = (id) => sepet.find(k => k.urun_id === id)
-
-  // --- Hiyerarşik gezinme görünümü: marka → kategori → ürün ---
-  const aramaModu = urunArama.trim().length > 0
-  // Seçili markanın ürünlerinden kategori kartları türetilir (kategorisizler 'yok').
-  const markaKategorileri = (!aramaModu && secilenMarka && !secilenKategori)
-    ? [...new Map(urunler.filter(u => u.kategori_id).map(u => [u.kategori_id, u.kategori_yol || u.kategori || 'Kategori'])).entries()]
-        .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'tr'))
-    : []
-  const kategorisizVar = !aramaModu && secilenMarka && !secilenKategori && urunler.some(u => !u.kategori_id)
-  // Görünüm: arama → ürün; marka seçilmedi → marka kartları; '__setler__' → set
-  // kartları; marka seçildi ve kategorileri varsa → kategori kartları; sonra ürünler.
-  const gorunum = aramaModu ? 'urun'
-    : secilenMarka === '__setler__' ? 'setler'
-    : !secilenMarka ? 'marka'
-    : (!secilenKategori && (markaKategorileri.length > 0)) ? 'kategori'
-    : 'urun'
-  // Ürün görünümünde gösterilecek liste ('yok' = kategorisiz ürünler, client-side).
-  const gosterilecekUrunler = (gorunum === 'urun' && secilenKategori === 'yok')
-    ? urunler.filter(u => !u.kategori_id) : urunler
-  const secilenMarkaAdi = secilenMarka === '__setler__' ? 'Setlerimiz'
-    : (markalar.find(m => String(m.id) === String(secilenMarka))?.ad || '')
-  const secilenKategoriEtiketi = secilenKategori === 'tumu' ? 'Tüm Ürünler'
-    : secilenKategori === 'yok' ? 'Kategorisiz'
-    : (markaKategorileri.find(([id]) => String(id) === secilenKategori)?.[1]
-       || urunler.find(u => String(u.kategori_id) === secilenKategori)?.kategori_yol || '')
-
-  function markaSec(id) { setSecilenMarka(String(id)); setSecilenKategori('') }
-  function geriGit() {
-    if (secilenKategori) setSecilenKategori('')
-    else setSecilenMarka('')
-  }
 
   return (
     <div className="flex h-full overflow-hidden bg-gray-50">
@@ -345,139 +285,79 @@ export default function Satis() {
             placeholder="🔍 Ürün ara..." className="flex-1 border rounded-lg px-3 py-1.5 text-sm" />
         </div>
 
-        {/* Gezinme şeridi: Markalar → Kategori → Ürünler (arama modunda gizli) */}
-        {!aramaModu && (secilenMarka || secilenKategori) && (
-          <div className="bg-white border-b px-3 py-2 flex gap-2 items-center flex-shrink-0 text-sm">
-            <button onClick={geriGit}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-medium">
-              ← Geri
+        {/* Filtre bar: Kategori dropdown + Marka pills */}
+        <div className="bg-white border-b px-3 py-2 flex gap-3 items-center flex-shrink-0">
+
+          {/* Kategori — custom dropdown */}
+          <div className="relative flex-shrink-0" ref={kategoriRef}>
+            <button
+              onClick={() => setKategoriAcik(v => !v)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors min-w-[160px] ${secilenKategori ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'}`}>
+              <span className="text-gray-400">📂</span>
+              <span className="flex-1 text-left truncate max-w-[140px]">
+                {secilenKategoriAdi || 'Tüm Kategoriler'}
+              </span>
+              {secilenKategori && (
+                <span onClick={e => { e.stopPropagation(); setSecilenKategori('') }}
+                  className="ml-1 text-blue-400 hover:text-red-500 text-xs font-bold">✕</span>
+              )}
+              {!secilenKategori && <span className="text-gray-400 text-xs">▼</span>}
             </button>
-            <button onClick={() => { setSecilenMarka(''); setSecilenKategori('') }}
-              className="text-gray-400 hover:text-blue-600 text-xs">Markalar</button>
-            {secilenMarkaAdi && (
-              <>
-                <span className="text-gray-300">›</span>
-                <button onClick={() => setSecilenKategori('')}
-                  className={`text-xs ${secilenKategori ? 'text-gray-400 hover:text-blue-600' : 'font-semibold text-gray-800'}`}>
-                  {secilenMarkaAdi}
-                </button>
-              </>
-            )}
-            {secilenKategori && (
-              <>
-                <span className="text-gray-300">›</span>
-                <span className="text-xs font-semibold text-gray-800">{secilenKategoriEtiketi || 'Ürünler'}</span>
-              </>
+
+            {kategoriAcik && (
+              <div className="absolute top-full left-0 mt-1 bg-white border rounded-xl shadow-2xl z-30 w-72 max-h-80 overflow-auto">
+                <div className="p-2 border-b">
+                  <button onClick={() => { setSecilenKategori(''); setKategoriAcik(false) }}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${!secilenKategori ? 'bg-blue-50 text-blue-700 font-semibold' : 'hover:bg-gray-50 text-gray-700'}`}>
+                    Tüm Kategoriler
+                  </button>
+                </div>
+                <div className="p-2 space-y-0.5">
+                  {/* Tüm kategoriler ağaç sırasında, derinliğe göre girintili (her seviye desteklenir) */}
+                  {kategoriHiyerarsik(kategoriler).map(k => {
+                    const secili = secilenKategori === String(k.id)
+                    return (
+                      <button key={k.id}
+                        onClick={() => { setSecilenKategori(String(k.id)); setKategoriAcik(false) }}
+                        style={{ paddingLeft: `${0.75 + k.derinlik * 1.1}rem` }}
+                        className={`w-full text-left pr-3 py-1.5 rounded-lg transition-colors ${k.derinlik === 0 ? 'text-sm font-medium' : 'text-xs'} ${secili ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-gray-50 text-gray-700'}`}>
+                        {k.derinlik > 0 && <span className="text-gray-400">└ </span>}{k.ad}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             )}
           </div>
-        )}
 
-        {/* Kart alanı: markalar / kategoriler / ürünler — hepsi aynı kart tasarımı */}
+          {/* Dikey ayraç */}
+          <div className="w-px h-6 bg-gray-200 flex-shrink-0" />
+
+          {/* Marka — yatay kaydırılabilir pills */}
+          <div className="flex-1 overflow-x-auto flex gap-1.5 items-center pb-0.5" style={{ scrollbarWidth: 'none' }}>
+            <button onClick={() => setSecilenMarka('')}
+              className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${!secilenMarka ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700'}`}>
+              Tümü
+            </button>
+            {markalar.map(m => (
+              <button key={m.id} onClick={() => setSecilenMarka(secilenMarka === String(m.id) ? '' : String(m.id))}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${secilenMarka === String(m.id) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-400 hover:text-blue-600'}`}>
+                {m.ad}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Ürün Grid */}
         <div className="flex-1 overflow-auto p-3">
           {urunYukleniyor && (
             <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Yükleniyor...</div>
           )}
-
-          {/* MARKA kartları */}
-          {!urunYukleniyor && gorunum === 'marka' && (
-            <>
-              {markalar.length === 0 && (
-                <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Marka bulunamadı</div>
-              )}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-                {setler.length > 0 && (
-                  <button onClick={() => { setSecilenMarka('__setler__'); setSecilenKategori('') }}
-                    className="text-left rounded-xl border border-purple-200 bg-purple-50 p-2.5 transition-all hover:shadow-md hover:border-purple-400 active:scale-95 flex flex-col">
-                    <div className="text-xs text-purple-400 mb-1">Kendi Setlerimiz</div>
-                    <div className="text-sm font-semibold text-purple-800 leading-snug mb-2 flex-1"
-                      style={{ minHeight: '2.4em' }}>🎁 Setlerimiz</div>
-                    <div className="text-xs text-purple-600 mt-auto">{setler.length} set ›</div>
-                  </button>
-                )}
-                {markalar.map(m => (
-                  <button key={m.id} onClick={() => markaSec(m.id)} title={m.ad}
-                    className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
-                    <div className="text-xs text-gray-400 mb-1">Marka</div>
-                    <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1"
-                      style={{ minHeight: '2.4em' }}>🏷️ {m.ad}</div>
-                    <div className="text-xs text-blue-600 mt-auto">Ürünlere git ›</div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* SET kartları — tıklayınca set tek kalem (set fiyatıyla) sepete girer */}
-          {gorunum === 'setler' && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-              {setler.map(s => {
-                const sepetKalem = sepetteVar('set:' + s.id)
-                return (
-                  <button key={s.id} onClick={() => setSepeteEkle(s)} title={s.bilesenler.map(b => b.ad).join(', ')}
-                    className={`relative text-left rounded-xl border p-2.5 transition-all hover:shadow-md active:scale-95 flex flex-col ${sepetKalem ? 'border-purple-400 bg-purple-50 shadow-sm' : 'border-gray-200 bg-white hover:border-purple-300'}`}>
-                    {sepetKalem && (
-                      <span className="absolute top-1.5 right-1.5 bg-purple-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold z-10">
-                        {sepetKalem.miktar}
-                      </span>
-                    )}
-                    <div className="text-xs text-purple-500 mb-1">🎁 Set · {s.bilesenler.length} ürün</div>
-                    <div className="text-xs font-medium text-gray-800 leading-snug mb-2 flex-1"
-                      style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '3.6em' }}>
-                      {s.ad}
-                    </div>
-                    <div className="text-sm font-bold text-purple-700 mt-auto">₺{Number(s.fiyat).toFixed(2)}</div>
-                    <div className="text-xs text-gray-400">Set fiyatı</div>
-                  </button>
-                )
-              })}
-              {setler.length === 0 && (
-                <div className="col-span-full flex items-center justify-center h-32 text-gray-400 text-sm">
-                  Henüz set yok — Ürünler › 🎁 Setler sekmesinden oluşturun.
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* KATEGORİ kartları (seçili markanın ürünlerinden türetilir) */}
-          {!urunYukleniyor && gorunum === 'kategori' && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-              <button onClick={() => setSecilenKategori('tumu')}
-                className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
-                <div className="text-xs text-gray-400 mb-1">{secilenMarkaAdi}</div>
-                <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1" style={{ minHeight: '2.4em' }}>📦 Tüm Ürünler</div>
-                <div className="text-xs text-blue-600 mt-auto">{urunler.length} ürün ›</div>
-              </button>
-              {markaKategorileri.map(([id, yol]) => (
-                <button key={id} onClick={() => setSecilenKategori(String(id))} title={yol}
-                  className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
-                  <div className="text-xs text-gray-400 mb-1">Kategori</div>
-                  <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1"
-                    style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.4em' }}>
-                    📂 {yol}
-                  </div>
-                  <div className="text-xs text-blue-600 mt-auto">
-                    {urunler.filter(u => String(u.kategori_id) === String(id)).length} ürün ›
-                  </div>
-                </button>
-              ))}
-              {kategorisizVar && (
-                <button onClick={() => setSecilenKategori('yok')}
-                  className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
-                  <div className="text-xs text-gray-400 mb-1">Kategori</div>
-                  <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1" style={{ minHeight: '2.4em' }}>📁 Diğer (kategorisiz)</div>
-                  <div className="text-xs text-blue-600 mt-auto">{urunler.filter(u => !u.kategori_id).length} ürün ›</div>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* ÜRÜN kartları */}
-          {!urunYukleniyor && gorunum === 'urun' && gosterilecekUrunler.length === 0 && (
+          {!urunYukleniyor && urunler.length === 0 && (
             <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Ürün bulunamadı</div>
           )}
-          {gorunum === 'urun' && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-            {gosterilecekUrunler.map(u => {
+            {urunler.map(u => {
               const sepetKalem = sepetteVar(u.id)
               return (
                 <button key={u.id} onClick={() => sepeteEkle(u)} title={u.ad}
@@ -504,7 +384,6 @@ export default function Satis() {
               )
             })}
           </div>
-          )}
         </div>
       </div>
 
@@ -559,22 +438,12 @@ export default function Satis() {
           ) : (
             <div className="divide-y">
               {sepet.map(k => (
-                <div key={k.urun_id} className={`px-3 py-2.5 ${k.tip === 'set' ? 'bg-purple-50/50' : ''}`}>
+                <div key={k.urun_id} className="px-3 py-2.5">
                   <div className="flex justify-between items-start gap-1 mb-1.5">
                     <span className="text-xs font-medium text-gray-800 leading-tight flex-1 line-clamp-2">{k.ad}</span>
                     <button onClick={() => setSepet(p => p.filter(i => i.urun_id !== k.urun_id))}
                       className="text-gray-300 hover:text-red-500 text-sm flex-shrink-0 ml-1 mt-0.5">✕</button>
                   </div>
-                  {/* Set içeriği — fiyatsız bileşen listesi (yalnız set fiyatı geçerli) */}
-                  {k.tip === 'set' && (
-                    <div className="mb-1.5 pl-2 border-l-2 border-purple-200">
-                      {k.bilesenler.map(b => (
-                        <div key={b.urun_id} className="text-[11px] text-gray-500 leading-snug">
-                          • {b.ad}{b.miktar > 1 ? ` ×${b.miktar}` : ''}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                   <div className="flex items-center gap-2">
                     <div className="flex items-center border rounded-lg overflow-hidden flex-shrink-0">
                       <button onClick={() => miktarDegistir(k.urun_id, k.miktar - 1)}

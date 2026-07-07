@@ -9,6 +9,7 @@ const BOS = {
   koliAdedi: 1, agirlik: 1, aciklama: '', servisSeviyesi: 3, odemeTipi: 2,
   faturaNo: '', referans: '', musteriId: null, satisId: null,
   gondericiLokasyonId: null, onlineSiparisId: null,
+  iade: false, // true → İADE gönderisi: paket müşteriden mağazaya (UPS'te taraflar ters çevrilir)
 }
 
 // UPS gönderi oluşturma formu (modal). baslangic ile ön-doldurulabilir.
@@ -39,7 +40,7 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
     setGonderiliyor(true)
     try {
       const kargo = await kargoApi.olustur(form)
-      toast.success(`✓ Kargo oluşturuldu — Takip No: ${kargo.takip_no}`)
+      toast.success(`✓ ${form.iade ? 'İade gönderisi' : 'Kargo'} oluşturuldu — Takip No: ${kargo.takip_no}`)
       // Etiketi önizleme penceresinde aç (hata olursa gönderiyi engellemesin).
       if (kargo.barkodPng?.length) {
         kargoApi.etiketOnizle(kargo.barkodPng, 1)
@@ -57,11 +58,20 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={kapat}>
       <div className="bg-white rounded-xl w-full max-w-xl max-h-[90vh] overflow-auto p-5" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-gray-800 mb-4">📦 UPS Kargo Gönderisi</h3>
+        <h3 className="text-lg font-bold text-gray-800 mb-4">
+          {form.iade ? '↩ UPS İade Gönderisi' : '📦 UPS Kargo Gönderisi'}
+        </h3>
         <form onSubmit={gonder} className="space-y-3">
+          {/* İade modu: taraflar ters çevrilir — paket müşteriden alınıp mağazaya gelir. */}
+          <label className={`flex items-center gap-2 text-sm rounded-lg border px-3 py-2 cursor-pointer
+            ${form.iade ? 'bg-purple-50 border-purple-300 text-purple-800' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+            <input type="checkbox" checked={form.iade} onChange={e => alan('iade', e.target.checked)} />
+            <span><b>İade gönderisi</b> — paket müşteriden alınıp mağazaya gönderilir (taraflar otomatik ters çevrilir)</span>
+          </label>
+
           {magazalar.length > 0 && (
             <label className="block text-sm">
-              <span className="font-medium text-gray-600">Gönderici Mağaza</span>
+              <span className="font-medium text-gray-600">{form.iade ? 'Teslim Mağazası (iadenin geleceği yer)' : 'Gönderici Mağaza'}</span>
               <select value={form.gondericiLokasyonId || ''} onChange={e => alan('gondericiLokasyonId', e.target.value ? Number(e.target.value) : null)}
                 className="border rounded px-2 py-1.5 text-sm w-full mt-1 bg-white">
                 <option value="">Varsayılan (Ayarlar'daki gönderici)</option>
@@ -70,7 +80,9 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
             </label>
           )}
 
-          <p className="text-sm font-medium text-gray-600">Alıcı Bilgileri</p>
+          <p className="text-sm font-medium text-gray-600">
+            {form.iade ? 'İade Eden Müşteri (paketin alınacağı adres)' : 'Alıcı Bilgileri'}
+          </p>
           <input value={form.aliciAd} onChange={e => alan('aliciAd', e.target.value)}
             placeholder="Alıcı adı soyadı *" className="border rounded px-2 py-1.5 text-sm w-full" />
           <div className="grid grid-cols-2 gap-2">
@@ -124,8 +136,8 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
           <div className="flex justify-end gap-2 pt-3">
             <button type="button" onClick={kapat} className="px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50">İptal</button>
             <button type="submit" disabled={gonderiliyor}
-              className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50">
-              {gonderiliyor ? 'Oluşturuluyor…' : 'Gönderi Oluştur & Etiket Bas'}
+              className={`${form.iade ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} text-white px-4 py-1.5 rounded-lg text-sm disabled:opacity-50`}>
+              {gonderiliyor ? 'Oluşturuluyor…' : (form.iade ? '↩ İade Gönderisi Oluştur & Etiket Bas' : 'Gönderi Oluştur & Etiket Bas')}
             </button>
           </div>
         </form>

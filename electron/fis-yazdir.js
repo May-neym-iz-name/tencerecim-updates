@@ -35,14 +35,36 @@ function fisHtml(satis) {
   const musteriAdi = satis.m_ad ? `${satis.m_ad} ${satis.m_soyad || ''}`.trim() : null
   const odemeEtiket = { nakit: 'Nakit', kredi_karti: 'Kredi Kartı', kart: 'Kart', havale: 'Havale' }[satis.odeme_tipi] || satis.odeme_tipi
 
-  const kalemSatirlari = satis.kalemler.map(k => `
+  // Set kalemleri gruplanır: set başlığı + TOPLAM set fiyatı; bileşen ürünler
+  // FİYATSIZ listelenir (sadece set fiyatı geçerli — set kuralı).
+  let kalemSatirlari = ''
+  let ki = 0
+  while (ki < satis.kalemler.length) {
+    const k = satis.kalemler[ki]
+    if (k.set_adi) {
+      const grup = []
+      while (ki < satis.kalemler.length && satis.kalemler[ki].set_adi === k.set_adi) {
+        grup.push(satis.kalemler[ki]); ki++
+      }
+      const setToplam = grup.reduce((t, g) => t + (g.toplam || 0), 0)
+      kalemSatirlari += `
+    <div class="kalem">
+      <div class="kalem-ad">SET: ${esc(k.set_adi)}</div>
+      <div class="kalem-detay"><span>1 x ${tl(setToplam)}</span><span>${tl(setToplam)}</span></div>
+      ${grup.map(g => `<div class="kalem-detay" style="padding-left:8px"><span>&bull; ${esc(g.urun_adi)}</span><span>x${g.miktar}</span></div>`).join('')}
+    </div>`
+      continue
+    }
+    kalemSatirlari += `
     <div class="kalem">
       <div class="kalem-ad">${esc(k.urun_adi)}</div>
       <div class="kalem-detay">
         <span>${k.miktar} x ${tl(k.birim_fiyat)}${k.iskonto_orani > 0 ? ` (-%${k.iskonto_orani})` : ''}</span>
         <span>${tl(k.toplam)}</span>
       </div>
-    </div>`).join('')
+    </div>`
+    ki++
+  }
 
   return `<!doctype html>
 <html lang="tr"><head><meta charset="utf-8">
