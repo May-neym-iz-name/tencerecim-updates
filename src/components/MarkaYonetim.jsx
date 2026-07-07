@@ -28,7 +28,12 @@ export default function MarkaYonetim() {
   async function kaydet(id) {
     const ad = duzenAd.trim()
     if (!ad) return
-    try { await markaApi.guncelle(id, ad); setDuzenId(null); toast.success('Güncellendi'); yukle() }
+    try {
+      const sonuc = await markaApi.guncelle(id, ad)
+      setDuzenId(null)
+      toast.success(sonuc?._birlesti ? `"${ad}" markasıyla birleştirildi` : 'Güncellendi')
+      yukle()
+    }
     catch (e) { toast.error(e.message) }
   }
 
