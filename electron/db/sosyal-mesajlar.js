@@ -153,8 +153,15 @@ function konusmalar({ platform, arama } = {}) {
       SUM(CASE WHEN durum='yeni' AND yon='gelen' THEN 1 ELSE 0 END) okunmamis,
       MAX(atanan_kullanici) atanan,
       MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)) son_zaman,
-      (SELECT gonderen_ad FROM sosyal_mesajlar s2 WHERE s2.konu_id = s.konu_id
-         ORDER BY COALESCE(s2.mesaj_tarihi, s2.cekilme_tarihi) DESC LIMIT 1) kisi,
+      -- kisi = MÜŞTERİ: konuşmanın son GELEN mesajının göndereni. Son mesaj bizim
+      -- yanıtımızsa (yon='giden') adımızı göstermemeli. Gelen yoksa (biz başlattıysak)
+      -- son herhangi bir göndereni yedek al.
+      COALESCE(
+        (SELECT gonderen_ad FROM sosyal_mesajlar s2 WHERE s2.konu_id = s.konu_id AND s2.yon='gelen'
+           ORDER BY COALESCE(s2.mesaj_tarihi, s2.cekilme_tarihi) DESC LIMIT 1),
+        (SELECT gonderen_ad FROM sosyal_mesajlar s2b WHERE s2b.konu_id = s.konu_id
+           ORDER BY COALESCE(s2b.mesaj_tarihi, s2b.cekilme_tarihi) DESC LIMIT 1)
+      ) kisi,
       (SELECT metin FROM sosyal_mesajlar s3 WHERE s3.konu_id = s.konu_id
          ORDER BY COALESCE(s3.mesaj_tarihi, s3.cekilme_tarihi) DESC LIMIT 1) son_metin
     FROM sosyal_mesajlar s
