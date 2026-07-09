@@ -21,12 +21,32 @@ function musteriKaydet(db, veri) {
     const tamAd = String(veri.aliciAd || '').trim()
     if (!tamAd) return null
     const tel = String(veri.aliciTelefon || veri.aliciCep || '').replace(/\D/g, '')
+    // Eşleşen mevcut müşterinin YALNIZCA boş alanlarını kargodaki bilgiyle doldurur
+    // (mevcut dolu veriyi asla ezmez). Böylece kayıtlı ama eksik müşteriler tamamlanır.
+    const eksikleriDoldur = (id) => {
+      const m = db.prepare('SELECT telefon, email, adres, il, ilce FROM musteriler WHERE id=?').get(id)
+      if (!m) return id
+      const bos = (v) => v == null || String(v).trim() === ''
+      const yeni = {}
+      const kargoTel = veri.aliciTelefon || veri.aliciCep
+      if (bos(m.telefon) && !bos(kargoTel)) yeni.telefon = kargoTel
+      if (bos(m.email) && !bos(veri.aliciEmail)) yeni.email = veri.aliciEmail
+      if (bos(m.adres) && !bos(veri.aliciAdres)) yeni.adres = veri.aliciAdres
+      if (bos(m.il) && !bos(veri.il)) yeni.il = veri.il
+      if (bos(m.ilce) && !bos(veri.ilce)) yeni.ilce = veri.ilce
+      const alanlar = Object.keys(yeni)
+      if (alanlar.length) {
+        const set = alanlar.map(a => `${a}=@${a}`).join(', ')
+        db.prepare(`UPDATE musteriler SET ${set} WHERE id=@id`).run({ ...yeni, id })
+      }
+      return id
+    }
     // 1) Telefonla eşleşme (en güvenilir; senkronun doğal anahtarı da telefon)
     if (tel) {
       const m = db.prepare(
         "SELECT id FROM musteriler WHERE replace(replace(replace(COALESCE(telefon,''),' ',''),'-',''),'(','') LIKE ?"
       ).get('%' + tel.slice(-10)) // son 10 hane: 0/+90 önek farklarını tolere eder
-      if (m) return m.id
+      if (m) return eksikleriDoldur(m.id)
     }
     // 2) Ad-soyad tam eşleşme (Türkçe büyük/küçük duyarsız)
     const parcalar = tamAd.split(/\s+/)
@@ -35,7 +55,7 @@ function musteriKaydet(db, veri) {
     const e = db.prepare(
       'SELECT id FROM musteriler WHERE lower(ad || \' \' || COALESCE(soyad,\'\')) = lower(?)'
     ).get((ad + ' ' + soyad).trim())
-    if (e) return e.id
+    if (e) return eksikleriDoldur(e.id)
     // 3) Yoksa yeni müşteri ekle (kargodaki bilgilerle)
     const r = db.prepare(`
       INSERT INTO musteriler (ad, soyad, telefon, email, adres, il, ilce, aktif)

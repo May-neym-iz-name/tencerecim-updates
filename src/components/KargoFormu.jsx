@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { kargoApi, lokasyonApi } from '../api/ipc'
+import { kargoApi, lokasyonApi, musteriApi, lokasyonGondericiApi } from '../api/ipc'
 import { telefonGoster, telefonHam, telefonHatasi } from '../lib/girdiMaske'
 import IlIlceSecici from './IlIlceSecici'
 
@@ -19,17 +19,62 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
   const [form, setForm] = useState(BOS)
   const [gonderiliyor, setGonderiliyor] = useState(false)
   const [magazalar, setMagazalar] = useState([])
+  // Alıcı adına yazıldıkça çıkan kayıtlı müşteri önerileri.
+  const [oneriler, setOneriler] = useState([])
+  const [oneriGoster, setOneriGoster] = useState(false)
 
   useEffect(() => {
     if (acik) {
       setForm({ ...BOS, ...(baslangic || {}) })
+      setOneriler([]); setOneriGoster(false)
       lokasyonApi.listele().then(setMagazalar).catch(() => {})
     }
   }, [acik, baslangic])
 
+  // Alıcı adı yazıldıkça kayıtlı müşterileri ara (debounce). Sadece kullanıcı
+  // yazarken (oneriGoster) çalışır; müşteri seçilince tekrar tetiklenmez.
+  useEffect(() => {
+    if (!oneriGoster) return
+    const q = form.aliciAd.trim()
+    if (q.length < 2) { setOneriler([]); return }
+    const t = setTimeout(async () => {
+      try {
+        const r = await musteriApi.listele({ arama: q, boyut: 8 })
+        setOneriler(r.musteriler || [])
+      } catch { setOneriler([]) }
+    }, 250)
+    return () => clearTimeout(t)
+  }, [form.aliciAd, oneriGoster])
+
   if (!acik) return null
 
   function alan(k, v) { setForm(f => ({ ...f, [k]: v })) }
+
+  // Seçilen kayıtlı müşterinin bilgilerini forma otomatik doldurur.
+  async function musteriSec(m) {
+    setOneriGoster(false)
+    setOneriler([])
+    const tel = String(m.telefon || '').replace(/\D/g, '').replace(/^0/, '')
+    const cep = tel.startsWith('5') ? tel : ''
+    setForm(f => ({
+      ...f,
+      aliciAd: `${m.ad || ''} ${m.soyad || ''}`.trim(),
+      aliciEmail: m.email || f.aliciEmail,
+      aliciAdres: m.adres || f.aliciAdres,
+      aliciCep: cep || f.aliciCep,
+      aliciTelefon: cep ? f.aliciTelefon : (tel || f.aliciTelefon),
+      musteriId: m.id,
+    }))
+    // İl/ilçe adlarını UPS kodlarına çevirip seçicileri de doldur.
+    if (m.il) {
+      try {
+        const r = await lokasyonGondericiApi.ilIlceBul(m.il, m.ilce || '')
+        if (r?.ilKodu) {
+          setForm(f => ({ ...f, ilKodu: r.ilKodu, il: r.il || m.il, ilceKodu: r.ilceKodu || null, ilce: r.ilce || m.ilce || '' }))
+        }
+      } catch { /* il/ilçe bulunamazsa kullanıcı elle seçer */ }
+    }
+  }
 
   async function gonder(e) {
     e.preventDefault()
@@ -87,8 +132,31 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
           <p className="text-sm font-medium text-gray-600">
             {form.iade ? 'İade Eden Müşteri (paketin alınacağı adres)' : 'Alıcı Bilgileri'}
           </p>
-          <input value={form.aliciAd} onChange={e => alan('aliciAd', e.target.value)}
-            placeholder="Alıcı adı soyadı *" className="border rounded px-2 py-1.5 text-sm w-full" />
+          <div className="relative">
+            <input value={form.aliciAd}
+              onChange={e => { alan('aliciAd', e.target.value); setOneriGoster(true) }}
+              onFocus={() => { if (form.aliciAd.trim().length >= 2) setOneriGoster(true) }}
+              onBlur={() => setTimeout(() => setOneriGoster(false), 150)}
+              autoComplete="off"
+              placeholder="Alıcı adı soyadı *" className="border rounded px-2 py-1.5 text-sm w-full" />
+            {oneriGoster && oneriler.length > 0 && (
+              <ul className="absolute z-10 left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-56 overflow-auto">
+                {oneriler.map(m => (
+                  <li key={m.id}>
+                    <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => musteriSec(m)}
+                      className="w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50">
+                      <span className="font-medium text-gray-800">{`${m.ad || ''} ${m.soyad || ''}`.trim()}</span>
+                      {(m.telefon || m.il) && (
+                        <span className="text-gray-400 ml-2 text-xs">
+                          {[m.telefon, m.il && (m.ilce ? `${m.il}/${m.ilce}` : m.il)].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             <input value={telefonGoster(form.aliciTelefon)} onChange={e => alan('aliciTelefon', telefonHam(e.target.value))}
               inputMode="numeric" maxLength={15}
