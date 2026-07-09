@@ -19,10 +19,16 @@ async function cekFacebookYorumlar() {
   if (!sayfaId) return 0
   let n = 0
   const res = await client.get(`${sayfaId}/feed`, {
-    fields: 'id,message,full_picture,permalink_url,comments.limit(50){id,message,from,created_time}',
-    limit: 25,
+    fields: 'id,message,created_time,full_picture,permalink_url,comments.limit(50){id,message,from,created_time}',
+    limit: 40,
   })
   for (const gonderi of res.data || []) {
+    // Gönderinin kendisini kaydet (yorumu olmasa bile listede görünsün).
+    _upsertMesaj({
+      platform: 'facebook', tur: 'gonderi', harici_id: 'g_' + gonderi.id, konu_id: gonderi.id,
+      yon: 'giden', metin: gonderi.message || '', mesaj_tarihi: gonderi.created_time,
+      konu_baslik: gonderi.message || '(görsel gönderi)', konu_gorsel: gonderi.full_picture, konu_link: gonderi.permalink_url,
+    })
     for (const y of gonderi.comments?.data || []) {
       _upsertMesaj({
         platform: 'facebook', tur: 'yorum', harici_id: y.id,
@@ -43,10 +49,16 @@ async function cekInstagramYorumlar() {
   let n = 0
   // Hafif sorgu: media 12, gömülü comments 20, ağır 'from' alanı yok (Meta "reduce data" kod 1'i önler).
   const res = await client.get(`${igId}/media`, {
-    fields: 'id,caption,media_url,thumbnail_url,permalink,comments.limit(20){id,text,username,timestamp,from}',
-    limit: 12,
+    fields: 'id,caption,timestamp,media_url,thumbnail_url,permalink,comments.limit(20){id,text,username,timestamp,from}',
+    limit: 25,
   })
   for (const medya of res.data || []) {
+    // Gönderinin kendisini kaydet (yorumu olmasa bile listede görünsün).
+    _upsertMesaj({
+      platform: 'instagram', tur: 'gonderi', harici_id: 'g_' + medya.id, konu_id: medya.id,
+      yon: 'giden', metin: medya.caption || '', mesaj_tarihi: medya.timestamp,
+      konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink,
+    })
     for (const y of medya.comments?.data || []) {
       _upsertMesaj({
         platform: 'instagram', tur: 'yorum', harici_id: y.id,
@@ -175,6 +187,79 @@ async function tumunuCek() {
   return sonuc
 }
 
+// --- DERİN ÇEKME: TÜM gönderiler + TÜM yorumlar (kademeli sayfalama) --------
+// Normal tur son ~25-40 gönderiyi çeker; bu fonksiyon cursor sayfalamayla TÜM
+// gönderileri ve her gönderinin TÜM yorumlarını alır. Güvenlik sınırları var
+// (sonsuz döngü / kota koruması). Manuel tetiklenir (arka plan polling'de DEĞİL).
+const MAKS_SAYFA = 60          // gönderi listesi max sayfa (60×25 = ~1500 gönderi)
+const MAKS_YORUM_SAYFA = 40    // gönderi başına yorum max sayfa (40×50 = 2000 yorum)
+
+// Bir uç noktanın tüm sayfalarını cursor ile gezer; her sayfada isleyici(data) çağırır.
+async function tumSayfalar(path, params, isleyici, maksSayfa) {
+  let after = null, sayfa = 0
+  while (sayfa < maksSayfa) {
+    const p = { ...params }
+    if (after) p.after = after
+    let json
+    try { json = await client.get(path, p, { timeout: 30000, deneme: 2 }) }
+    catch { break } // hata → eldekiyle dur
+    const data = json?.data || []
+    if (!data.length) break
+    isleyici(data)
+    after = json?.paging?.cursors?.after || null
+    if (!after) break
+    sayfa++
+  }
+  return sayfa
+}
+
+async function tumYorumlariCek() {
+  const sonuc = { gonderi: 0, yorum: 0, hatalar: [] }
+  const igId = client._igId()
+  const sayfaId = client._sayfaId()
+
+  // --- Instagram: tüm media → her media'nın tüm yorumları ---
+  if (igId) {
+    try {
+      const medyalar = []
+      await tumSayfalar(`${igId}/media`, { fields: 'id,caption,timestamp,media_url,thumbnail_url,permalink', limit: 25 },
+        d => { for (const m of d) medyalar.push(m) }, MAKS_SAYFA)
+      for (const medya of medyalar) {
+        _upsertMesaj({ platform: 'instagram', tur: 'gonderi', harici_id: 'g_' + medya.id, konu_id: medya.id,
+          yon: 'giden', metin: medya.caption || '', mesaj_tarihi: medya.timestamp,
+          konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink })
+        sonuc.gonderi++
+        await tumSayfalar(`${medya.id}/comments`, { fields: 'id,text,username,timestamp,from', limit: 50 },
+          d => { for (const y of d) { _upsertMesaj({ platform: 'instagram', tur: 'yorum', harici_id: y.id, konu_id: medya.id,
+            gonderen_id: y.from?.id, gonderen_ad: y.username || 'Instagram kullanıcısı', metin: y.text, yon: 'gelen',
+            mesaj_tarihi: y.timestamp, konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink }); sonuc.yorum++ } },
+          MAKS_YORUM_SAYFA)
+      }
+    } catch (e) { sonuc.hatalar.push('IG: ' + e.message) }
+  }
+
+  // --- Facebook: tüm feed → her gönderinin tüm yorumları ---
+  if (sayfaId) {
+    try {
+      const gonderiler = []
+      await tumSayfalar(`${sayfaId}/feed`, { fields: 'id,message,created_time,full_picture,permalink_url', limit: 25 },
+        d => { for (const g of d) gonderiler.push(g) }, MAKS_SAYFA)
+      for (const g of gonderiler) {
+        _upsertMesaj({ platform: 'facebook', tur: 'gonderi', harici_id: 'g_' + g.id, konu_id: g.id,
+          yon: 'giden', metin: g.message || '', mesaj_tarihi: g.created_time,
+          konu_baslik: g.message || '(görsel gönderi)', konu_gorsel: g.full_picture, konu_link: g.permalink_url })
+        sonuc.gonderi++
+        await tumSayfalar(`${g.id}/comments`, { fields: 'id,message,from,created_time', limit: 50 },
+          d => { for (const y of d) { _upsertMesaj({ platform: 'facebook', tur: 'yorum', harici_id: y.id, konu_id: g.id,
+            gonderen_id: y.from?.id, gonderen_ad: y.from?.name || 'Facebook kullanıcısı', metin: y.message, yon: 'gelen',
+            mesaj_tarihi: y.created_time, konu_baslik: g.message || '(görsel gönderi)', konu_gorsel: g.full_picture, konu_link: g.permalink_url }); sonuc.yorum++ } },
+          MAKS_YORUM_SAYFA)
+      }
+    } catch (e) { sonuc.hatalar.push('FB: ' + e.message) }
+  }
+  return sonuc
+}
+
 // --- CEVAPLAMA -------------------------------------------------------------
 
 // Yorumu (FB veya IG) yerel id ile bulup Meta'ya cevap yazar, gideni önbelleğe işler.
@@ -284,6 +369,7 @@ module.exports = {
   'meta:durum': () => client.durum(),
   'meta:sonDurum': () => _sonDurumGetir(),
   'meta:cek': () => tumunuCek(),
+  'meta:tum-yorumlar': () => tumYorumlariCek(),
   'meta:yorumCevapla': (arg) => yorumCevapla(arg),
   'meta:mesajCevapla': (arg) => mesajCevapla(arg),
   'meta:yorumdanMesaj': (arg) => yorumdanMesaj(arg),

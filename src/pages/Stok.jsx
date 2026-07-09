@@ -4,6 +4,8 @@ import { stokApi, lokasyonApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
+import { useSiralama } from '../hooks/useSiralama'
+import SiraliBaslik from '../components/SiraliBaslik'
 import { usePersistentState } from '../hooks/usePersistentState'
 
 export default function Stok() {
@@ -223,15 +225,20 @@ export default function Stok() {
 
 // Normal stok tablosu (bir mağaza için)
 function StokTablosu({ satirlar, duzenleYetkisi, onDuzenle }) {
-  const { dilim, ...sayfalama } = useSayfalama(satirlar, 50)
+  const sr = useSiralama(satirlar, { deger: (s, k) => k === 'urun_adi' ? s.urun_adi : s[k] })
+  const { dilim, ...sayfalama } = useSayfalama(sr.sirali, 50)
   return (
     <>
     <table className="w-full text-sm">
       <thead className="bg-white border-b">
         <tr>
-          {['Ürün', 'Barkod', 'Kategori', 'Miktar', 'Min.', 'Durum', ''].map(h => (
-            <th key={h} className="text-left px-4 py-2.5 font-medium text-gray-600">{h}</th>
-          ))}
+          <SiraliBaslik k="urun_adi" {...sr}>Ürün</SiraliBaslik>
+          <SiraliBaslik k="barkod" {...sr}>Barkod</SiraliBaslik>
+          <SiraliBaslik k="kategori" {...sr}>Kategori</SiraliBaslik>
+          <SiraliBaslik k="miktar" {...sr}>Miktar</SiraliBaslik>
+          <SiraliBaslik k="minimum_stok" {...sr}>Min.</SiraliBaslik>
+          <th className="text-left px-4 py-2.5 font-medium text-gray-600">Durum</th>
+          <th className="px-4 py-2.5"></th>
         </tr>
       </thead>
       <tbody>

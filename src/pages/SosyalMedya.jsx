@@ -72,6 +72,13 @@ export default function SosyalMedya() {
   const sekme = SEKMELER.find(s => s.kod === sekmeKod)
   const [sayaclar, setSayaclar] = useState({})
   const [arama, setArama] = useState('')
+  const [tarihBas, setTarihBas] = useState('') // tarih filtresi (YYYY-MM-DD)
+  const [tarihBit, setTarihBit] = useState('')
+  // Son N gün kısayolu → başlangıç tarihini ayarlar (bitiş boş = bugüne kadar).
+  const sonGun = (n) => {
+    const d = new Date(); d.setDate(d.getDate() - (n - 1))
+    setTarihBas(d.toISOString().slice(0, 10)); setTarihBit('')
+  }
   const [liste, setListe] = useState([])          // sol: gönderiler veya konuşmalar
   const [seciliKonu, setSeciliKonu] = useState(null) // seçili gönderi/konuşma (konu_id + meta)
   const [mesajlar, setMesajlar] = useState([])    // orta: seçili konunun mesajları/yorumları
@@ -117,22 +124,23 @@ export default function SosyalMedya() {
   const listeYukle = useCallback(async () => {
     try {
       const pf = sekme.platform || 'hepsi'
+      const tf = { baslangic: tarihBas || undefined, bitis: tarihBit || undefined }
       let sonuc = []
       if (sekme.mod === 'yorum') {
-        sonuc = (await sosyalApi.gonderiler({ platform: pf, arama })).map(x => ({ ...x, kind: 'yorum' }))
+        sonuc = (await sosyalApi.gonderiler({ platform: pf, arama, ...tf })).map(x => ({ ...x, kind: 'yorum' }))
       } else if (sekme.mod === 'dm') {
-        sonuc = (await sosyalApi.konusmalar({ platform: pf, arama })).map(x => ({ ...x, kind: 'dm' }))
+        sonuc = (await sosyalApi.konusmalar({ platform: pf, arama, ...tf })).map(x => ({ ...x, kind: 'dm' }))
       } else {
         const [g, k] = await Promise.all([
-          sosyalApi.gonderiler({ platform: 'hepsi', arama }),
-          sosyalApi.konusmalar({ platform: 'hepsi', arama }),
+          sosyalApi.gonderiler({ platform: 'hepsi', arama, ...tf }),
+          sosyalApi.konusmalar({ platform: 'hepsi', arama, ...tf }),
         ])
         sonuc = [...g.map(x => ({ ...x, kind: 'yorum' })), ...k.map(x => ({ ...x, kind: 'dm' }))]
           .sort((a, b) => String(b.son_zaman || '').localeCompare(String(a.son_zaman || '')))
       }
       setListe(sonuc)
     } catch (e) { toast.error('Liste yüklenemedi: ' + e.message) }
-  }, [sekme, arama])
+  }, [sekme, arama, tarihBas, tarihBit])
 
   useEffect(() => { listeYukle(); sayaclariYukle() }, [listeYukle, sayaclariYukle])
   useEffect(() => { setSeciliKonu(null); setMesajlar([]) }, [sekmeKod])
@@ -163,6 +171,21 @@ export default function SosyalMedya() {
       listeYukle(); sayaclariYukle(); durumYukle()
       if (seciliKonu) konuSec(seciliKonu)
     } catch (e) { toast.error('Çekme hatası: ' + e.message) }
+    finally { setCekiliyor(false) }
+  }
+
+  // Derin çekme: TÜM gönderilerin TÜM yorumlarını sayfalayarak alır (uzun sürebilir).
+  async function tumYorumlariCek() {
+    if (!confirm('Tüm gönderilerin tüm yorumları çekilecek. Gönderi sayısına göre birkaç dakika sürebilir. Devam edilsin mi?')) return
+    setCekiliyor('tum')
+    const bekle = toast.loading('Tüm yorumlar çekiliyor… (kapatmayın)')
+    try {
+      const r = await metaApi.tumYorumlar()
+      toast.success(`${r.gonderi || 0} gönderi · ${r.yorum || 0} yorum çekildi`, { id: bekle })
+      if (r.hatalar?.length) toast(r.hatalar.join(' | '), { icon: '⚠️' })
+      listeYukle(); sayaclariYukle(); durumYukle()
+      if (seciliKonu) konuSec(seciliKonu)
+    } catch (e) { toast.error('Derin çekme hatası: ' + e.message, { id: bekle }) }
     finally { setCekiliyor(false) }
   }
 
@@ -248,18 +271,38 @@ export default function SosyalMedya() {
             Senkron: {zaman(sonDurum.zaman)}
           </span>
         )}
-        <button onClick={cek} disabled={cekiliyor}
+        <button onClick={cek} disabled={!!cekiliyor}
           className={`${sonDurum?.zaman ? 'ml-2' : 'ml-auto'} text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex-shrink-0`}>
-          {cekiliyor ? 'Çekiliyor…' : '↻ Yenile'}
+          {cekiliyor === true ? 'Çekiliyor…' : '↻ Yenile'}
+        </button>
+        <button onClick={tumYorumlariCek} disabled={!!cekiliyor}
+          title="Tüm gönderilerin tüm yorumlarını sayfalayarak çeker (uzun sürebilir)"
+          className="text-xs border border-blue-600 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">
+          {cekiliyor === 'tum' ? 'Çekiliyor…' : '⭳ Tüm Yorumları Çek'}
         </button>
       </div>
 
       <div className="flex-1 flex min-h-0">
         {/* SOL: liste */}
         <div className="w-[340px] flex-shrink-0 border-r flex flex-col">
-          <div className="p-3">
+          <div className="p-3 space-y-2">
             <input value={arama} onChange={e => setArama(e.target.value)} placeholder="🔍  Ara"
               className="w-full bg-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+            {/* Tarih filtresi: gönderileri/konuşmaları tarihe göre süz. */}
+            <div className="flex items-center gap-1">
+              <input type="date" value={tarihBas} onChange={e => setTarihBas(e.target.value)} title="Başlangıç"
+                className="flex-1 min-w-0 border rounded px-1.5 py-1 text-xs" />
+              <span className="text-gray-400 text-xs">–</span>
+              <input type="date" value={tarihBit} onChange={e => setTarihBit(e.target.value)} title="Bitiş"
+                className="flex-1 min-w-0 border rounded px-1.5 py-1 text-xs" />
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <button onClick={() => sonGun(7)} className="px-2 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600">Son 7 gün</button>
+              <button onClick={() => sonGun(30)} className="px-2 py-0.5 rounded bg-gray-100 hover:bg-gray-200 text-gray-600">Son 30 gün</button>
+              {(tarihBas || tarihBit) && (
+                <button onClick={() => { setTarihBas(''); setTarihBit('') }} className="px-2 py-0.5 text-red-500 hover:underline">✕ Temizle</button>
+              )}
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto">
             {liste.length === 0 && (

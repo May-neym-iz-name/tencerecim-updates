@@ -69,8 +69,9 @@ function liste({ platform, tur, durum, arama, sayfa = 1 } = {}) {
 
 // Bir konunun (gönderi/konuşma) tüm mesajları — kronolojik (sohbet görünümü).
 function konu(konu_id) {
+  // tur='gonderi' = gönderi işaretçisi (yorum değil) → yorum/mesaj listesinde gösterme.
   return getDb().prepare(
-    'SELECT * FROM sosyal_mesajlar WHERE konu_id = ? ORDER BY COALESCE(mesaj_tarihi, cekilme_tarihi) ASC'
+    "SELECT * FROM sosyal_mesajlar WHERE konu_id = ? AND tur != 'gonderi' ORDER BY COALESCE(mesaj_tarihi, cekilme_tarihi) ASC"
   ).all(konu_id)
 }
 
@@ -120,34 +121,46 @@ function sayaclar() {
 
 // Yorum sekmeleri için: yorumların geldiği GÖNDERİLER (konu_id bazlı gruplama).
 // Her gönderi: başlık, görsel, yorum sayısı, okunmamış, son yorum zamanı.
-function gonderiler({ platform, arama } = {}) {
-  const kosul = ["tur='yorum'"]
+function gonderiler({ platform, arama, baslangic, bitis } = {}) {
+  // 'gonderi' = gönderinin kendisi (yorumu olmasa bile listede görünsün); 'yorum' = yorumlar.
+  const kosul = ["tur IN ('yorum','gonderi')"]
   const p = {}
   if (platform && platform !== 'hepsi') { kosul.push('platform=@platform'); p.platform = platform }
   if (arama) { kosul.push('(konu_baslik LIKE @ara OR metin LIKE @ara OR gonderen_ad LIKE @ara)'); p.ara = `%${arama}%` }
+  // Tarih filtresi: gönderi yayın tarihine göre (gonderi işaretçisi yoksa son aktiviteye).
+  const having = []
+  const tarihExpr = "substr(COALESCE(MAX(CASE WHEN tur='gonderi' THEN mesaj_tarihi END), MAX(COALESCE(mesaj_tarihi, cekilme_tarihi))),1,10)"
+  if (baslangic) { having.push(`${tarihExpr} >= @bas`); p.bas = baslangic }
+  if (bitis) { having.push(`${tarihExpr} <= @bit`); p.bit = bitis }
   return getDb().prepare(`
     SELECT konu_id, platform,
       MAX(konu_baslik) konu_baslik, MAX(konu_gorsel) konu_gorsel, MAX(konu_link) konu_link,
-      COUNT(*) yorum_sayisi,
+      COUNT(CASE WHEN tur='yorum' THEN 1 END) yorum_sayisi,
       SUM(CASE WHEN durum='yeni' AND yon='gelen' THEN 1 ELSE 0 END) okunmamis,
       MAX(atanan_kullanici) atanan,
       MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)) son_zaman,
+      MAX(CASE WHEN tur='gonderi' THEN COALESCE(mesaj_tarihi, cekilme_tarihi) END) gonderi_tarihi,
       (SELECT gonderen_ad FROM sosyal_mesajlar s2 WHERE s2.konu_id = s.konu_id AND s2.yon='gelen'
          ORDER BY COALESCE(s2.mesaj_tarihi, s2.cekilme_tarihi) DESC LIMIT 1) son_yorumcu
     FROM sosyal_mesajlar s
     WHERE ${kosul.join(' AND ')} AND konu_id IS NOT NULL
     GROUP BY konu_id, platform
-    ORDER BY son_zaman DESC
-    LIMIT 100
+    ${having.length ? 'HAVING ' + having.join(' AND ') : ''}
+    ORDER BY COALESCE(gonderi_tarihi, son_zaman) DESC
+    LIMIT 500
   `).all(p)
 }
 
 // DM sekmeleri için: konuşmalar (konu_id bazlı). Her konuşma: kişi, son mesaj, okunmamış.
-function konusmalar({ platform, arama } = {}) {
+function konusmalar({ platform, arama, baslangic, bitis } = {}) {
   const kosul = ["tur='dm'"]
   const p = {}
   if (platform && platform !== 'hepsi') { kosul.push('platform=@platform'); p.platform = platform }
   if (arama) { kosul.push('(metin LIKE @ara OR gonderen_ad LIKE @ara)'); p.ara = `%${arama}%` }
+  // Tarih filtresi: konuşmanın son mesaj tarihine göre.
+  const having = []
+  if (baslangic) { having.push("substr(MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)),1,10) >= @bas"); p.bas = baslangic }
+  if (bitis) { having.push("substr(MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)),1,10) <= @bit"); p.bit = bitis }
   return getDb().prepare(`
     SELECT konu_id, platform,
       SUM(CASE WHEN durum='yeni' AND yon='gelen' THEN 1 ELSE 0 END) okunmamis,
@@ -167,8 +180,9 @@ function konusmalar({ platform, arama } = {}) {
     FROM sosyal_mesajlar s
     WHERE ${kosul.join(' AND ')} AND konu_id IS NOT NULL
     GROUP BY konu_id, platform
+    ${having.length ? 'HAVING ' + having.join(' AND ') : ''}
     ORDER BY son_zaman DESC
-    LIMIT 100
+    LIMIT 200
   `).all(p)
 }
 

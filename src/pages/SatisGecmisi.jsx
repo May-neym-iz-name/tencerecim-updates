@@ -4,12 +4,15 @@ import toast from 'react-hot-toast'
 import { satisApi, lokasyonApi, fisApi, sistemApi, whatsappLink } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import { senkTetikle } from '../lib/veriSenk'
+import { useSiralama } from '../hooks/useSiralama'
+import SiraliBaslik from '../components/SiraliBaslik'
 
 export default function SatisGecmisi() {
   const { yetkiVar, erisilebilirLokasyonlar } = useAuth()
   const iptalYetkisi = yetkiVar('satis_iptal')
   const raporYetkisi = yetkiVar('rapor_goruntule')
   const [satislar, setSatislar] = useState([])
+  const sr = useSiralama(satislar) // görünen sayfayı sütuna göre sıralar
   const [toplam, setToplam] = useState(0)
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [ozet, setOzet] = useState(null)
@@ -150,14 +153,20 @@ export default function SatisGecmisi() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b sticky top-0">
               <tr>
-                {['Fiş No', 'Tarih/Saat', 'Lokasyon', 'Müşteri', 'Ödeme', 'İskonto', 'Toplam', 'Durum', ''].map(h => (
-                  <th key={h} className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">{h}</th>
-                ))}
+                <SiraliBaslik k="fis_no" {...sr}>Fiş No</SiraliBaslik>
+                <SiraliBaslik k="tarih" {...sr}>Tarih/Saat</SiraliBaslik>
+                <SiraliBaslik k="lokasyon_adi" {...sr}>Lokasyon</SiraliBaslik>
+                <SiraliBaslik k="musteri_adi" {...sr}>Müşteri</SiraliBaslik>
+                <SiraliBaslik k="odeme_tipi" {...sr}>Ödeme</SiraliBaslik>
+                <SiraliBaslik k="iskonto_toplam" {...sr}>İskonto</SiraliBaslik>
+                <SiraliBaslik k="genel_toplam" {...sr}>Toplam</SiraliBaslik>
+                <SiraliBaslik k="durum" {...sr}>Durum</SiraliBaslik>
+                <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
               {yukleniyor && <tr><td colSpan={9} className="text-center py-8 text-gray-400">Yükleniyor...</td></tr>}
-              {!yukleniyor && satislar.map(s => (
+              {!yukleniyor && sr.sirali.map(s => (
                 <tr key={s.id} onClick={() => satisDetayAc(s.id)}
                   className={`border-b cursor-pointer hover:bg-blue-50 ${seciliSatis===s.id?'bg-blue-50':''} ${s.durum==='iptal'?'opacity-60':''}`}>
                   <td className="px-3 py-2 font-mono text-xs font-medium">{s.fis_no}</td>

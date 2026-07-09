@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { malKabulApi, lokasyonApi, tedarikciApi, urunlerApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
+import { useSiralama } from '../hooks/useSiralama'
+import SiraliBaslik from '../components/SiraliBaslik'
 import AranabilirSecici from '../components/AranabilirSecici'
 
 const PARA = (n) => `₺${(Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -21,6 +23,7 @@ export default function MalKabul() {
   const [sonuc, setSonuc] = useState([])
   const [mesgul, setMesgul] = useState(false)
   const [gecmis, setGecmis] = useState([])
+  const sr = useSiralama(gecmis)
   const aramaRef = useRef()
 
   useEffect(() => {
@@ -176,16 +179,16 @@ export default function MalKabul() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs">
               <tr>
-                <th className="text-left px-3 py-2 font-medium">Tarih</th>
-                <th className="text-left px-3 py-2 font-medium">Mağaza</th>
-                <th className="text-left px-3 py-2 font-medium">Tedarikçi</th>
-                <th className="text-left px-3 py-2 font-medium">Fatura No</th>
-                <th className="text-center px-3 py-2 font-medium">Kalem</th>
-                <th className="text-right px-3 py-2 font-medium">Maliyet</th>
+                <SiraliBaslik k="tarih" {...sr}>Tarih</SiraliBaslik>
+                <SiraliBaslik k="lokasyon_adi" {...sr}>Mağaza</SiraliBaslik>
+                <SiraliBaslik k="tedarikci_adi" {...sr}>Tedarikçi</SiraliBaslik>
+                <SiraliBaslik k="fatura_no" {...sr}>Fatura No</SiraliBaslik>
+                <SiraliBaslik k="kalem_sayisi" align="center" {...sr}>Kalem</SiraliBaslik>
+                <SiraliBaslik k="toplam_maliyet" align="right" {...sr}>Maliyet</SiraliBaslik>
               </tr>
             </thead>
             <tbody>
-              {gecmis.map(m => (
+              {sr.sirali.map(m => (
                 <tr key={m.id} className="border-t">
                   <td className="px-3 py-1.5 text-gray-500">{TARIH(m.tarih)}</td>
                   <td className="px-3 py-1.5">{m.lokasyon_adi}</td>

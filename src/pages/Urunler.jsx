@@ -5,6 +5,8 @@ import { useAuth } from '../auth/AuthContext'
 import BarkodModal from '../components/BarkodModal'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
+import { useSiralama } from '../hooks/useSiralama'
+import SiraliBaslik from '../components/SiraliBaslik'
 import KategoriYonetim from '../components/KategoriYonetim'
 import MarkaYonetim from '../components/MarkaYonetim'
 import SetYonetim from '../components/SetYonetim'
@@ -61,15 +63,24 @@ export default function Urunler() {
   const [excelSonuc, setExcelSonuc] = useState(null)
   const [barkodUrun, setBarkodUrun] = useState(null)
   const [sekme, setSekme] = useState('urunler')
+  // 'aktif' | 'pasif' — pasif ürünler YALNIZCA burada listelenir (satış/stok görmez).
+  const [durum, setDurum] = useState('aktif')
 
   const yukle = useCallback(async () => {
     try {
-      const r = await urunlerApi.listele({ arama, marka_id: filtreMarka || undefined, kategori_id: filtreKategori || undefined, boyut: 0 })
+      const r = await urunlerApi.listele({ arama, marka_id: filtreMarka || undefined, kategori_id: filtreKategori || undefined, boyut: 0, durum })
       setUrunler(r.urunler); setToplam(r.toplam)
     } catch (e) { toast.error(e.message) }
-  }, [arama, filtreMarka, filtreKategori])
+  }, [arama, filtreMarka, filtreKategori, durum])
 
-  const { dilim: sayfaUrunler, ...sayfalama } = useSayfalama(urunler, 50)
+  // Sütun sıralaması: türetilmiş alanlar (marka/kategori adı, sayısal fiyat) için deger().
+  const sr = useSiralama(urunler, {
+    deger: (u, k) => k === 'marka_adi' ? u.marka_adi
+      : k === 'kategori_yol' ? u.kategori_yol
+      : k === 'tedarikci_adi' ? u.tedarikci_adi
+      : u[k],
+  })
+  const { dilim: sayfaUrunler, ...sayfalama } = useSayfalama(sr.sirali, 50)
 
   const yukleYardimcilar = useCallback(async () => {
     const [m, t, k] = await Promise.all([markaApi.listele(), tedarikciApi.listele(), kategoriApi.listele()])
@@ -106,6 +117,14 @@ export default function Urunler() {
   async function handleSil(id) {
     if (!confirm('Bu ürünü silmek istediğinize emin misiniz?')) return
     try { await urunlerApi.sil(id); toast.success('Ürün silindi'); yukle() } catch (e) { toast.error(e.message) }
+  }
+
+  async function handleAktiflik(u, aktif) {
+    try {
+      const r = await urunlerApi.aktiflik(u.id, aktif)
+      toast.success(r.mesaj)
+      yukle()
+    } catch (e) { toast.error(e.message) }
   }
 
   async function handleExcelYukle() {
@@ -157,7 +176,21 @@ export default function Urunler() {
       {sekmeler}
       {/* Toolbar */}
       <div className="flex justify-between items-center mb-4 flex-shrink-0">
-        <h2 className="text-xl font-bold text-gray-800">Ürünler</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-bold text-gray-800">Ürünler</h2>
+          {/* Aktif / Pasif görünümü: pasifler yalnız burada, başka hiçbir ekranda görünmez. */}
+          <div className="flex gap-1">
+            <button onClick={() => setDurum('aktif')}
+              className={`px-3 py-1 rounded-lg text-xs font-medium ${durum === 'aktif' ? 'bg-blue-600 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
+              Aktif
+            </button>
+            <button onClick={() => setDurum('pasif')}
+              className={`px-3 py-1 rounded-lg text-xs font-medium ${durum === 'pasif' ? 'bg-gray-700 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
+              🚫 Pasif Ürünler
+            </button>
+          </div>
+          <span className="text-xs text-gray-400">{toplam} ürün</span>
+        </div>
         <div className="flex gap-2">
           {excelYetkisi && (
             <button onClick={handleExcelYukle} disabled={excelYukleniyor}
@@ -200,9 +233,17 @@ export default function Urunler() {
         <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-gray-50 border-b sticky top-0">
             <tr>
-              {['Ürün Adı', 'Stok Kodu', 'Barkod', 'Marka', 'Kategori', 'Tedarikçi', 'Alış', 'Satış', 'KDV', ''].map(h => (
-                <th key={h} className="text-left px-3 py-2.5 font-medium text-gray-600 whitespace-nowrap">{h}</th>
-              ))}
+              <SiraliBaslik k="ad" {...sr}>Ürün Adı</SiraliBaslik>
+              <SiraliBaslik k="sku" {...sr}>Stok Kodu</SiraliBaslik>
+              <SiraliBaslik k="barkod" {...sr}>Barkod</SiraliBaslik>
+              <SiraliBaslik k="marka_adi" {...sr}>Marka</SiraliBaslik>
+              <SiraliBaslik k="kategori_yol" {...sr}>Kategori</SiraliBaslik>
+              <SiraliBaslik k="tedarikci_adi" {...sr}>Tedarikçi</SiraliBaslik>
+              <SiraliBaslik k="alis_fiyati" {...sr}>Alış</SiraliBaslik>
+              <SiraliBaslik k="satis_fiyati" {...sr}>Satış</SiraliBaslik>
+              <SiraliBaslik k="kdv_orani" {...sr}>KDV</SiraliBaslik>
+              {/* Sabit genişlik: aktif/pasif işlem sütunu aynı kalsın → başlık satırı kaymaz. */}
+              <th className="px-3 py-2.5 w-[230px]"></th>
             </tr>
           </thead>
           <tbody>
@@ -225,19 +266,35 @@ export default function Urunler() {
                 <td className="px-3 py-2 text-gray-500 whitespace-nowrap">₺{(u.alis_fiyati||0).toFixed(2)}</td>
                 <td className="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">₺{u.satis_fiyati?.toFixed(2)}</td>
                 <td className="px-3 py-2 text-gray-500">%{u.kdv_orani}</td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  <button onClick={() => setBarkodUrun(u)} className="text-gray-600 hover:underline text-xs mr-2" title="Barkod etiketi bas">🏷️ Barkod</button>
-                  {duzenleYetkisi && (
-                    <button onClick={() => handleDuzenle(u)} className="text-blue-600 hover:underline text-xs mr-2">Düzenle</button>
-                  )}
-                  {silYetkisi && (
-                    <button onClick={() => handleSil(u.id)} className="text-red-500 hover:underline text-xs">Sil</button>
+                <td className="px-3 py-2 whitespace-nowrap w-[230px]">
+                  {durum === 'pasif' ? (
+                    // Pasif görünüm: yalnızca aktifleştirme (pasif ürün düzenlenmez/satılmaz).
+                    duzenleYetkisi && (
+                      <button onClick={() => handleAktiflik(u, true)}
+                        className="text-emerald-600 hover:underline text-xs font-medium">✔ Aktifleştir</button>
+                    )
+                  ) : (
+                    <>
+                      <button onClick={() => setBarkodUrun(u)} className="text-gray-600 hover:underline text-xs mr-2" title="Barkod etiketi bas">🏷️ Barkod</button>
+                      {duzenleYetkisi && (
+                        <button onClick={() => handleDuzenle(u)} className="text-blue-600 hover:underline text-xs mr-2">Düzenle</button>
+                      )}
+                      {duzenleYetkisi && (
+                        <button onClick={() => handleAktiflik(u, false)}
+                          className="text-amber-600 hover:underline text-xs mr-2" title="Ürünü pasife al (satışta ve listelerde görünmez)">Pasife Al</button>
+                      )}
+                      {silYetkisi && (
+                        <button onClick={() => handleSil(u.id)} className="text-red-500 hover:underline text-xs">Sil</button>
+                      )}
+                    </>
                   )}
                 </td>
               </tr>
             ))}
             {urunler.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-12 text-gray-400">Ürün bulunamadı</td></tr>
+              <tr><td colSpan={10} className="text-center py-12 text-gray-400">
+                {durum === 'pasif' ? 'Pasif ürün yok.' : 'Ürün bulunamadı'}
+              </td></tr>
             )}
           </tbody>
         </table>

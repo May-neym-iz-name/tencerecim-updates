@@ -169,6 +169,19 @@ export default function Ayarlar() {
     finally { setIkasMesgul('') }
   }
 
+  // Tüm geçmişi yeniden çeker: eski siparişlerin eksik birim_fiyat'larını doldurur
+  // (fiyat kaydetme özelliği eklenmeden önceki siparişlerde raporda ciro=0 çıkıyordu).
+  async function ikasGecmisCek() {
+    if (!confirm('Tüm geçmiş ikas siparişleri yeniden çekilecek ve eksik fiyatlar doldurulacak. Stok DÜŞÜLMEZ. Devam edilsin mi?')) return
+    setIkasMesgul('gecmis')
+    try {
+      const r = await ikasApi.siparisGecmisCek()
+      toast.success(`Geçmiş çekildi: ${r.kaydedilen || 0} yeni, ${r.guncellenen || 0} güncellendi (fiyatlar dolduruldu).`)
+      await ikasDurumYenile()
+    } catch (e) { toast.error('Geçmiş çekme hatası: ' + e.message) }
+    finally { setIkasMesgul('') }
+  }
+
   async function ikasFiyatGonder() {
     if (!confirm('Tüm eşleşmiş ürünlerin yerel fiyatı (satış/alış) ikas\'a yazılacak. Devam edilsin mi?')) return
     setIkasMesgul('fiyat')
@@ -544,6 +557,11 @@ export default function Ayarlar() {
             <button onClick={ikasSiparisCek} disabled={!!ikasMesgul}
               className="bg-amber-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-amber-700 disabled:opacity-50">
               {ikasMesgul === 'cek' ? 'Çekiliyor…' : 'Siparişleri Şimdi Çek'}
+            </button>
+            <button onClick={ikasGecmisCek} disabled={!!ikasMesgul}
+              title="Tüm geçmiş siparişleri yeniden çeker; eski siparişlerin eksik fiyatlarını (raporda ciro=0) doldurur. Stok düşülmez."
+              className="border border-amber-600 text-amber-700 px-4 py-1.5 rounded-lg text-sm hover:bg-amber-50 disabled:opacity-50">
+              {ikasMesgul === 'gecmis' ? 'Çekiliyor…' : '↻ Geçmişi Yeniden Çek (fiyat düzelt)'}
             </button>
             <button onClick={ikasFiyatGonder} disabled={!!ikasMesgul}
               className="bg-teal-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50">

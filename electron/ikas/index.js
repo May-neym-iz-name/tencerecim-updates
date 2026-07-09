@@ -239,6 +239,8 @@ async function pullSiparisler() {
   const stokGeri = db.prepare('UPDATE urun_stoklar SET miktar = miktar + ? WHERE urun_id = ? AND lokasyon_id = ?')
   const stokSifirla = db.prepare('UPDATE online_siparisler SET stok_dusuldu = 0 WHERE id = ?')
   const kalemlerGetir = db.prepare('SELECT urun_id, lokasyon_id, miktar FROM online_siparis_kalemleri WHERE siparis_id = ?')
+  const kalemFiyatsizVar = db.prepare('SELECT 1 FROM online_siparis_kalemleri WHERE siparis_id = ? AND (birim_fiyat IS NULL OR birim_fiyat = 0) LIMIT 1')
+  const kalemSil = db.prepare('DELETE FROM online_siparis_kalemleri WHERE siparis_id = ?')
   const IADE_DURUMLARI = new Set([IPTAL_DURUMU, 'REFUNDED'])
 
   let page = 1
@@ -278,6 +280,21 @@ async function pullSiparisler() {
               if (k.urun_id && k.lokasyon_id) stokGeri.run(Number(k.miktar) || 0, k.urun_id, k.lokasyon_id)
             }
             stokSifirla.run(mevcut.id)
+          }
+          // FİYAT BACKFILL: eski senkronlarda birim_fiyat kaydedilmiyordu (raporda ciro=0).
+          // Kalemlerinde fiyat 0 kalan mevcut sipariş yeniden gelince kalemleri ikas
+          // fiyatlarıyla TAZELE — stok DÜŞÜLMEZ (yalnız birim_fiyat/ad/ürün eşleşmesi).
+          const fiyatEksik = kalemFiyatsizVar.get(mevcut.id)
+          if (fiyatEksik && (sip.orderLineItems || []).length) {
+            kalemSil.run(mevcut.id)
+            for (const kalem of sip.orderLineItems) {
+              const vId = kalem?.variant?.id || null
+              const urun = vId ? varyantUrun.get(vId) : null
+              const lokId = lokHaritasi[kalem?.stockLocationId] || null
+              kalemEkle.run(mevcut.id, urun?.id || null, kalem?.id || null, vId, kalem?.variant?.name || null,
+                Number(kalem?.quantity) || 0, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null)
+            }
+            guncellenen++
           }
           continue
         }

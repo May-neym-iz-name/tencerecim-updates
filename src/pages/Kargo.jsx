@@ -14,6 +14,8 @@ import Sayfalama from '../components/Sayfalama'
 // UPS kurye rezervasyon sayfası — takip penceresi gibi program içi pencerede açılır.
 const UPS_PICKUP_URL = 'https://apps.ups.com.tr/PickupRequest'
 import { useSayfalama } from '../hooks/useSayfalama'
+import { useSiralama } from '../hooks/useSiralama'
+import SiraliBaslik from '../components/SiraliBaslik'
 import { usePersistentState } from '../hooks/usePersistentState'
 
 const DURUM_RENK = {
@@ -97,7 +99,11 @@ export default function Kargo() {
   const iptalKargolar = gosterilen.filter(k => k.durum === 'iptal')
   const listelenen = gorunum === 'iptal' ? iptalKargolar : aktifKargolar
 
-  const { dilim: sayfaKargolar, ...sayfalama } = useSayfalama(listelenen, 50)
+  const sr = useSiralama(listelenen, {
+    deger: (k, a) => a === 'adres' ? [k.ilce, k.il].filter(Boolean).join(', ')
+      : a === 'tarih' ? k.olusturma_tarihi : k[a],
+  })
+  const { dilim: sayfaKargolar, ...sayfalama } = useSayfalama(sr.sirali, 50)
 
   function yenile() {
     setYukleniyor(true)
@@ -281,22 +287,19 @@ export default function Kargo() {
               {/* Sağ: ölçüler → otomatik desi */}
               <div>
                 <p className="text-xs font-semibold text-gray-500 mb-1.5">📦 1 Kolinin Ölçüleri (cm) ve Ağırlığı</p>
-                <div className="flex flex-wrap items-end gap-2">
+                {/* Etiketler placeholder'da: kutular il/ilçe seçicileriyle AYNI HİZADA durur. */}
+                <div className="flex flex-wrap items-center gap-2">
                   {[['u', 'En'], ['g', 'Boy'], ['y', 'Yükseklik']].map(([k, ad]) => (
-                    <label key={k} className="text-xs text-gray-600">{ad}
-                      <input type="number" min="0" value={hesapOlcu[k]}
-                        onChange={e => setHesapOlcu(o => ({ ...o, [k]: e.target.value }))}
-                        className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-20 bg-white" />
-                    </label>
+                    <input key={k} type="number" min="0" value={hesapOlcu[k]} placeholder={ad} title={`${ad} (cm)`}
+                      onChange={e => setHesapOlcu(o => ({ ...o, [k]: e.target.value }))}
+                      className="border rounded px-2 py-2 text-sm w-20 bg-white" />
                   ))}
-                  <label className="text-xs text-gray-600">Kg
-                    <input type="number" min="0" step="0.1" value={hesapKg} onChange={e => setHesapKg(e.target.value)}
-                      className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-20 bg-white" />
-                  </label>
-                  <label className="text-xs text-gray-600">Koli
-                    <input type="number" min="1" value={hesapKoli} onChange={e => setHesapKoli(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="border rounded px-2 py-1.5 text-sm mt-0.5 block w-16 bg-white" />
-                  </label>
+                  <input type="number" min="0" step="0.1" value={hesapKg} onChange={e => setHesapKg(e.target.value)}
+                    placeholder="Kg" title="1 kolinin gerçek ağırlığı (kg)"
+                    className="border rounded px-2 py-2 text-sm w-20 bg-white" />
+                  <input type="number" min="1" value={hesapKoli} onChange={e => setHesapKoli(Math.max(1, parseInt(e.target.value) || 1))}
+                    placeholder="Koli" title="Koli adedi"
+                    className="border rounded px-2 py-2 text-sm w-16 bg-white" />
                 </div>
                 {desi > 0 && (
                   <p className="text-xs text-gray-600 mt-1.5">
@@ -376,12 +379,12 @@ export default function Kargo() {
                 <input type="checkbox" checked={tumuSecili} onChange={tumunuSec}
                   title="Filtreye uyan (iptal olmayan) tüm kargoları seç" disabled={!secilebilir.length} />
               </th>
-              <th className="px-3 py-2 font-medium">Takip No</th>
-              <th className="px-3 py-2 font-medium">Alıcı</th>
-              <th className="px-3 py-2 font-medium">Adres</th>
-              <th className="px-3 py-2 font-medium">Lokasyon</th>
-              <th className="px-3 py-2 font-medium">Durum</th>
-              <th className="px-3 py-2 font-medium">Tarih</th>
+              <SiraliBaslik k="takip_no" {...sr}>Takip No</SiraliBaslik>
+              <SiraliBaslik k="alici_ad" {...sr}>Alıcı</SiraliBaslik>
+              <SiraliBaslik k="adres" {...sr}>Adres</SiraliBaslik>
+              <SiraliBaslik k="lokasyon_ad" {...sr}>Lokasyon</SiraliBaslik>
+              <SiraliBaslik k="durum" {...sr}>Durum</SiraliBaslik>
+              <SiraliBaslik k="tarih" {...sr}>Tarih</SiraliBaslik>
               <th className="px-3 py-2 font-medium text-right">İşlem</th>
             </tr>
           </thead>

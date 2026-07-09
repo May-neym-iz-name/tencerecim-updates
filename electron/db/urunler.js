@@ -54,9 +54,12 @@ const URUN_SELECT = `
 `
 
 module.exports = {
-  'urunler:listele': ({ arama, kategori_id, marka_id, sayfa = 1, boyut = 100 } = {}) => {
+  // durum: 'aktif' (varsayılan) | 'pasif'. Pasifler YALNIZCA Ürünler sekmesindeki
+  // Pasif alanından istenir; satış/stok/set gibi tüm diğer çağrılar varsayılanla
+  // (aktif) çalışmaya devam eder — pasif ürün hiçbir yerde görünmez.
+  'urunler:listele': ({ arama, kategori_id, marka_id, sayfa = 1, boyut = 100, durum = 'aktif' } = {}) => {
     const db = getDb()
-    let where = 'WHERE u.aktif = 1'
+    let where = durum === 'pasif' ? 'WHERE u.aktif = 0' : 'WHERE u.aktif = 1'
     const params = []
     if (arama) {
       where += ' AND (u.ad LIKE ? OR u.barkod LIKE ? OR u.sku LIKE ?)'
@@ -190,6 +193,15 @@ module.exports = {
     yetkiKontrol('urun_sil')
     getDb().prepare('UPDATE urunler SET aktif = 0 WHERE id = ?').run(id)
     return { mesaj: 'Ürün silindi' }
+  },
+
+  // Aktif/pasif geçişi (Ürünler > Pasif Ürünler alanı). Pasife alma = yumuşak
+  // gizleme; aktifleştirme barkod/SKU çakışması yaratmaz (UNIQUE zaten korur).
+  'urunler:aktiflik': ({ id, aktif }) => {
+    yetkiKontrol('urun_duzenle')
+    getDb().prepare("UPDATE urunler SET aktif = ?, guncelleme_tarihi = datetime('now','localtime') WHERE id = ?")
+      .run(aktif ? 1 : 0, id)
+    return { mesaj: aktif ? 'Ürün aktifleştirildi' : 'Ürün pasife alındı' }
   },
 
   'urunler:stok': (urun_id) => {

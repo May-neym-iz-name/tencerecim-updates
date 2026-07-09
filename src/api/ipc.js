@@ -14,6 +14,7 @@ export const urunlerApi = {
   olustur: (veri) => invoke('urunler:olustur', veri),
   guncelle: (id, veri) => invoke('urunler:guncelle', { id, ...veri }),
   sil: (id) => invoke('urunler:sil', id),
+  aktiflik: (id, aktif) => invoke('urunler:aktiflik', { id, aktif }),
   stok: (id) => invoke('urunler:stok', id),
 }
 
@@ -168,6 +169,7 @@ export const metaApi = {
   durum: () => invoke('meta:durum'),
   sonDurum: () => invoke('meta:sonDurum'),
   cek: () => invoke('meta:cek'),
+  tumYorumlar: () => invoke('meta:tum-yorumlar'),
   yorumCevapla: (veri) => invoke('meta:yorumCevapla', veri),
   mesajCevapla: (veri) => invoke('meta:mesajCevapla', veri),
   yorumdanMesaj: (veri) => invoke('meta:yorumdanMesaj', veri),

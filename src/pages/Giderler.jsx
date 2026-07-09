@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { giderApi, lokasyonApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
+import { useSiralama } from '../hooks/useSiralama'
+import SiraliBaslik from '../components/SiraliBaslik'
 
 const PARA = (n) => `₺${(Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const KATEGORILER = ['Kira', 'Elektrik/Su/Doğalgaz', 'Personel', 'Nakliye', 'Pazarlama', 'Bakım/Onarım', 'Vergi/SGK', 'Diğer']
@@ -15,6 +17,7 @@ export default function Giderler() {
   const [form, setForm] = useState({ lokasyon_id: '', tarih: BUGUN(), kategori: 'Kira', aciklama: '', tutar: '', odeme_tipi: 'nakit' })
   const [filtre, setFiltre] = useState({ lokasyon_id: '', baslangic: AY_BASI(), bitis: BUGUN() })
   const [liste, setListe] = useState([])
+  const sr = useSiralama(liste)
   const [toplam, setToplam] = useState(0)
   const [mesgul, setMesgul] = useState(false)
   const [sabitler, setSabitler] = useState([])
@@ -232,17 +235,17 @@ export default function Giderler() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs">
             <tr>
-              <th className="text-left px-3 py-2 font-medium">Tarih</th>
-              <th className="text-left px-3 py-2 font-medium">Kategori</th>
-              <th className="text-left px-3 py-2 font-medium">Açıklama</th>
-              <th className="text-left px-3 py-2 font-medium">Mağaza</th>
-              <th className="text-left px-3 py-2 font-medium">Ödeme</th>
-              <th className="text-right px-3 py-2 font-medium">Tutar</th>
+              <SiraliBaslik k="tarih" {...sr}>Tarih</SiraliBaslik>
+              <SiraliBaslik k="kategori" {...sr}>Kategori</SiraliBaslik>
+              <SiraliBaslik k="aciklama" {...sr}>Açıklama</SiraliBaslik>
+              <SiraliBaslik k="lokasyon_adi" {...sr}>Mağaza</SiraliBaslik>
+              <SiraliBaslik k="odeme_tipi" {...sr}>Ödeme</SiraliBaslik>
+              <SiraliBaslik k="tutar" align="right" {...sr}>Tutar</SiraliBaslik>
               <th className="w-10"></th>
             </tr>
           </thead>
           <tbody>
-            {liste.map(g => (
+            {sr.sirali.map(g => (
               <tr key={g.id} className="border-t hover:bg-gray-50">
                 <td className="px-3 py-1.5 text-gray-500">{g.tarih}</td>
                 <td className="px-3 py-1.5">{g.kategori || '—'}</td>

@@ -8,6 +8,8 @@ import logo from '../assets/logo.png'
 import KargoFormu from '../components/KargoFormu'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
+import { useSiralama } from '../hooks/useSiralama'
+import SiraliBaslik from '../components/SiraliBaslik'
 
 const PARA = (n, b = 'TRY') =>
   new Intl.NumberFormat('tr-TR', { style: 'currency', currency: b || 'TRY' }).format(Number(n) || 0)
@@ -98,7 +100,10 @@ export default function OnlineSiparisler() {
   const odemeSecenekleri = [...new Set(siparisler.map(s => s.odeme_durumu).filter(Boolean))]
   const durumSecenekleri = [...new Set(siparisler.map(s => s.durum).filter(Boolean))]
   const kargoSecenekleri = [...new Set(siparisler.map(s => s.kargo_durumu).filter(Boolean))]
-  const { dilim: sayfaSiparisler, ...sayfalama } = useSayfalama(filtreliSiparisler, 50)
+  const sr = useSiralama(filtreliSiparisler, {
+    deger: (s, k) => k === 'teslimat' ? [s.teslimat_ilce, s.teslimat_il].filter(Boolean).join(' / ') : s[k],
+  })
+  const { dilim: sayfaSiparisler, ...sayfalama } = useSayfalama(sr.sirali, 50)
 
   useEffect(() => { yukle() }, [yukle])
 
@@ -378,13 +383,13 @@ export default function OnlineSiparisler() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600 text-left">
             <tr>
-              <th className="px-4 py-2.5 font-medium">Sipariş No</th>
-              <th className="px-4 py-2.5 font-medium">Tarih</th>
-              <th className="px-4 py-2.5 font-medium">Müşteri</th>
-              <th className="px-4 py-2.5 font-medium">Teslimat</th>
-              <th className="px-4 py-2.5 font-medium">Ödeme</th>
-              <th className="px-4 py-2.5 font-medium">Durum</th>
-              <th className="px-4 py-2.5 font-medium text-right">Tutar</th>
+              <SiraliBaslik k="siparis_no" {...sr}>Sipariş No</SiraliBaslik>
+              <SiraliBaslik k="siparis_tarihi" {...sr}>Tarih</SiraliBaslik>
+              <SiraliBaslik k="musteri_ad" {...sr}>Müşteri</SiraliBaslik>
+              <SiraliBaslik k="teslimat" {...sr}>Teslimat</SiraliBaslik>
+              <SiraliBaslik k="odeme_durumu" {...sr}>Ödeme</SiraliBaslik>
+              <SiraliBaslik k="durum" {...sr}>Durum</SiraliBaslik>
+              <SiraliBaslik k="toplam" align="right" {...sr}>Tutar</SiraliBaslik>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>

@@ -5,6 +5,8 @@ import { telefonGoster, telefonHam, sadeceRakam, telefonHatasi, tcHatasi, vergiH
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
+import { useSiralama } from '../hooks/useSiralama'
+import SiraliBaslik from '../components/SiraliBaslik'
 
 const BOSH = { ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '', vergi_dairesi: '', unvan: '', adres: '', il: '', ilce: '', iskonto_orani: '' }
 
@@ -27,7 +29,13 @@ export default function Musteriler() {
     } catch (e) { toast.error(e.message) }
   }, [arama])
 
-  const { dilim: sayfaMusteriler, ...sayfalama } = useSayfalama(musteriler, 50)
+  const sr = useSiralama(musteriler, {
+    deger: (m, k) => k === 'ad_soyad' ? `${m.ad || ''} ${m.soyad || ''}`.trim()
+      : k === 'vergi_tc' ? (m.vergi_no || m.tc_kimlik || '')
+      : k === 'il' ? `${m.il || ''} ${m.ilce || ''}`.trim()
+      : m[k],
+  })
+  const { dilim: sayfaMusteriler, ...sayfalama } = useSayfalama(sr.sirali, 50)
 
   useEffect(() => { yukle() }, [yukle])
 
@@ -87,9 +95,13 @@ export default function Musteriler() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b">
             <tr>
-              {['Ad Soyad', 'Telefon', 'Vergi / TC', 'İl/İlçe', 'İskonto', 'ikas (Web)', ''].map(h => (
-                <th key={h} className="text-left px-4 py-3 font-medium text-gray-600">{h}</th>
-              ))}
+              <SiraliBaslik k="ad_soyad" {...sr}>Ad Soyad</SiraliBaslik>
+              <SiraliBaslik k="telefon" {...sr}>Telefon</SiraliBaslik>
+              <SiraliBaslik k="vergi_tc" {...sr}>Vergi / TC</SiraliBaslik>
+              <SiraliBaslik k="il" {...sr}>İl/İlçe</SiraliBaslik>
+              <SiraliBaslik k="iskonto_orani" {...sr}>İskonto</SiraliBaslik>
+              <SiraliBaslik k="ikas_siparis_sayisi" {...sr}>ikas (Web)</SiraliBaslik>
+              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
