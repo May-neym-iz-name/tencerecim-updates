@@ -14,3 +14,7 @@ TEDARIKCIDEN LISTELER/
 # Hassas ticari dokumanlar (sozlesme/tarife) — repoya girmez
 UPS GÖNDERİ HESAPLAMA/
 ~$*.xlsx
+
+# Muhasebe/urun calisma verileri (fiyat, dara, urun listeleri) — ticari gizli, repoya girmez
+bizimhesap-ugyulama-ikas-ürünler/
+/ikas-urunler*.xlsx
