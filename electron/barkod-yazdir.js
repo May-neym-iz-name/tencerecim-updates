@@ -2,6 +2,7 @@
 // Renderer, JsBarcode ile etiketlerin HTML'ini üretip buraya gönderir; burada gizli bir
 // BrowserWindow'da yüklenip yazıcıya basılır. 45mm x 20mm OS-214 plus etiketi içindir.
 const { BrowserWindow } = require('electron')
+const { htmlYukle } = require('./html-yukle')
 
 const ETIKET_GENISLIK_MIKRON = 45000 // 45mm
 const ETIKET_YUKSEKLIK_MIKRON = 20000 // 20mm
@@ -33,7 +34,7 @@ async function yazicilariGetir() {
 async function barkodYazdir({ html, yazici }) {
   if (!html) throw new Error('Yazdırılacak etiket içeriği boş')
   return gizliPencereyle(async (win) => {
-    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    await htmlYukle(win, html)
     await new Promise((resolve, reject) => {
       const secenekler = {
         silent: !!yazici,
@@ -62,7 +63,7 @@ async function onizlemeAc({ html, baslik }) {
     width: 820, height: 1000, title: baslik || 'Önizleme',
     autoHideMenuBar: true, webPreferences: { offscreen: false },
   })
-  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+  await htmlYukle(win, html)
   return { acildi: true }
 }
 

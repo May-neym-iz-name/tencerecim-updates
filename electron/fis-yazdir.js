@@ -2,6 +2,7 @@
 // 80mm termal fiş yazıcısı ve normal A4 yazıcıyla uyumludur (sistem yazdırma diyaloğu açılır).
 const { BrowserWindow } = require('electron')
 const { getDb } = require('./db/database')
+const { htmlYukle } = require('./html-yukle')
 
 function tl(n) {
   return (Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ₺'
@@ -121,7 +122,7 @@ async function fisYazdir(satisId, { sessiz = false } = {}) {
   })
 
   try {
-    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    await htmlYukle(win, html)
     await new Promise((resolve, reject) => {
       win.webContents.print(
         { silent: sessiz, printBackground: true, margins: { marginType: 'none' } },

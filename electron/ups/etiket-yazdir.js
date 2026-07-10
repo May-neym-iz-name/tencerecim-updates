@@ -2,6 +2,7 @@
 // UPS kuralı: barkod en az 2cm genişlik, 12cm yükseklik, min 200 dpi. Bu yüzden ürün barkodundan
 // (45x20mm) farklı, daha büyük bir etikete (varsayılan 100x150mm) basılır.
 const { BrowserWindow } = require('electron')
+const { htmlYukle } = require('../html-yukle')
 
 // Sayfa başına etiket düzenleri. 1 = termal etiket (100×150mm, 1 etiket/sayfa);
 // 2 ve 4 = A4 sayfaya ızgara (yazıcıda kâğıda basanlar için).
@@ -65,7 +66,7 @@ async function etiketOnizle({ pngler, sayfaBasina = 1 }) {
   const duzen = DUZENLER[sayfaBasina] || DUZENLER[1]
   const html = etiketHtml(pngler, duzen, { onizleme: true })
   const win = new BrowserWindow({ width: 560, height: 800, title: 'Kargo Etiketi Önizleme', autoHideMenuBar: true })
-  await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+  await htmlYukle(win, html)
   return { acildi: true }
 }
 
@@ -75,7 +76,7 @@ async function etiketYazdir({ pngler, yazici, sayfaBasina = 1 }) {
   const duzen = DUZENLER[sayfaBasina] || DUZENLER[1]
   const html = etiketHtml(pngler, duzen)
   return gizliPencereyle(async (win) => {
-    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    await htmlYukle(win, html)
     await new Promise((resolve, reject) => {
       const secenekler = {
         silent: !!yazici,

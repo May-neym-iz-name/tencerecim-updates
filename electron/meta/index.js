@@ -18,8 +18,11 @@ async function cekFacebookYorumlar() {
   const sayfaId = client._sayfaId()
   if (!sayfaId) return 0
   let n = 0
+  // comments.order(reverse_chronological): en YENİ yorumlar önce gelsin. Varsayılan
+  // kronolojik sırada (en eski önce) sürekli yorum alan gönderilerde yeni yorumlar hep
+  // 50'lik pencerenin dışında kalıp polling'e hiç düşmüyordu.
   const res = await client.get(`${sayfaId}/feed`, {
-    fields: 'id,message,created_time,full_picture,permalink_url,comments.limit(50){id,message,from,created_time}',
+    fields: 'id,message,created_time,full_picture,permalink_url,comments.order(reverse_chronological).limit(50){id,message,from,created_time}',
     limit: 40,
   })
   for (const gonderi of res.data || []) {
@@ -47,9 +50,12 @@ async function cekInstagramYorumlar() {
   const igId = client._igId()
   if (!igId) return 0
   let n = 0
-  // Hafif sorgu: media 12, gömülü comments 20, ağır 'from' alanı yok (Meta "reduce data" kod 1'i önler).
+  // Hafif sorgu: media + gömülü comments 20. 'from' alanı KASITLI istenmez: IG yorumlarında
+  // 'from' izni (instagram_manage_comments + App Review) yoksa alanı istemek isteğin
+  // tamamını hataya düşürüp gömülü olduğu /media çağrısını kırıyor → hiç IG yorumu düşmüyordu.
+  // Yorumcu adı 'username'den, metin 'text'ten geliyor; cevaplama comment_id ile çalışır, id gerekmez.
   const res = await client.get(`${igId}/media`, {
-    fields: 'id,caption,timestamp,media_url,thumbnail_url,permalink,comments.limit(20){id,text,username,timestamp,from}',
+    fields: 'id,caption,timestamp,media_url,thumbnail_url,permalink,comments.limit(20){id,text,username,timestamp}',
     limit: 25,
   })
   for (const medya of res.data || []) {
@@ -229,7 +235,7 @@ async function tumYorumlariCek() {
           yon: 'giden', metin: medya.caption || '', mesaj_tarihi: medya.timestamp,
           konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink })
         sonuc.gonderi++
-        await tumSayfalar(`${medya.id}/comments`, { fields: 'id,text,username,timestamp,from', limit: 50 },
+        await tumSayfalar(`${medya.id}/comments`, { fields: 'id,text,username,timestamp', limit: 50 },
           d => { for (const y of d) { _upsertMesaj({ platform: 'instagram', tur: 'yorum', harici_id: y.id, konu_id: medya.id,
             gonderen_id: y.from?.id, gonderen_ad: y.username || 'Instagram kullanıcısı', metin: y.text, yon: 'gelen',
             mesaj_tarihi: y.timestamp, konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink }); sonuc.yorum++ } },
@@ -249,7 +255,7 @@ async function tumYorumlariCek() {
           yon: 'giden', metin: g.message || '', mesaj_tarihi: g.created_time,
           konu_baslik: g.message || '(görsel gönderi)', konu_gorsel: g.full_picture, konu_link: g.permalink_url })
         sonuc.gonderi++
-        await tumSayfalar(`${g.id}/comments`, { fields: 'id,message,from,created_time', limit: 50 },
+        await tumSayfalar(`${g.id}/comments`, { fields: 'id,message,from,created_time', limit: 50, order: 'reverse_chronological' },
           d => { for (const y of d) { _upsertMesaj({ platform: 'facebook', tur: 'yorum', harici_id: y.id, konu_id: g.id,
             gonderen_id: y.from?.id, gonderen_ad: y.from?.name || 'Facebook kullanıcısı', metin: y.message, yon: 'gelen',
             mesaj_tarihi: y.created_time, konu_baslik: g.message || '(görsel gönderi)', konu_gorsel: g.full_picture, konu_link: g.permalink_url }); sonuc.yorum++ } },
