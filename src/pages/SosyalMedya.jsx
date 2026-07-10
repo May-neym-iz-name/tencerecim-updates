@@ -495,7 +495,11 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
 
 // --- Yorum görünümü: orta yorum listesi + sağ gönderi önizleme ---
 function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozelMesaj, setOzelMesaj, ozelTaslak, setOzelTaslak, ozelGonder, banaAta, kullanici, hizliYanitlar, hizliKaydet }) {
-  const gelenler = yorumlar.filter(y => y.yon === 'gelen')
+  // Üst (kök) yorumlar = gelen ve bir üst yoruma bağlı OLMAYANLAR. Yanıtlar (ust_id dolu)
+  // burada değil, ait oldukları yorumun altında iç içe gösterilir. Üstü yüklü değilse
+  // (nadir) yorum yine kök olarak görünsün diye hariciSet kontrolü yapılır.
+  const hariciSet = new Set(yorumlar.map(y => y.harici_id))
+  const ustler = yorumlar.filter(y => y.yon === 'gelen' && (!y.ust_id || !hariciSet.has(y.ust_id)))
   const [cevapId, setCevapId] = useState(null) // yalnızca bu yorumun yanıt kutusu açık
   const ekle = (t) => setTaslak(v => v && v.trim() ? `${v.trim()} ${t}` : t)
   return (
@@ -516,8 +520,10 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
         </div>
         {/* Yorumlar */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {gelenler.map(y => {
-            const yanitlar = yorumlar.filter(r => r.yon === 'giden' && r.ust_id === y.harici_id)
+          {ustler.map(y => {
+            // Bu yorumun altındaki TÜM yanıtlar: müşteri yanıtları (gelen) + bizim yanıtlarımız (giden), zaman sırasıyla.
+            const cocuklar = yorumlar.filter(r => r.ust_id === y.harici_id)
+              .sort((a, b) => (a.mesaj_tarihi || '').localeCompare(b.mesaj_tarihi || ''))
             return (
               <div key={y.id} className="flex gap-3">
                 <Avatar ad={y.gonderen_ad} platform={konu.platform} boyut={34} />
@@ -532,9 +538,21 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                     <button onClick={() => { setOzelMesaj(y.id); setOzelTaslak(''); setCevapId(null) }} className="text-blue-600 hover:underline font-medium">Mesaj gönder</button>
                     {y.cevaplayan_kullanici && <span className="text-emerald-600">✓ {y.cevaplayan_kullanici}</span>}
                   </div>
-                  {yanitlar.map(r => (
-                    <div key={r.id} className="mt-2 ml-2 text-sm text-gray-600 bg-violet-50 rounded-lg px-3 py-1.5">
+                  {/* Yanıtlar: bizimkiler (giden) mor kutuda; müşteri yanıtları (gelen) girintili yorum olarak. */}
+                  {cocuklar.map(r => r.yon === 'giden' ? (
+                    <div key={r.id} className="mt-2 ml-4 text-sm text-gray-600 bg-violet-50 rounded-lg px-3 py-1.5">
                       <b>Yanıtınız:</b> {r.metin}
+                    </div>
+                  ) : (
+                    <div key={r.id} className="mt-2 ml-4 flex gap-2">
+                      <Avatar ad={r.gonderen_ad} platform={konu.platform} boyut={26} />
+                      <div className="min-w-0 flex-1">
+                        <div className="bg-gray-50 border rounded-2xl px-3 py-1.5 inline-block max-w-full">
+                          <span className="font-semibold text-xs text-gray-800">{r.gonderen_ad}</span>{' '}
+                          <span className="text-sm text-gray-700">{r.metin}</span>
+                        </div>
+                        <div className="text-[11px] text-gray-400 mt-0.5 pl-2">↳ {zaman(r.mesaj_tarihi)}</div>
+                      </div>
                     </div>
                   ))}
                   {/* Yoruma yanıt kutusu — yalnızca "Yanıtla" ile açılır */}

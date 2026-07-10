@@ -409,6 +409,10 @@ function migrate() {
   try { db.exec("ALTER TABLE kargolar ADD COLUMN etiket_link TEXT") } catch {}
   // online_siparis_kalemleri — ikas sipariş kalemi id'si (iptal/iade için).
   try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN ikas_kalem_id TEXT") } catch {}
+  // online_siparisler — "Kargolandı Bildir" ile gönderim yapıldığı an (yerel işaret).
+  // ikas orderPackageStatus'ta ayrı bir "gönderildi" durumu yok (Kargoya Hazır → Teslim Edildi);
+  // bu alan set edilince arayüz teslim edilene kadar "Gönderildi" gösterir, senkron bunu ezmez.
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN gonderildi_tarihi TEXT") } catch {}
   // online_siparisler — ikas'tan okunan kargo takip bilgisi (orderPackages.trackingInfo).
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_no TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_firma TEXT") } catch {}

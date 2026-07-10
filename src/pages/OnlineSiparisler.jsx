@@ -52,6 +52,21 @@ const kargoRengi = (d) => (d === 'DELIVERED' || d === 'READY_FOR_PICK_UP') ? 'bg
   : (d === 'CANCELLED' || d === 'REFUNDED' || d === 'UNABLE_TO_DELIVER' || d === 'PARTIALLY_CANCELLED') ? 'bg-red-100 text-red-700'
   : 'bg-gray-100 text-gray-600'
 
+// "Kargolandı Bildir" ile gönderilen ama ikas'ta hâlâ "Kargoya Hazır/Hazırlandı" görünen
+// siparişleri "Gönderildi" olarak gösterir. ikas gerçek bir ilerleme (Teslim/İptal/İade)
+// bildirince o gerçek durum öne geçer. Böylece gönderim yerelde net görünür.
+const GONDERILDI_EZILEBILIR = new Set([
+  'UNFULFILLED', 'FULFILLED', 'PARTIALLY_FULFILLED', 'READY_FOR_SHIPMENT', 'PARTIALLY_READY_FOR_SHIPMENT',
+])
+function kargoGoster(s) {
+  const d = s.kargo_durumu
+  const gonderildi = !!s.gonderildi_tarihi
+  if (gonderildi && (!d || GONDERILDI_EZILEBILIR.has(d)))
+    return { etiket: 'Gönderildi', renk: 'bg-teal-100 text-teal-700' }
+  if (d) return { etiket: KARGO_ETIKET[d] || d, renk: kargoRengi(d) }
+  return null
+}
+
 export default function OnlineSiparisler() {
   const [siparisler, setSiparisler] = useState([])
   const [toplam, setToplam] = useState(0)
@@ -416,9 +431,9 @@ export default function OnlineSiparisler() {
                   {s.odeme_yontemi && <span className="block text-[10px] text-gray-400 mt-0.5">{s.odeme_yontemi}</span>}
                 </td>
                 <td className="px-4 py-2.5">
-                  {s.kargo_durumu
-                    ? <span className={`text-xs px-2 py-0.5 rounded-full ${kargoRengi(s.kargo_durumu)}`}>{KARGO_ETIKET[s.kargo_durumu] || s.kargo_durumu}</span>
-                    : <span className={`text-xs px-2 py-0.5 rounded-full ${s.durum === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{DURUM_ETIKET[s.durum] || s.durum}</span>}
+                  {(() => { const g = kargoGoster(s); return g
+                    ? <span className={`text-xs px-2 py-0.5 rounded-full ${g.renk}`}>{g.etiket}</span>
+                    : <span className={`text-xs px-2 py-0.5 rounded-full ${s.durum === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{DURUM_ETIKET[s.durum] || s.durum}</span> })()}
                   {!s.stok_dusuldu && <span className="block text-[10px] text-gray-400 mt-0.5">stok düşülmedi</span>}
                 </td>
                 <td className="px-4 py-2.5 text-right font-medium">{PARA(s.toplam, s.para_birimi)}</td>
@@ -450,11 +465,9 @@ export default function OnlineSiparisler() {
                       {ODEME_ETIKET[secili.odeme_durumu] || secili.odeme_durumu || '—'}
                     </span>
                   )}
-                  {secili.kargo_durumu && (
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${kargoRengi(secili.kargo_durumu)}`}>
-                      {KARGO_ETIKET[secili.kargo_durumu] || secili.kargo_durumu}
-                    </span>
-                  )}
+                  {(() => { const g = kargoGoster(secili); return g && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${g.renk}`}>{g.etiket}</span>
+                  ) })()}
                 </div>
                 <p className="text-xs text-gray-400 mt-1">{TARIH(secili.siparis_tarihi)}</p>
               </div>

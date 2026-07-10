@@ -676,8 +676,10 @@ module.exports = {
       }
       await graphql('mutation F($input: FulFillOrderInput!){ fulfillOrder(input:$input){ id } }', { input })
     }
-    // Hazırlık paket durumuna geçer; sonraki çekimde teyit edilir.
-    db.prepare("UPDATE online_siparisler SET kargo_takip_no = ?, kargo_firma = ?, kargo_durumu = CASE WHEN kargo_durumu IS NULL THEN 'READY_FOR_SHIPMENT' ELSE kargo_durumu END WHERE id = ?")
+    // Hazırlık paket durumuna geçer; sonraki çekimde teyit edilir. gonderildi_tarihi'ni de
+    // damgala: ikas'ta ayrı "gönderildi" durumu olmadığından, arayüz bunu "Gönderildi" olarak
+    // gösterir (teslim/iptal gelene kadar). Senkron kargo_durumu'nu ezse de bu alan kalır.
+    db.prepare("UPDATE online_siparisler SET kargo_takip_no = ?, kargo_firma = ?, gonderildi_tarihi = COALESCE(gonderildi_tarihi, datetime('now','localtime')), kargo_durumu = CASE WHEN kargo_durumu IS NULL THEN 'READY_FOR_SHIPMENT' ELSE kargo_durumu END WHERE id = ?")
       .run(String(takipNo), kargoFirma || 'UPS', id)
     return { ok: true }
   },
