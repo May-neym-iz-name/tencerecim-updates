@@ -174,20 +174,6 @@ export default function SosyalMedya() {
     finally { setCekiliyor(false) }
   }
 
-  // Derin çekme: TÜM gönderilerin TÜM yorumlarını sayfalayarak alır (uzun sürebilir).
-  async function tumYorumlariCek() {
-    if (!confirm('Tüm gönderilerin tüm yorumları çekilecek. Gönderi sayısına göre birkaç dakika sürebilir. Devam edilsin mi?')) return
-    setCekiliyor('tum')
-    const bekle = toast.loading('Tüm yorumlar çekiliyor… (kapatmayın)')
-    try {
-      const r = await metaApi.tumYorumlar()
-      toast.success(`${r.gonderi || 0} gönderi · ${r.yorum || 0} yorum çekildi`, { id: bekle })
-      if (r.hatalar?.length) toast(r.hatalar.join(' | '), { icon: '⚠️' })
-      listeYukle(); sayaclariYukle(); durumYukle()
-      if (seciliKonu) konuSec(seciliKonu)
-    } catch (e) { toast.error('Derin çekme hatası: ' + e.message, { id: bekle }) }
-    finally { setCekiliyor(false) }
-  }
 
   // Konuşmayı/gönderiyi personele ata (boş = atamayı bırak). "Kim neye bakıyor" takibi.
   async function banaAta(konu, kaldir = false) {
@@ -274,11 +260,6 @@ export default function SosyalMedya() {
         <button onClick={cek} disabled={!!cekiliyor}
           className={`${sonDurum?.zaman ? 'ml-2' : 'ml-auto'} text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex-shrink-0`}>
           {cekiliyor === true ? 'Çekiliyor…' : '↻ Yenile'}
-        </button>
-        <button onClick={tumYorumlariCek} disabled={!!cekiliyor}
-          title="Tüm gönderilerin tüm yorumlarını sayfalayarak çeker (uzun sürebilir)"
-          className="text-xs border border-blue-600 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 disabled:opacity-50 flex-shrink-0">
-          {cekiliyor === 'tum' ? 'Çekiliyor…' : '⭳ Tüm Yorumları Çek'}
         </button>
       </div>
 

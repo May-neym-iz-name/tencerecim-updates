@@ -169,7 +169,6 @@ export const metaApi = {
   durum: () => invoke('meta:durum'),
   sonDurum: () => invoke('meta:sonDurum'),
   cek: () => invoke('meta:cek'),
-  tumYorumlar: () => invoke('meta:tum-yorumlar'),
   yorumCevapla: (veri) => invoke('meta:yorumCevapla', veri),
   mesajCevapla: (veri) => invoke('meta:mesajCevapla', veri),
   yorumdanMesaj: (veri) => invoke('meta:yorumdanMesaj', veri),

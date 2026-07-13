@@ -13,68 +13,101 @@ function _sonDurumGetir() { return _sonDurum }
 
 // --- ÇEKME -----------------------------------------------------------------
 
-// Facebook Sayfa gönderilerindeki yorumlar. Son gönderileri + gömülü yorumları çeker.
+// Polling kapsamı: eski gönderiler kalıcı içeriktir ve aylar sonra bile yeni yorum alır
+// (keşfetten gelen trafik). Tek sayfalık (25-40 gönderi) tarama bunları kaçırıyordu; artık
+// sayfalama ile son ~150 gönderi taranır. Sayfalama tumSayfalar üzerinden yapılır → Meta
+// "kod 1" (veri azalt) dediğinde sayfa boyutu otomatik küçülür.
+const POLL_GONDERI_LIMIT = 25
+const POLL_MAKS_SAYFA = 6 // 6 × 25 ≈ 150 gönderi
+
+// Facebook Sayfa gönderilerindeki yorumlar (+ yorum yanıtları).
 async function cekFacebookYorumlar() {
   const sayfaId = client._sayfaId()
   if (!sayfaId) return 0
   let n = 0
   // comments.order(reverse_chronological): en YENİ yorumlar önce gelsin. Varsayılan
   // kronolojik sırada (en eski önce) sürekli yorum alan gönderilerde yeni yorumlar hep
-  // 50'lik pencerenin dışında kalıp polling'e hiç düşmüyordu.
-  const res = await client.get(`${sayfaId}/feed`, {
-    fields: 'id,message,created_time,full_picture,permalink_url,comments.order(reverse_chronological).limit(50){id,message,from,created_time}',
-    limit: 40,
-  })
-  for (const gonderi of res.data || []) {
-    // Gönderinin kendisini kaydet (yorumu olmasa bile listede görünsün).
-    _upsertMesaj({
-      platform: 'facebook', tur: 'gonderi', harici_id: 'g_' + gonderi.id, konu_id: gonderi.id,
-      yon: 'giden', metin: gonderi.message || '', mesaj_tarihi: gonderi.created_time,
-      konu_baslik: gonderi.message || '(görsel gönderi)', konu_gorsel: gonderi.full_picture, konu_link: gonderi.permalink_url,
-    })
-    for (const y of gonderi.comments?.data || []) {
+  // pencerenin dışında kalıp polling'e hiç düşmüyordu.
+  // İç comments.limit(25): bir yorumun YANITLARI. Müşteri sorusu çoğu zaman yanıt olarak
+  // geliyor; yanıtlar çekilmeyince bu sorular gelen kutusuna hiç düşmüyordu.
+  await tumSayfalar(`${sayfaId}/feed`, {
+    fields: 'id,message,created_time,full_picture,permalink_url,' +
+      'comments.order(reverse_chronological).limit(25){id,message,from,created_time,comments.limit(25){id,message,from,created_time}}',
+    limit: POLL_GONDERI_LIMIT,
+  }, (data) => {
+    for (const gonderi of data) {
+      // Gönderinin kendisini kaydet (yorumu olmasa bile listede görünsün).
+      const ktx = {
+        konu_baslik: gonderi.message || '(görsel gönderi)',
+        konu_gorsel: gonderi.full_picture, konu_link: gonderi.permalink_url,
+      }
       _upsertMesaj({
-        platform: 'facebook', tur: 'yorum', harici_id: y.id,
-        konu_id: gonderi.id, gonderen_id: y.from?.id, gonderen_ad: y.from?.name || 'Facebook kullanıcısı',
-        metin: y.message, yon: 'gelen', mesaj_tarihi: y.created_time,
-        konu_baslik: gonderi.message || '(görsel gönderi)', konu_gorsel: gonderi.full_picture, konu_link: gonderi.permalink_url,
+        platform: 'facebook', tur: 'gonderi', harici_id: 'g_' + gonderi.id, konu_id: gonderi.id,
+        yon: 'giden', metin: gonderi.message || '', mesaj_tarihi: gonderi.created_time, ...ktx,
       })
-      n++
+      for (const y of gonderi.comments?.data || []) {
+        _upsertMesaj({
+          platform: 'facebook', tur: 'yorum', harici_id: y.id, konu_id: gonderi.id,
+          gonderen_id: y.from?.id, gonderen_ad: y.from?.name || 'Facebook kullanıcısı',
+          metin: y.message, yon: 'gelen', mesaj_tarihi: y.created_time, ...ktx,
+        })
+        n++
+        for (const r of y.comments?.data || []) {
+          _upsertMesaj({
+            platform: 'facebook', tur: 'yorum', harici_id: r.id, konu_id: gonderi.id, ust_id: y.id,
+            gonderen_id: r.from?.id, gonderen_ad: r.from?.name || 'Facebook kullanıcısı',
+            metin: r.message, yon: 'gelen', mesaj_tarihi: r.created_time, ...ktx,
+          })
+          n++
+        }
+      }
     }
-  }
+  }, POLL_MAKS_SAYFA)
   return n
 }
 
-// Instagram gönderilerindeki yorumlar.
+// Instagram gönderilerindeki yorumlar (+ yorum yanıtları).
 async function cekInstagramYorumlar() {
   const igId = client._igId()
   if (!igId) return 0
   let n = 0
-  // Hafif sorgu: media + gömülü comments 20. 'from' alanı KASITLI istenmez: IG yorumlarında
-  // 'from' izni (instagram_manage_comments + App Review) yoksa alanı istemek isteğin
+  // 'from' alanı KASITLI istenmez: IG yorumlarında 'from' izni yoksa alanı istemek isteğin
   // tamamını hataya düşürüp gömülü olduğu /media çağrısını kırıyor → hiç IG yorumu düşmüyordu.
-  // Yorumcu adı 'username'den, metin 'text'ten geliyor; cevaplama comment_id ile çalışır, id gerekmez.
-  const res = await client.get(`${igId}/media`, {
-    fields: 'id,caption,timestamp,media_url,thumbnail_url,permalink,comments.limit(20){id,text,username,timestamp}',
-    limit: 25,
-  })
-  for (const medya of res.data || []) {
-    // Gönderinin kendisini kaydet (yorumu olmasa bile listede görünsün).
-    _upsertMesaj({
-      platform: 'instagram', tur: 'gonderi', harici_id: 'g_' + medya.id, konu_id: medya.id,
-      yon: 'giden', metin: medya.caption || '', mesaj_tarihi: medya.timestamp,
-      konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink,
-    })
-    for (const y of medya.comments?.data || []) {
+  // Yorumcu adı 'username'den, metin 'text'ten gelir.
+  // IG comments EN YENİ üst-seviye yorumları döndürür (doğrulandı) → order parametresi gerekmez.
+  // replies.limit(25): yanıtlar; müşteri soruları sıkça yanıt olarak geliyor.
+  await tumSayfalar(`${igId}/media`, {
+    fields: 'id,caption,timestamp,media_url,thumbnail_url,permalink,' +
+      'comments.limit(25){id,text,username,timestamp,replies.limit(25){id,text,username,timestamp}}',
+    limit: POLL_GONDERI_LIMIT,
+  }, (data) => {
+    for (const medya of data) {
+      const ktx = {
+        konu_baslik: medya.caption || '(görsel gönderi)',
+        konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink,
+      }
       _upsertMesaj({
-        platform: 'instagram', tur: 'yorum', harici_id: y.id,
-        konu_id: medya.id, gonderen_id: y.from?.id, gonderen_ad: y.username || 'Instagram kullanıcısı',
-        metin: y.text, yon: 'gelen', mesaj_tarihi: y.timestamp,
-        konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink,
+        platform: 'instagram', tur: 'gonderi', harici_id: 'g_' + medya.id, konu_id: medya.id,
+        yon: 'giden', metin: medya.caption || '', mesaj_tarihi: medya.timestamp, ...ktx,
       })
-      n++
+      for (const y of medya.comments?.data || []) {
+        _upsertMesaj({
+          platform: 'instagram', tur: 'yorum', harici_id: y.id, konu_id: medya.id,
+          gonderen_ad: y.username || 'Instagram kullanıcısı',
+          metin: y.text, yon: 'gelen', mesaj_tarihi: y.timestamp, ...ktx,
+        })
+        n++
+        for (const r of y.replies?.data || []) {
+          _upsertMesaj({
+            platform: 'instagram', tur: 'yorum', harici_id: r.id, konu_id: medya.id, ust_id: y.id,
+            gonderen_ad: r.username || 'Instagram kullanıcısı',
+            metin: r.text, yon: 'gelen', mesaj_tarihi: r.timestamp, ...ktx,
+          })
+          n++
+        }
+      }
     }
-  }
+  }, POLL_MAKS_SAYFA)
   return n
 }
 
@@ -193,13 +226,7 @@ async function tumunuCek() {
   return sonuc
 }
 
-// --- DERİN ÇEKME: TÜM gönderiler + TÜM yorumlar (kademeli sayfalama) --------
-// Normal tur son ~25-40 gönderiyi çeker; bu fonksiyon cursor sayfalamayla TÜM
-// gönderileri ve her gönderinin TÜM yorumlarını alır. Güvenlik sınırları var
-// (sonsuz döngü / kota koruması). Manuel tetiklenir (arka plan polling'de DEĞİL).
-const MAKS_SAYFA = 60          // gönderi listesi max sayfa (60×25 = ~1500 gönderi)
-const MAKS_YORUM_SAYFA = 80    // gönderi başına yorum max sayfa (80×50 = 4000 yorum)
-
+// --- SAYFALAMA YARDIMCILARI (polling turları bunu kullanır) -----------------
 // Meta hız-sınırı / geçici hata kodları: bunlarda DURMA, bekleyip AYNI sayfayı tekrar dene.
 // 4=uygulama, 17=kullanıcı, 32=sayfa throttle; 613=özel limit; 1=veri azalt; 2=geçici.
 const HIZ_SINIRI_KODLARI = new Set([1, 2, 4, 17, 32, 613])
@@ -209,21 +236,36 @@ function hizSiniriMi(e) {
   return !!m && HIZ_SINIRI_KODLARI.has(Number(m[1]))
 }
 
+// Meta kod 1 = "Please reduce the amount of data you're asking for". Sunucu yüküne göre
+// RASTGELE gelir (aynı sorgu bir denemede patlar, sonrakinde döner). Aynı sorguyu tekrar
+// denemek işe yaramaz — istenen sayfa boyutunu küçültmek gerekir.
+function veriAzaltMi(e) { return /kod 1\b/.test(e && e.message || '') }
+
+const MIN_LIMIT = 5
+
 // Bir uç noktanın tüm sayfalarını cursor ile gezer; her sayfada isleyici(data) çağırır.
-// Hız sınırında sayfayı bırakmaz: artan beklemeyle (2s,4s,6s,8s) 4 kez tekrar dener; ancak
-// gerçek hata (ör. geçersiz alan) veya denemeler bitince eldekiyle durur. Böylece binlerce
-// yorumlu gönderilerde Meta throttle'ı yüzünden yarıda kesilme olmaz.
+// Dayanıklılık: kod 1'de sayfa boyutunu yarıya indirip dener (MIN_LIMIT'e kadar), diğer
+// hız-sınırı kodlarında artan beklemeyle 4 kez tekrar dener. İLK sayfa hiç alınamazsa
+// hatayı FIRLATIR — eskiden sessizce 0 dönüyordu ve çekim "başarılı ama boş" görünüyordu.
 async function tumSayfalar(path, params, isleyici, maksSayfa) {
   let after = null, sayfa = 0
+  let limit = Number(params.limit) || 25
   while (sayfa < maksSayfa) {
-    const p = { ...params }
-    if (after) p.after = after
-    let json, denendi = 0
+    let json = null, denendi = 0
     for (;;) {
+      const p = { ...params, limit }
+      if (after) p.after = after
       try { json = await client.get(path, p, { timeout: 30000, deneme: 2 }); break }
       catch (e) {
-        if (hizSiniriMi(e) && denendi < 4) { denendi++; await bekle(2000 * denendi); continue }
-        return sayfa // gerçek hata veya deneme bitti → eldekiyle dur
+        denendi++
+        if (veriAzaltMi(e) && limit > MIN_LIMIT) {
+          limit = Math.max(MIN_LIMIT, Math.floor(limit / 2))
+          await bekle(1000)
+          continue
+        }
+        if (hizSiniriMi(e) && denendi <= 4) { await bekle(2000 * denendi); continue }
+        if (sayfa === 0) throw e // hiç veri alamadan bittik → sessiz "0 kayıt" yerine hatayı bildir
+        return sayfa            // kısmi veri aldık → eldekiyle dur
       }
     }
     const data = json?.data || []
@@ -234,68 +276,6 @@ async function tumSayfalar(path, params, isleyici, maksSayfa) {
     sayfa++
   }
   return sayfa
-}
-
-async function tumYorumlariCek() {
-  const sonuc = { gonderi: 0, yorum: 0, hatalar: [] }
-  const igId = client._igId()
-  const sayfaId = client._sayfaId()
-
-  // --- Instagram: tüm media → her media'nın tüm yorumları ---
-  if (igId) {
-    try {
-      const medyalar = []
-      await tumSayfalar(`${igId}/media`, { fields: 'id,caption,timestamp,media_url,thumbnail_url,permalink', limit: 25 },
-        d => { for (const m of d) medyalar.push(m) }, MAKS_SAYFA)
-      for (const medya of medyalar) {
-        _upsertMesaj({ platform: 'instagram', tur: 'gonderi', harici_id: 'g_' + medya.id, konu_id: medya.id,
-          yon: 'giden', metin: medya.caption || '', mesaj_tarihi: medya.timestamp,
-          konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink })
-        sonuc.gonderi++
-        // replies.limit(50): üst yorumların YANITLARINI da çek. comments_count yanıtları da
-        // sayar; yanıtları çekmeyince program eksik görünüyordu. ust_id = yanıtlanan yorum id.
-        const igKtx = { konu_baslik: medya.caption || '(görsel gönderi)', konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink }
-        await tumSayfalar(`${medya.id}/comments`, { fields: 'id,text,username,timestamp,replies.limit(50){id,text,username,timestamp}', limit: 50 },
-          d => { for (const y of d) {
-            _upsertMesaj({ platform: 'instagram', tur: 'yorum', harici_id: y.id, konu_id: medya.id,
-              gonderen_ad: y.username || 'Instagram kullanıcısı', metin: y.text, yon: 'gelen', mesaj_tarihi: y.timestamp, ...igKtx }); sonuc.yorum++
-            for (const r of y.replies?.data || []) {
-              _upsertMesaj({ platform: 'instagram', tur: 'yorum', harici_id: r.id, konu_id: medya.id, ust_id: y.id,
-                gonderen_ad: r.username || 'Instagram kullanıcısı', metin: r.text, yon: 'gelen', mesaj_tarihi: r.timestamp, ...igKtx }); sonuc.yorum++
-            }
-          } },
-          MAKS_YORUM_SAYFA)
-      }
-    } catch (e) { sonuc.hatalar.push('IG: ' + e.message) }
-  }
-
-  // --- Facebook: tüm feed → her gönderinin tüm yorumları ---
-  if (sayfaId) {
-    try {
-      const gonderiler = []
-      await tumSayfalar(`${sayfaId}/feed`, { fields: 'id,message,created_time,full_picture,permalink_url', limit: 25 },
-        d => { for (const g of d) gonderiler.push(g) }, MAKS_SAYFA)
-      for (const g of gonderiler) {
-        _upsertMesaj({ platform: 'facebook', tur: 'gonderi', harici_id: 'g_' + g.id, konu_id: g.id,
-          yon: 'giden', metin: g.message || '', mesaj_tarihi: g.created_time,
-          konu_baslik: g.message || '(görsel gönderi)', konu_gorsel: g.full_picture, konu_link: g.permalink_url })
-        sonuc.gonderi++
-        // comments.limit(50): FB'de bir yorumun YANITLARI alt 'comments' kenarındadır; onları da çek.
-        const fbKtx = { konu_baslik: g.message || '(görsel gönderi)', konu_gorsel: g.full_picture, konu_link: g.permalink_url }
-        await tumSayfalar(`${g.id}/comments`, { fields: 'id,message,from,created_time,comments.limit(50){id,message,from,created_time}', limit: 50, order: 'reverse_chronological' },
-          d => { for (const y of d) {
-            _upsertMesaj({ platform: 'facebook', tur: 'yorum', harici_id: y.id, konu_id: g.id,
-              gonderen_id: y.from?.id, gonderen_ad: y.from?.name || 'Facebook kullanıcısı', metin: y.message, yon: 'gelen', mesaj_tarihi: y.created_time, ...fbKtx }); sonuc.yorum++
-            for (const r of y.comments?.data || []) {
-              _upsertMesaj({ platform: 'facebook', tur: 'yorum', harici_id: r.id, konu_id: g.id, ust_id: y.id,
-                gonderen_id: r.from?.id, gonderen_ad: r.from?.name || 'Facebook kullanıcısı', metin: r.message, yon: 'gelen', mesaj_tarihi: r.created_time, ...fbKtx }); sonuc.yorum++
-            }
-          } },
-          MAKS_YORUM_SAYFA)
-      }
-    } catch (e) { sonuc.hatalar.push('FB: ' + e.message) }
-  }
-  return sonuc
 }
 
 // --- CEVAPLAMA -------------------------------------------------------------
@@ -407,7 +387,6 @@ module.exports = {
   'meta:durum': () => client.durum(),
   'meta:sonDurum': () => _sonDurumGetir(),
   'meta:cek': () => tumunuCek(),
-  'meta:tum-yorumlar': () => tumYorumlariCek(),
   'meta:yorumCevapla': (arg) => yorumCevapla(arg),
   'meta:mesajCevapla': (arg) => mesajCevapla(arg),
   'meta:yorumdanMesaj': (arg) => yorumdanMesaj(arg),
