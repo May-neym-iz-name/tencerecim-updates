@@ -28,13 +28,16 @@ const DURUM_ETIKET = {
   WAITING_UPSELL_ACTION: 'Upsell Bekliyor',
 }
 
-// OrderPaymentStatusEnum — yalnızca 4 değer: PAID, WAITING, PARTIALLY_PAID, FAILED.
-// (PENDING savunmacı alias; iade/iptal ödeme durumunda değil order/paket durumundadır.)
+// OrderPaymentStatusEnum (ikas tam liste): PAID, WAITING, PARTIALLY_PAID, FAILED, OVER_PAID, REFUNDED.
+// OVER_PAID = iade sonrası sipariş tutarı düşer, tahsil edilen ödeme aynı kalır → "fazla ödeme".
+// (PENDING savunmacı alias.)
 const ODEME_ETIKET = {
   PAID: 'Ödendi', WAITING: 'Bekliyor', PENDING: 'Bekliyor', PARTIALLY_PAID: 'Kısmen Ödendi', FAILED: 'Başarısız',
+  OVER_PAID: 'Fazla Ödeme', REFUNDED: 'İade Edildi',
 }
 const odemeRengi = (d) => d === 'PAID' ? 'bg-emerald-100 text-emerald-700'
   : (d === 'REFUNDED' || d === 'FAILED' || d === 'CANCELLED') ? 'bg-red-100 text-red-700'
+  : (d === 'OVER_PAID') ? 'bg-purple-100 text-purple-700'
   : 'bg-amber-100 text-amber-700'
 
 // ikas orderPackageStatus (kargo/paket durumu) — "Kargoya Hazır", "Teslim Edildi" buradan gelir.
@@ -194,6 +197,18 @@ export default function OnlineSiparisler() {
       toast.success('Sipariş iptal edildi.')
       await detayAc(s.id); await yukle()
     } catch (e) { toast.error('İptal başarısız: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  // Bekleyen ödemeyi (havale/EFT) ikas'ta onaylar → ödeme durumu "Ödendi" olur.
+  async function ikasOdemeOnayla(s) {
+    if (!confirm(`#${s.siparis_no} siparişinin ödemesi "Ödendi" olarak işaretlensin mi? (Havale/EFT tahsilatı onaylandığında kullanın.)`)) return
+    setIslemMesgul('odeme')
+    try {
+      const r = await ikasApi.siparisOdemeOnayla({ id: s.id })
+      toast.success(r?.zatenOdenmis ? 'Ödeme zaten alınmış olarak güncellendi.' : 'Ödeme alındı olarak işaretlendi.')
+      await detayAc(s.id); await yukle()
+    } catch (e) { toast.error('Ödeme onayı başarısız: ' + e.message) }
     finally { setIslemMesgul('') }
   }
 
@@ -604,6 +619,13 @@ export default function OnlineSiparisler() {
                   title="Durum ve kalem bilgilerini ikas'tan yeniden çeker (iptal/iade için kalem ID'lerini doldurur)">
                   {islemMesgul === 'tazele' ? '…' : '🔁 Tazele'}
                 </button>
+                {!['PAID', 'OVER_PAID', 'REFUNDED'].includes(secili.odeme_durumu) && (
+                  <button onClick={() => ikasOdemeOnayla(secili)} disabled={!!islemMesgul}
+                    className="bg-cyan-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-cyan-700 disabled:opacity-50"
+                    title="Bekleyen ödemeyi (havale/EFT) ikas'ta 'Ödendi' olarak onaylar">
+                    {islemMesgul === 'odeme' ? '…' : '💰 Ödeme Alındı'}
+                  </button>
+                )}
                 <button onClick={() => ikasKargola(secili)} disabled={!!islemMesgul}
                   className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-emerald-700 disabled:opacity-50">
                   🚚 Kargolandı Bildir

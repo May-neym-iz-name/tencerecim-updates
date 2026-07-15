@@ -146,6 +146,7 @@ export const ikasApi = {
   siparisGecmisCek: () => invoke('ikas:siparis-gecmis-cek'),
   durum: () => invoke('ikas:durum'),
   siparisKargola: (veri) => invoke('ikas:siparis-kargola', veri),
+  siparisOdemeOnayla: (veri) => invoke('ikas:siparis-odeme-onayla', veri),
   siparisIptal: (veri) => invoke('ikas:siparis-iptal', veri),
   siparisIade: (veri) => invoke('ikas:siparis-iade', veri),
   siparisAdresGetir: (id) => invoke('ikas:siparis-adres-getir', { id }),

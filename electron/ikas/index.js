@@ -685,6 +685,32 @@ module.exports = {
   },
 
   // Siparişin tüm kalemlerini ikas'ta iptal eder (isteğe bağlı stok iadesi).
+  // Bekleyen ödemeyi (havale/EFT, kapıda ödeme) ONAYLAR → ikas'ta ödeme durumu PAID olur.
+  // approvePendingOrderTransactions(orderId, paymentMethods:[PaymentMethodTypeEnum]) → Boolean.
+  // paymentMethods: siparişin gerçek ödeme yöntemi tip(ler)i ikas'tan tazelenip verilir.
+  'ikas:siparis-odeme-onayla': async ({ id }) => {
+    const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
+    const db = getDb()
+    const sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
+    if (!sip) throw new Error('Sipariş bulunamadı')
+    if (!sip.ikas_siparis_id) throw new Error('ikas sipariş kimliği yok')
+    // Ödeme yöntemi tip(ler)ini ikas'tan güncel al (yereldeki metin görüntüleme amaçlı olabilir).
+    const veri = await graphql(
+      `query($f: OrderFilterInput){ listOrder(filter: $f, pagination:{page:1,limit:1}){ data { id orderPaymentStatus paymentMethods { type } } } }`,
+      { f: { id: { eq: sip.ikas_siparis_id } } })
+    const o = veri?.listOrder?.data?.[0]
+    if (!o) throw new Error('Sipariş ikas\'ta bulunamadı')
+    if (o.orderPaymentStatus === 'PAID') { db.prepare("UPDATE online_siparisler SET odeme_durumu = 'PAID' WHERE id = ?").run(id); return { ok: true, zatenOdenmis: true } }
+    const yontemler = [...new Set((o.paymentMethods || []).map(p => p.type).filter(Boolean))]
+    if (!yontemler.length) throw new Error('Ödeme yöntemi belirlenemedi')
+    const sonuc = await graphql(
+      `mutation A($input: ApproveOrderTransactionsInput!){ approvePendingOrderTransactions(input: $input) }`,
+      { input: { orderId: sip.ikas_siparis_id, paymentMethods: yontemler } })
+    if (sonuc?.approvePendingOrderTransactions !== true) throw new Error('ikas ödeme onayını kabul etmedi')
+    db.prepare("UPDATE online_siparisler SET odeme_durumu = 'PAID' WHERE id = ?").run(id)
+    return { ok: true }
+  },
+
   'ikas:siparis-iptal': async ({ id, restock = true }) => {
     const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
     const db = getDb()
