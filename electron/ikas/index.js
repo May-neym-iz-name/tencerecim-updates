@@ -696,8 +696,8 @@ module.exports = {
     if (!sip.ikas_siparis_id) throw new Error('ikas sipariş kimliği yok')
     // Ödeme yöntemi tip(ler)ini ikas'tan güncel al (yereldeki metin görüntüleme amaçlı olabilir).
     const veri = await graphql(
-      `query($f: OrderFilterInput){ listOrder(filter: $f, pagination:{page:1,limit:1}){ data { id orderPaymentStatus paymentMethods { type } } } }`,
-      { f: { id: { eq: sip.ikas_siparis_id } } })
+      `query($f: StringFilterInput){ listOrder(id: $f, pagination:{page:1,limit:1}){ data { id orderPaymentStatus paymentMethods { type } } } }`,
+      { f: { eq: sip.ikas_siparis_id } })
     const o = veri?.listOrder?.data?.[0]
     if (!o) throw new Error('Sipariş ikas\'ta bulunamadı')
     if (o.orderPaymentStatus === 'PAID') { db.prepare("UPDATE online_siparisler SET odeme_durumu = 'PAID' WHERE id = ?").run(id); return { ok: true, zatenOdenmis: true } }
@@ -771,9 +771,10 @@ module.exports = {
     }
     const tamIade = iade.length === kalemler.length && iade.every(x => x.miktar >= (Number(x.k.miktar) || 0))
 
-    // ikas iade için stok lokasyonu ister (zorunlu). İlk seçili kalemin ikas lokasyonu.
+    // ikas iade için stok lokasyonu ister (para iadesi orderRefundTransactions dahil ZORUNLU
+    // tutuyor — restock false olsa bile). İlk seçili kalemin ikas lokasyonu.
     const stockLocationId = iade.map(x => kalemIkasLokId(db, x.k)).find(Boolean) || null
-    if (restock && !stockLocationId) {
+    if (!stockLocationId) {
       throw new Error('İade için stok lokasyonu belirlenemedi. Kalemlerin çıkış mağazasını seçin ve mağazanın ikas eşleşmesini yapın.')
     }
     // CANLI ŞEMA: OrderRefundLineInput.price ZORUNLU (Float!). OrderRefundInput'ta paymentGatewayId YOK.
@@ -781,9 +782,35 @@ module.exports = {
       orderLineItemId: x.k.ikas_kalem_id, quantity: x.miktar,
       price: Number(x.k.birim_fiyat) || 0, restockItems: !!restock,
     }))
+    // PARA İADESİ: orderRefundLines yalnızca kalemleri iade eder (sipariş REFUNDED olur) ama
+    // parayı GERİ ÖDEMEZ → ödeme durumu OVER_PAID'de kalır. Gerçek tahsilat iadesi için
+    // orderRefundTransactions ŞART ve her biri transactionId ister (String!). Bu yüzden önce
+    // siparişin SALE (tahsilat) işlemlerini çekip iade tutarını onlara dağıtırız.
+    // refundToStoreCredit:false → müşterinin ödediği yönteme (kart/havale) geri döner.
+    const kalemToplam = orderRefundLines.reduce((s, l) => s + (Number(l.price) || 0) * (Number(l.quantity) || 0), 0)
+    const iadeTutari = Math.round((kalemToplam + (refundShipping ? (Number(sip.kargo_tutari) || 0) : 0)) * 100) / 100
+    let orderRefundTransactions = []
+    if (iadeTutari > 0) {
+      const txVeri = await graphql(
+        `query($o:String!){ listOrderTransactions(orderId:$o, includeAll:true){ id amount type status } }`,
+        { o: sip.ikas_siparis_id })
+      const txlar = txVeri?.listOrderTransactions || []
+      const satislar = txlar.filter(t => t.type === 'SALE' && t.status === 'SUCCESS')
+      const zatenIade = txlar.filter(t => t.type === 'REFUND' && t.status === 'SUCCESS')
+        .reduce((s, t) => s + (Number(t.amount) || 0), 0)
+      const tahsilat = satislar.reduce((s, t) => s + (Number(t.amount) || 0), 0)
+      // İade edilebilir tavan: tahsil edilen − daha önce iade edilen. İade tutarını aşma.
+      let kalan = Math.min(iadeTutari, Math.round((tahsilat - zatenIade) * 100) / 100)
+      for (const t of satislar) {
+        if (kalan <= 0.001) break
+        const pay = Math.round(Math.min(kalan, Number(t.amount) || 0) * 100) / 100
+        if (pay > 0) { orderRefundTransactions.push({ transactionId: t.id, amount: pay, refundToStoreCredit: false }); kalan -= pay }
+      }
+    }
     await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
       input: {
         orderId: sip.ikas_siparis_id, orderRefundLines,
+        ...(orderRefundTransactions.length ? { orderRefundTransactions } : {}),
         ...(stockLocationId ? { stockLocationId } : {}),
         refundShipping: !!refundShipping, sendNotificationToCustomer: !!bildir,
       },

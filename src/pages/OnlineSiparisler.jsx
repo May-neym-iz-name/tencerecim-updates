@@ -613,7 +613,9 @@ export default function OnlineSiparisler() {
             {/* Alt eylem çubuğu */}
             <div className="px-6 py-3 bg-white border-t">
               <p className="text-[11px] uppercase tracking-wide text-gray-400 font-semibold mb-2">ikas Sipariş İşlemleri</p>
-              <div className="flex flex-wrap gap-2">
+              <div className="space-y-2">
+                {/* Üst satır: normal işlemler */}
+                <div className="flex flex-wrap gap-2">
                 <button onClick={() => siparisTazele(secili)} disabled={!!islemMesgul}
                   className="bg-slate-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-slate-700 disabled:opacity-50"
                   title="Durum ve kalem bilgilerini ikas'tan yeniden çeker (iptal/iade için kalem ID'lerini doldurur)">
@@ -644,7 +646,10 @@ export default function OnlineSiparisler() {
                   className="bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-gray-800 disabled:opacity-50">
                   ✏️ Adres Düzenle
                 </button>
-                <div className="flex-1" />
+                </div>
+                {/* Alt satır: geri alınamaz işlemler — üstten ayraçla ayrı */}
+                <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
+                <span className="text-[11px] text-gray-400 self-center mr-1">Geri alınamaz:</span>
                 <button onClick={() => ikasIptal(secili)} disabled={!!islemMesgul}
                   className="bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-orange-700 disabled:opacity-50">
                   ✖ İptal Et
@@ -653,6 +658,7 @@ export default function OnlineSiparisler() {
                   className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-red-700 disabled:opacity-50">
                   {islemMesgul === 'iade-hazirla' ? '…' : '↩ İade Et'}
                 </button>
+                </div>
               </div>
             </div>
           </div>
