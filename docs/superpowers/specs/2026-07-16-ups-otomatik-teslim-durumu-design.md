@@ -1,7 +1,35 @@
 # UPS Otomatik Teslim Durumu — Tasarım
 
 **Tarih:** 2026-07-16
-**Durum:** onaylandı, uygulanacak
+**Durum: İPTAL — uygulanmadı. Kuru tarama özelliğin gereksiz olduğunu gösterdi.**
+
+> ## İptal gerekçesi (2026-07-16)
+>
+> Kuru tarama gerçek veriyle çalıştırıldı. Sonuç: **boşluk yok, köprüye gerek yok.**
+>
+> Siparişe bağlı, iptal olmayan tüm gönderi kargoları (tarih sınırı yok):
+> ```
+> Toplam                                : 20
+> UPS teslim + ikas teslim (uyumlu)     : 5    <- ikas hepsini KENDİ yazmış
+> UPS teslim + ikas DEĞİL  (BOŞLUK)     : 0    <- düzeltilecek sipariş yok
+> UPS numarayı tanımıyor                : 15   <- kurye okutmamış, bkz. aşağıda
+> ```
+> Tüm zamanlarda 333 sipariş `DELIVERED`, 330'unda ikas'ın takip no'su dolu.
+> ikas'ın kendi UPS entegrasyonu takip edip durumu yazıyor; bizim polling'imiz geri çekiyor.
+> Köprü, ikas ile aynı alana yazan ikinci bir yazıcı olurdu.
+>
+> **Yan kazanımlar:**
+> - UPS takip servisi + `StatusCode='2'` eşlemesi **ampirik doğrulandı** (teslim olmuş siparişler
+>   kod=2 + gerçek şube/zaman döndürdü). İleride gerekirse eşleme hazır.
+> - `TRACKING NUMBER NOT FOUND (kod 13)` = kurye henüz okutmamış; hata değil.
+> - Kalıcı referans `docs/ups-api-reference.md` yazıldı (kod tabloları .xls'te kilitliydi).
+> - `kargolar.tip` NULL tuzağı bulundu: `tip='gonderi'` filtresi 64 eski kaydı sessizce eliyor.
+> - **Yeni sorun:** siparişe bağlı 20 kargonun 15'i UPS'e hiç verilmemiş (en eskisi 13 gün).
+>   Aynı sipariş için biri bizim biri ikas'ın iki irsaliye var → mükerrer irsaliye sorunu, ayrı iş.
+>
+> Aşağısı iptal edilen tasarımın orijinal metnidir.
+
+---
 
 ## Problem
 
