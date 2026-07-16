@@ -171,6 +171,7 @@ const handlerModules = [
   require('./db/setler'),
   require('./db/meta-ayarlar'),
   require('./db/sosyal-mesajlar'),
+  require('./db/sosyal-otomasyon'),
   require('./meta'),
   require('./meta/giris'),
   require('./fis-yazdir'),

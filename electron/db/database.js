@@ -453,6 +453,45 @@ function migrate() {
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN konu_baslik TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN konu_gorsel TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN konu_link TEXT") } catch {}
+  // Yoruma özel mesaj (private reply) gönderildi damgası. Meta yorum başına TEK mesaj hakkı
+  // verir → arayüz bunu gösterip ikinci denemeyi engeller. NULL = gönderilmedi.
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_tarihi TEXT") } catch {}
+
+  // --- Gönderi bazlı otomatik yorum cevabı ---
+  // Şablon kütüphanesi otomasyondan AYRI: şablonun ömrü gönderiden uzun (yeni çelik kase
+  // gönderisinde aynı şablon tekrar seçilir).
+  db.exec(`CREATE TABLE IF NOT EXISTS sosyal_sablonlar (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ad TEXT NOT NULL,
+    urun_id INTEGER REFERENCES urunler(id),
+    urun_adi TEXT NOT NULL,
+    aciklama TEXT,
+    fiyat REAL,
+    link TEXT,
+    whatsapp TEXT,
+    aktif INTEGER DEFAULT 1,
+    olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+  );`)
+  // fiyat NULL = "ürüne sor" (canlı fiyat), dolu = "bunu yaz" (kampanya/set fiyatı).
+  // Ayrı bir fiyat_tipi bayrağı YOK — NULL'ın kendisi anlam taşır, iki alanı senkron tutma derdi olmaz.
+
+  db.exec(`CREATE TABLE IF NOT EXISTS sosyal_otomasyonlar (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform TEXT NOT NULL,
+    konu_id TEXT NOT NULL UNIQUE,
+    aktif INTEGER DEFAULT 0,
+    acik_yanit_metni TEXT,
+    baslangic_tarihi TEXT,
+    olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+  );`)
+
+  db.exec(`CREATE TABLE IF NOT EXISTS sosyal_otomasyon_sablonlar (
+    otomasyon_id INTEGER NOT NULL REFERENCES sosyal_otomasyonlar(id) ON DELETE CASCADE,
+    sablon_id INTEGER NOT NULL REFERENCES sosyal_sablonlar(id),
+    sira INTEGER DEFAULT 0,
+    PRIMARY KEY (otomasyon_id, sablon_id)
+  );`)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sosyal_oto_konu ON sosyal_otomasyonlar(konu_id)")
 }
 
 function seedLokasyonlar() {

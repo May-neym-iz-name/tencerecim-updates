@@ -214,6 +214,15 @@ async function tumunuCek() {
   for (const [ad, fn] of gorevler) {
     try { sonuc[ad] = await fn() } catch (e) { sonuc.hatalar.push(`${ad}: ${e.message}`) }
   }
+  // Otomasyon: yorumlar çekildikten SONRA çalışır (yeni yorumlar bu turda yakalansın).
+  // Hata turu bozmaz — çekme işi otomasyondan bağımsız sürmeli.
+  try {
+    const { _otomasyonCalistir } = require('./otomasyon')
+    sonuc.otomasyon = await _otomasyonCalistir()
+  } catch (e) {
+    sonuc.hatalar.push(`otomasyon: ${e.message}`)
+  }
+
   // Son tur özetini sakla (UI durum satırı okur). IG DM App Review'a kadar sessizce
   // atlandığı için hatalara girmez → yanlış "hata var" sinyali vermez; ayrı alanda raporlanır.
   sonuc.igDmEngel = _igDmSonHata
@@ -339,44 +348,89 @@ async function mesajCevapla({ id, metin, kullanici }) {
   return { ok: true }
 }
 
-// Yorumdan kullanıcıya ÖZEL mesaj (Meta Business Suite'teki "Send message").
-// {comment_id}/private_replies: herkese açık yoruma tek seferlik özel DM gönderir
-// (24 saat penceresi kuralına takılmaz). FB'de pages_messaging ile çalışır;
-// IG'de instagram_manage_messages + App Review gerekir.
+// Yorumdan kullanıcıya ÖZEL mesaj — Messenger Private Replies (Business Suite'teki "Send message").
+// Herkese açık yoruma tek seferlik özel DM gönderir; 24 saat penceresi kuralına takılmaz.
+//
+// FB ve IG AYNI uç noktayı kullanır: POST {PAGE_ID}/messages + recipient.comment_id.
+// Meta dokümanı açıkça "the Facebook Page ID, NOT the Instagram User ID" diyor — IG yorumu için de
+// Sayfa ID'si kullanılır. {ig_id}/messages Instagram Login akışına aittir; biz Facebook Login +
+// Sayfa token'ı kullanıyoruz.
+//
+// İzinler: instagram_manage_comments + pages_messaging (ikisi de token'da var).
+// App Review GEREKMEZ — Meta: "App Review is not required if your app is exclusively for a
+// business you own or manage". Sayfa/IG hesabı bizim.
+//
+// TARİHÇE (2026-07-16): IG dalı {ig_id}/messages'a POST ediyordu → Meta izin hatası veriyordu →
+// bu "instagram_manage_messages için App Review şart" sanıldı ve aylarca boşuna onay beklendi.
+// Sorun izin değil, YANLIŞ UÇ NOKTAYDI.
 async function yorumdanMesaj({ id, metin, kullanici }) {
   const row = getDb().prepare('SELECT * FROM sosyal_mesajlar WHERE id = ?').get(id)
   if (!row) throw new Error('Yorum bulunamadı.')
   if (row.tur !== 'yorum') throw new Error('Bu yalnızca yorumlar için kullanılabilir.')
   if (!metin || !metin.trim()) throw new Error('Mesaj boş olamaz.')
+  const sayfaId = client._sayfaId()
+  if (!sayfaId) throw new Error('Sayfa bağlı değil (Ayarlar > Sosyal Medya).')
+  let yanit
   try {
-    if (row.platform === 'instagram') {
-      // IG: {ig_id}/messages + recipient.comment_id (instagram_manage_messages + App Review gerekir).
-      const igId = client._igId()
-      if (!igId) throw new Error('Instagram bağlı değil.')
-      await client.post(`${igId}/messages`, {
-        recipient: JSON.stringify({ comment_id: row.harici_id }),
-        message: JSON.stringify({ text: metin.trim() }),
-      })
-    } else {
-      // FB: {page_id}/messages + recipient.comment_id (güncel Messenger Private Replies).
-      // Eski {comment_id}/private_replies iç içe yorum / bazı gönderilerde kod 100 veriyordu;
-      // messages uç noktası daha güvenilir ve IG ile aynı desen.
-      const sayfaId = client._sayfaId()
-      await client.post(`${sayfaId}/messages`, {
-        recipient: JSON.stringify({ comment_id: row.harici_id }),
-        message: JSON.stringify({ text: metin.trim() }),
-      })
-    }
+    yanit = await client.post(`${sayfaId}/messages`, {
+      recipient: JSON.stringify({ comment_id: row.harici_id }),
+      message: JSON.stringify({ text: metin.trim() }),
+    })
   } catch (e) {
-    if (row.platform === 'instagram') {
-      throw new Error('Instagram özel mesajı için App Review onayı gerekiyor (instagram_manage_messages). FB yorumlarında şimdi çalışır. Ayrıntı: ' + e.message)
-    }
-    // FB'de tipik nedenler: yoruma zaten bir kez özel yanıt verilmiş (yorum başına tek hak),
-    // yorum 7 günden eski, ya da paylaşılan/reklam gönderisi. Ayrıntıyı kullanıcıya göster.
-    throw new Error('Özel mesaj gönderilemedi. Not: Her yoruma yalnızca 1 kez ve yorum 7 günden yeniyse özel mesaj gönderilebilir. Ayrıntı: ' + e.message)
+    // SEBEP UYDURMA — Meta'nın hatasını olduğu gibi göster, olası sebepleri yalnızca ipucu olarak sun.
+    throw new Error(
+      'Özel mesaj gönderilemedi. Sık sebepler: bu yoruma zaten bir kez mesaj gönderilmiş ' +
+      '(yorum başına tek hak), yorum 7 günden eski, ya da paylaşılan/reklam gönderisi. ' +
+      'Meta\'nın hatası: ' + e.message
+    )
   }
-  getDb().prepare("UPDATE sosyal_mesajlar SET cevaplayan_kullanici = ? WHERE id = ?").run(kullanici || null, id)
-  return { ok: true }
+  // Meta yanıtı: { recipient_id, message_id }. recipient_id = kullanıcının bize özel kimliği (IGSID).
+  // Şekli platforma göre değişebiliyor → ham yanıtı logla (teşhis için; konuşma çözülemezse buraya bakılır).
+  console.log('[meta] özel mesaj yanıtı:', JSON.stringify(yanit))
+  const aliciId = yanit?.recipient_id || null
+  const mesajId = yanit?.message_id || yanit?.id || null
+
+  getDb().prepare(
+    "UPDATE sosyal_mesajlar SET cevaplayan_kullanici = ?, ozel_mesaj_tarihi = datetime('now','localtime') WHERE id = ?"
+  ).run(kullanici || null, id)
+
+  // Gönderdiğimizi gelen kutusuna da yaz — yoksa mesaj Instagram'a gider ama programda izi olmaz
+  // (mesajCevapla bunu yapıyordu, burası atlıyordu → "konuşma düşmüyor" şikayeti).
+  //
+  // konu_id için gerçek konuşma id'si gerekir. Tüm IG konuşma listesini taramak ÇOK ağır
+  // (~25 sn/sayfa, sık kod 1) — ama recipient_id elimizde olduğu için user_id filtresiyle
+  // TEK konuşmayı hedefli sorgulayabiliyoruz. Bu ucuz.
+  // NOT: filtresiz konuşma LİSTESİ Advanced Access ister (kod 2534084 "görevi olmayan
+  // kullanıcılarla çok fazla konuşma" → 27 sn timeout). Ama user_id ile TEK konuşma
+  // sorgusu Advanced Access istemez ve ~1.6 sn'de döner (2026-07-16 canlı doğrulandı).
+  let konusmaId = null
+  if (!aliciId) {
+    console.warn('[meta] yanıtta recipient_id yok → konuşma çözülemiyor. Ham yanıt:', JSON.stringify(yanit))
+  } else {
+    try {
+      const k = await client.get(`${sayfaId}/conversations`, {
+        fields: 'id',
+        user_id: aliciId,
+        ...(row.platform === 'instagram' ? { platform: 'instagram' } : {}),
+      }, { timeout: 30000, deneme: 1 })
+      konusmaId = k?.data?.[0]?.id || null
+      if (!konusmaId) console.warn('[meta] konuşma sorgusu boş döndü. user_id=' + aliciId)
+    } catch (e) {
+      // Mesaj GİTTİ; yalnız yerel kayıt eksik kalıyor → hatayı yutma, göster.
+      console.error('[meta] konuşma çözülemedi (mesaj yine de gitti). user_id=' + aliciId + ' hata: ' + e.message)
+    }
+  }
+  if (konusmaId) {
+    _upsertMesaj({
+      platform: row.platform, tur: 'dm',
+      harici_id: mesajId || `giden_${Date.now()}_${id}`,
+      konu_id: konusmaId,
+      gonderen_id: aliciId,
+      gonderen_ad: row.gonderen_ad || 'Müşteri',
+      metin: metin.trim(), yon: 'giden', mesaj_tarihi: new Date().toISOString(),
+    })
+  }
+  return { ok: true, konusmaId, aliciId }
 }
 
 module.exports = {
