@@ -6,15 +6,18 @@ const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const SAYFA_ADI = 'tenceremtava' // kendi yorumlarımızı elemek için (bkz. _adaylar)
 const PENCERE_GUN = 7            // Meta: yoruma özel mesaj yalnız 7 gün içinde gönderilebilir
 
-// Şablonun fiyatını çözer: sablon.fiyat doluysa o, değilse ürünün canlı satış fiyatı.
-// NULL fiyat = "ürüne sor" — zam yapılınca şablon kendiliğinden güncel kalır.
+// Şablonun fiyatını çözer. Öncelik: sablon.fiyat (elle yazılmış) → ürünün canlı satış fiyatı
+// → setin canlı fiyatı. NULL fiyat = "kaynağa sor" — zam yapılınca şablon kendiliğinden güncel kalır.
+// Şablon ya ürüne ya sete bağlanır (ikisi birden değil); setler ayrı tabloda çünkü satışta
+// bileşenlerine açılıyorlar, urunler'de karşılıkları yok.
 function _sablonlariCoz(db, otomasyonId) {
   return db.prepare(`
     SELECT s.urun_adi, s.aciklama, s.link, s.whatsapp,
-           COALESCE(s.fiyat, u.satis_fiyati) AS fiyat
+           COALESCE(s.fiyat, u.satis_fiyati, st.fiyat) AS fiyat
     FROM sosyal_otomasyon_sablonlar os
     JOIN sosyal_sablonlar s ON s.id = os.sablon_id
     LEFT JOIN urunler u ON u.id = s.urun_id
+    LEFT JOIN setler st ON st.id = s.set_id
     WHERE os.otomasyon_id = ? AND s.aktif = 1
     ORDER BY os.sira, s.id
   `).all(otomasyonId)
@@ -57,27 +60,34 @@ module.exports = {
   _adaylar,
   _sablonlariCoz,
 
-  // Şablon kütüphanesi (ürün bağlıysa canlı fiyatı da döner — arayüz önizlemede kullanır).
+  // Şablon kütüphanesi. Bağlı kaynağın (ürün veya set) canlı fiyatını `kaynak_fiyati` olarak
+  // döner — arayüz "canlı" rozetinde ve önizlemede kullanır.
   'sosyal:sablonlar': () => getDb().prepare(`
-    SELECT s.*, u.satis_fiyati AS urun_fiyati, u.ad AS urun_gercek_adi
-    FROM sosyal_sablonlar s LEFT JOIN urunler u ON u.id = s.urun_id
+    SELECT s.*, COALESCE(u.satis_fiyati, st.fiyat) AS kaynak_fiyati,
+           COALESCE(u.ad, st.ad) AS kaynak_adi,
+           CASE WHEN s.set_id IS NOT NULL THEN 'set'
+                WHEN s.urun_id IS NOT NULL THEN 'urun' END AS kaynak_tipi
+    FROM sosyal_sablonlar s
+    LEFT JOIN urunler u ON u.id = s.urun_id
+    LEFT JOIN setler st ON st.id = s.set_id
     WHERE s.aktif = 1 ORDER BY s.ad
   `).all(),
 
-  'sosyal:sablonKaydet': ({ id, ad, urun_id, urun_adi, aciklama, fiyat, link, whatsapp }) => {
+  'sosyal:sablonKaydet': ({ id, ad, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp }) => {
     yetkiKontrol('sosyal_medya_yonet')
     if (!ad || !ad.trim()) throw new Error('Şablon adı gerekli.')
     if (!urun_adi || !urun_adi.trim()) throw new Error('Ürün adı gerekli.')
+    if (urun_id && set_id) throw new Error('Şablon ya ürüne ya sete bağlanabilir, ikisine birden değil.')
     const db = getDb()
-    const p = [ad.trim(), urun_id || null, urun_adi.trim(), aciklama || null,
+    const p = [ad.trim(), urun_id || null, set_id || null, urun_adi.trim(), aciklama || null,
       fiyat === '' || fiyat == null ? null : Number(fiyat), link || null, whatsapp || null]
     if (id) {
-      db.prepare(`UPDATE sosyal_sablonlar SET ad=?, urun_id=?, urun_adi=?, aciklama=?,
+      db.prepare(`UPDATE sosyal_sablonlar SET ad=?, urun_id=?, set_id=?, urun_adi=?, aciklama=?,
         fiyat=?, link=?, whatsapp=? WHERE id=?`).run(...p, id)
       return { id }
     }
     const r = db.prepare(`INSERT INTO sosyal_sablonlar
-      (ad, urun_id, urun_adi, aciklama, fiyat, link, whatsapp) VALUES (?,?,?,?,?,?,?)`).run(...p)
+      (ad, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp) VALUES (?,?,?,?,?,?,?,?)`).run(...p)
     return { id: r.lastInsertRowid }
   },
 

@@ -492,6 +492,9 @@ function migrate() {
     PRIMARY KEY (otomasyon_id, sablon_id)
   );`)
   db.exec("CREATE INDEX IF NOT EXISTS idx_sosyal_oto_konu ON sosyal_otomasyonlar(konu_id)")
+  // Şablon bir SET'e de bağlanabilir (setler ayrı tabloda; satışta bileşenlere açıldıkları
+  // için urunler'e yazılmazlar). Fiyat çözümü: sablon.fiyat → urun.satis_fiyati → set.fiyat.
+  try { db.exec("ALTER TABLE sosyal_sablonlar ADD COLUMN set_id INTEGER REFERENCES setler(id)") } catch {}
 }
 
 function seedLokasyonlar() {

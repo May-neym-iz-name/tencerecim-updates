@@ -51,11 +51,12 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
             <div className="min-w-0 flex-1">
               <div className="font-semibold text-sm truncate">{s.ad}</div>
               <div className="text-xs text-gray-500 truncate">
+                {s.kaynak_tipi === 'set' && <span title="Set">📦 </span>}
                 {s.urun_adi}
                 {s.fiyat != null
                   ? <span className="text-gray-400"> · {Number(s.fiyat).toLocaleString('tr-TR')} TL (sabit)</span>
-                  : s.urun_fiyati != null
-                    ? <span className="text-emerald-600"> · {Number(s.urun_fiyati).toLocaleString('tr-TR')} TL (canlı)</span>
+                  : s.kaynak_fiyati != null
+                    ? <span className="text-emerald-600"> · {Number(s.kaynak_fiyati).toLocaleString('tr-TR')} TL (canlı)</span>
                     : <span className="text-amber-600"> · fiyat yok</span>}
               </div>
             </div>
