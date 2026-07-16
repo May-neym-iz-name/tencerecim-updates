@@ -35,7 +35,9 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
     ...(sablon || {}),
   })
   const [urunler, setUrunler] = useState([])
-  const [urundenAl, setUrundenAl] = useState(sablon ? sablon.fiyat == null : true)
+  // Ürün YOKKEN "üründen al" anlamsız — false başlar, yoksa fiyat kutusu kilitli kalır
+  // ve kutucuk da (ürün olmadığı için) kilitli olduğundan çıkışı olmayan bir durum doğar.
+  const [urundenAl, setUrundenAl] = useState(!!(sablon?.urun_id && sablon?.fiyat == null))
 
   // urunler:listele → { toplam, urunler }. boyut:0 = sınırsız (electron/db/urunler.js).
   useEffect(() => {
@@ -45,13 +47,17 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
   const secUrun = (id) => {
     const u = urunler.find(x => String(x.id) === String(id))
     setV(o => ({ ...o, urun_id: u ? u.id : null, urun_adi: o.urun_adi || (u?.ad || '') }))
+    // Ürün seçilince canlı fiyat varsayılan olsun; ürün kaldırılınca elle yazmaya dön.
+    setUrundenAl(!!u)
   }
   const secili = urunler.find(u => String(u.id) === String(v.urun_id))
-  const etkinFiyat = urundenAl ? (secili?.satis_fiyati ?? '') : v.fiyat
+  // "Üründen al" ancak gerçekten ürün bağlıysa geçerli — tek doğruluk kaynağı bu.
+  const urundenAlEtkin = urundenAl && !!v.urun_id
+  const etkinFiyat = urundenAlEtkin ? (secili?.satis_fiyati ?? '') : v.fiyat
   const metin = onizle({ ...v, fiyat: etkinFiyat })
   const asildi = metin.length > MAKS_KARAKTER
 
-  const kaydet = () => onKaydet({ ...v, fiyat: urundenAl ? null : (v.fiyat || null) })
+  const kaydet = () => onKaydet({ ...v, fiyat: urundenAlEtkin ? null : (v.fiyat || null) })
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onKapat}>
@@ -80,17 +86,22 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
             </Alan>
             <Alan etiket="Fiyat">
               <div className="flex items-center gap-2">
-                <input value={urundenAl ? (secili?.satis_fiyati ?? '') : (v.fiyat || '')} disabled={urundenAl}
+                <input value={urundenAlEtkin ? (secili?.satis_fiyati ?? '') : (v.fiyat || '')}
+                  disabled={urundenAlEtkin}
                   onChange={e => setV(o => ({ ...o, fiyat: e.target.value }))}
-                  placeholder="1450" className="flex-1 border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100" />
-                <label className="flex items-center gap-1 text-xs whitespace-nowrap">
-                  <input type="checkbox" checked={urundenAl} disabled={!v.urun_id}
+                  placeholder="1450" className="flex-1 border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500" />
+                <label className={`flex items-center gap-1 text-xs whitespace-nowrap ${v.urun_id ? '' : 'text-gray-300'}`}
+                  title={v.urun_id ? 'Fiyatı programdaki üründen al' : 'Önce ürün seçin'}>
+                  <input type="checkbox" checked={urundenAlEtkin} disabled={!v.urun_id}
                     onChange={e => setUrundenAl(e.target.checked)} />
                   Üründen al
                 </label>
               </div>
-              {urundenAl && !v.urun_id && <p className="text-[11px] text-amber-600 mt-1">Önce ürün seçin</p>}
-              {urundenAl && v.urun_id && <p className="text-[11px] text-emerald-600 mt-1">Fiyat değişince mesaj kendiliğinden güncellenir</p>}
+              {urundenAlEtkin
+                ? <p className="text-[11px] text-emerald-600 mt-1">Fiyat üründen geliyor — zam yapınca mesaj kendiliğinden güncellenir</p>
+                : <p className="text-[11px] text-gray-400 mt-1">
+                    Fiyat elle yazılıyor{v.urun_id ? " — canlı fiyat için 'Üründen al'ı işaretleyin" : ''}
+                  </p>}
             </Alan>
             <Alan etiket="Online sipariş linki">
               <input value={v.link || ''} onChange={e => setV(o => ({ ...o, link: e.target.value }))}
