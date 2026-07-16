@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { sosyalApi, metaApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
+import OtomasyonPaneli from '../components/OtomasyonPaneli'
 
 // Üst sekmeler — Meta Business Suite düzeni. mod: 'karma'|'dm'|'yorum'
 const SEKMELER = [
@@ -212,8 +213,14 @@ export default function SosyalMedya() {
     if (!ozelTaslak.trim() || !ozelMesaj) return
     setMesgul(true)
     try {
-      await metaApi.yorumdanMesaj({ id: ozelMesaj, metin: ozelTaslak, kullanici })
-      toast.success('Kullanıcıya özel mesaj gönderildi'); setOzelMesaj(null); setOzelTaslak('')
+      const r = await metaApi.yorumdanMesaj({ id: ozelMesaj, metin: ozelTaslak, kullanici })
+      // konusmaId dolduysa mesaj DM sekmesindeki konuşmaya da işlendi; boşsa konuşma
+      // çözülemedi (mesaj yine de gitti) → polling sonra yakalar, kullanıcıyı yanıltma.
+      toast.success(r?.konusmaId
+        ? 'Özel mesaj gönderildi (konuşma Instagram sekmesine eklendi)'
+        : 'Özel mesaj gönderildi (konuşma birazdan Instagram sekmesine düşecek)')
+      setOzelMesaj(null); setOzelTaslak('')
+      konuSec(seciliKonu) // "Mesaj gönderildi" işareti hemen görünsün
     } catch (e) { toast.error('Gönderilemedi: ' + e.message) }
     finally { setMesgul(false) }
   }
@@ -516,7 +523,15 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                   <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 pl-2">
                     <span>{zaman(y.mesaj_tarihi)}</span>
                     <button onClick={() => { setCevapId(cevapId === y.id ? null : y.id); setTaslak(''); setOzelMesaj(null) }} className="hover:text-gray-800 font-medium">Yanıtla</button>
-                    <button onClick={() => { setOzelMesaj(y.id); setOzelTaslak(''); setCevapId(null) }} className="text-blue-600 hover:underline font-medium">Mesaj gönder</button>
+                    {/* Meta yorum başına YALNIZCA 1 özel mesaj hakkı verir → gönderildiyse butonu kapat,
+                        yoksa ikinci deneme her seferinde hataya düşer. */}
+                    {y.ozel_mesaj_tarihi ? (
+                      <span className="text-blue-600" title={`Özel mesaj gönderildi: ${zaman(y.ozel_mesaj_tarihi)} (yorum başına tek hak)`}>
+                        💬 Mesaj gönderildi
+                      </span>
+                    ) : (
+                      <button onClick={() => { setOzelMesaj(y.id); setOzelTaslak(''); setCevapId(null) }} className="text-blue-600 hover:underline font-medium">Mesaj gönder</button>
+                    )}
                     {y.cevaplayan_kullanici && <span className="text-emerald-600">✓ {y.cevaplayan_kullanici}</span>}
                   </div>
                   {/* Yanıtlar: bizimkiler (giden) mor kutuda; müşteri yanıtları (gelen) girintili yorum olarak. */}
@@ -569,15 +584,18 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
           })}
         </div>
       </div>
-      {/* SAĞ: gönderi önizleme */}
-      <div className="w-[300px] flex-shrink-0 p-4 bg-gray-50 overflow-y-auto hidden lg:block">
-        {konu.konu_gorsel
-          ? <img src={konu.konu_gorsel} alt="" className="w-full rounded-lg object-cover mb-3" />
-          : <div className="w-full aspect-square rounded-lg bg-gray-200 flex items-center justify-center text-gray-400 mb-3">Görsel yok</div>}
-        <p className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-6">{konu.konu_baslik}</p>
-        <p className="text-xs text-gray-400 mt-2">{konu.yorum_sayisi} yorum</p>
-        {konu.konu_link && <a href={konu.konu_link} target="_blank" rel="noopener noreferrer"
-          className="inline-block mt-3 text-xs text-blue-600 hover:underline">Gönderiyi görüntüle ↗</a>}
+      {/* SAĞ: gönderi önizleme + otomasyon */}
+      <div className="w-[340px] flex-shrink-0 p-4 bg-gray-50 overflow-y-auto hidden lg:block space-y-3">
+        <div>
+          {konu.konu_gorsel
+            ? <img src={konu.konu_gorsel} alt="" className="w-full rounded-lg object-cover mb-3" />
+            : <div className="w-full aspect-square rounded-lg bg-gray-200 flex items-center justify-center text-gray-400 mb-3">Görsel yok</div>}
+          <p className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-4">{konu.konu_baslik}</p>
+          <p className="text-xs text-gray-400 mt-2">{konu.yorum_sayisi} yorum</p>
+          {konu.konu_link && <a href={konu.konu_link} target="_blank" rel="noopener noreferrer"
+            className="inline-block mt-2 text-xs text-blue-600 hover:underline">Gönderiyi görüntüle ↗</a>}
+        </div>
+        <OtomasyonPaneli konu={konu} />
       </div>
     </>
   )

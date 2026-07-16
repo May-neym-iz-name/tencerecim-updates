@@ -187,6 +187,13 @@ export const sosyalApi = {
   sayaclar: () => invoke('sosyal:sayaclar'),
   gonderiler: (params) => invoke('sosyal:gonderiler', params),
   konusmalar: (params) => invoke('sosyal:konusmalar', params),
+  // Gönderi bazlı otomatik yorum cevabı
+  sablonlar: () => invoke('sosyal:sablonlar'),
+  sablonKaydet: (v) => invoke('sosyal:sablonKaydet', v),
+  sablonSil: (id) => invoke('sosyal:sablonSil', id),
+  otomasyonGetir: (v) => invoke('sosyal:otomasyonGetir', v),
+  otomasyonKaydet: (v) => invoke('sosyal:otomasyonKaydet', v),
+  otomasyonAdaySayisi: (v) => invoke('sosyal:otomasyonAdaySayisi', v),
 }
 
 export const onlineSiparisApi = {
