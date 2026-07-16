@@ -5,6 +5,23 @@ const { autoUpdater } = require('electron-updater')
 const isDev = !app.isPackaged
 let mainWindow
 
+// TEK ÖRNEK KİLİDİ — ikinci kez açılırsa yeni pencere AÇILMAZ, mevcut pencere öne getirilir.
+// Neden şart: her örnek kendi polling turunu ve sosyal otomasyonunu çalıştırır. İki örnek =
+// aynı yorumlara paralel DM denemesi + hız kısıtı örnek başına sayıldığı için Meta'nın saatlik
+// sınırının iki katına çıkma riski. (2026-07-16'da iki dev örneği yüzünden gerçekten yaşandı.)
+// Ayrıca aynı SQLite dosyasına iki süreçten yazmak WAL'a rağmen kilit çekişmesi yaratır.
+const tekOrnekKilidi = app.requestSingleInstanceLock()
+if (!tekOrnekKilidi) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+    }
+  })
+}
+
 autoUpdater.autoDownload = true
 autoUpdater.autoInstallOnAppQuit = true
 
@@ -119,13 +136,17 @@ function metaSosyalSenkBaslat() {
   setInterval(calistir, META_SENK_ARALIGI_MS)
 }
 
-app.whenReady().then(() => {
-  require('./db/database').init()
-  createWindow()
-  ikasSiparisSenkBaslat()
-  metaSosyalSenkBaslat()
-  // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
-})
+// Kilit alınamadıysa (zaten bir örnek açık) HİÇBİR ŞEY başlatma — ne pencere, ne DB, ne polling.
+// app.quit() tek başına yeterli görünse de whenReady ile yarışabilir; açık koruma daha güvenli.
+if (tekOrnekKilidi) {
+  app.whenReady().then(() => {
+    require('./db/database').init()
+    createWindow()
+    ikasSiparisSenkBaslat()
+    metaSosyalSenkBaslat()
+    // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
+  })
+}
 
 app.on('window-all-closed', () => {
   // Güncelleme kurulurken erken app.quit() çağırma; quitAndInstall süreci yönetir.

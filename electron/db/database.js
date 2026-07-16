@@ -455,7 +455,14 @@ function migrate() {
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN konu_link TEXT") } catch {}
   // Yoruma özel mesaj (private reply) gönderildi damgası. Meta yorum başına TEK mesaj hakkı
   // verir → arayüz bunu gösterip ikinci denemeyi engeller. NULL = gönderilmedi.
+  // SADECE BAŞARIDA yazılır — başarısızlık ozel_mesaj_hata/deneme'ye gider (aşağı bak).
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_tarihi TEXT") } catch {}
+  // Başarısız gönderim takibi. Eskiden hata durumunda da ozel_mesaj_tarihi damgalanıyordu
+  // ("her turda aynı hatayı tekrarlama" için) → damga başarıyı da başarısızlığı da aynı
+  // gösteriyordu, başarısızlar SESSİZCE kayboluyordu. Artık ayrı: hata metni + deneme sayacı.
+  // Sayaç sonsuz denemeyi engeller (kalıcı hatalar: yorum başına tek hak dolmuş, 7 gün geçmiş).
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_hata TEXT") } catch {}
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_deneme INTEGER DEFAULT 0") } catch {}
 
   // --- Gönderi bazlı otomatik yorum cevabı ---
   // Şablon kütüphanesi otomasyondan AYRI: şablonun ömrü gönderiden uzun (yeni çelik kase

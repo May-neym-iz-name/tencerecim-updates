@@ -530,7 +530,15 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                         💬 Mesaj gönderildi
                       </span>
                     ) : (
-                      <button onClick={() => { setOzelMesaj(y.id); setOzelTaslak(''); setCevapId(null) }} className="text-blue-600 hover:underline font-medium">Mesaj gönder</button>
+                      <>
+                        <button onClick={() => { setOzelMesaj(y.id); setOzelTaslak(''); setCevapId(null) }} className="text-blue-600 hover:underline font-medium">Mesaj gönder</button>
+                        {/* Otomasyon denedi ve başarısız oldu → sessizce kaybolmasın, sebebi görünsün. */}
+                        {y.ozel_mesaj_hata && (
+                          <span className="text-red-500" title={`${y.ozel_mesaj_deneme} deneme — son hata: ${y.ozel_mesaj_hata}`}>
+                            ⚠ gönderilemedi
+                          </span>
+                        )}
+                      </>
                     )}
                     {y.cevaplayan_kullanici && <span className="text-emerald-600">✓ {y.cevaplayan_kullanici}</span>}
                   </div>

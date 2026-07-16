@@ -5,6 +5,7 @@ const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 const SAYFA_ADI = 'tenceremtava' // kendi yorumlarımızı elemek için (bkz. _adaylar)
 const PENCERE_GUN = 7            // Meta: yoruma özel mesaj yalnız 7 gün içinde gönderilebilir
+const MAKS_DENEME = 3            // bu kadar hatadan sonra o yorumdan vazgeç (sonsuz deneme olmasın)
 
 // Şablonun fiyatını çözer. Öncelik: sablon.fiyat (elle yazılmış) → ürünün canlı satış fiyatı
 // → setin canlı fiyatı. NULL fiyat = "kaynağa sor" — zam yapılınca şablon kendiliğinden güncel kalır.
@@ -32,6 +33,8 @@ function _sablonlariCoz(db, otomasyonId) {
 //  - NOT EXISTS(...) : kişi başına gönderide TEK DM (aynı kişi 6 yorum atarsa 6 DM gitmesin).
 //    Tekilleştirme gonderen_ad ile — IG yorumlarında 'from' istenemez (tüm çekimi kırar),
 //    bu yüzden gonderen_id hep NULL. Instagram'da kullanıcı adı benzersiz, güvenli.
+//    YALNIZ ozel_mesaj_tarihi (başarılı gönderim) sayılır — başarısız deneme kişiyi engellemez.
+//  - ozel_mesaj_deneme < MAKS_DENEME : kalıcı hatalarda (tek hak dolmuş, 7 gün geçmiş) vazgeç.
 //  - GROUP BY : aynı kişinin bu turdaki birden çok yorumundan yalnız biri alınsın.
 function _adaylar(db, konuId = null) {
   const kosul = konuId ? 'o.konu_id = ?' : 'o.aktif = 1'
@@ -45,6 +48,7 @@ function _adaylar(db, konuId = null) {
       AND m.yon = 'gelen'
       AND m.gonderen_ad != '${SAYFA_ADI}'
       AND m.ozel_mesaj_tarihi IS NULL
+      AND COALESCE(m.ozel_mesaj_deneme, 0) < ${MAKS_DENEME}
       AND m.mesaj_tarihi >= datetime('now', '-${PENCERE_GUN} days')
       AND NOT EXISTS (
         SELECT 1 FROM sosyal_mesajlar x

@@ -49,8 +49,13 @@ async function otomasyonCalistir() {
 
   // Otomasyon başına mesaj metnini BİR KEZ üret (her yorum için yeniden hesaplama).
   const metinOnbellek = new Map()
+  // Damga YALNIZ başarıda. Başarısızlık ayrı kolonlara yazılır — eskiden ikisi de aynı damgayı
+  // kullanıyordu ve başarısızlar sessizce "gönderildi" gibi görünüyordu.
   const damgala = db.prepare(
-    "UPDATE sosyal_mesajlar SET ozel_mesaj_tarihi = datetime('now','localtime') WHERE id = ?"
+    "UPDATE sosyal_mesajlar SET ozel_mesaj_tarihi = datetime('now','localtime'), ozel_mesaj_hata = NULL WHERE id = ?"
+  )
+  const hataYaz = db.prepare(
+    "UPDATE sosyal_mesajlar SET ozel_mesaj_hata = ?, ozel_mesaj_deneme = COALESCE(ozel_mesaj_deneme,0) + 1 WHERE id = ?"
   )
 
   for (const a of adaylar) {
@@ -86,9 +91,12 @@ async function otomasyonCalistir() {
         }
       }
     } catch (e) {
-      // Tipik: yoruma zaten mesaj gitmiş (tek hak), yorum 7 günden eski.
+      // Tipik: yoruma zaten mesaj gitmiş (başka bir otomasyon tek hakkı kullanmış),
+      // yorum 7 günden eski. DAMGALAMA — bu bir başarı değil; hatayı kaydet, sayacı artır.
+      // MAKS_DENEME'ye ulaşınca aday sorgusu bu yorumu kendiliğinden eler.
       sonuc.hatalar.push(`DM (${a.gonderen_ad}): ${e.message}`)
-      damgala.run(a.id) // tekrar denemeyelim; her turda aynı hatayı almanın anlamı yok
+      hataYaz.run(String(e.message).slice(0, 300), a.id)
+      sonuc.basarisiz = (sonuc.basarisiz || 0) + 1
     }
     sonuc.islenen++
     await bekle(CAGRI_ARASI_MS)
