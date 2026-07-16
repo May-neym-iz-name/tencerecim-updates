@@ -231,10 +231,17 @@ UNFULFILLED
 **OrderPaymentStatusEnum:**
 ```
 FAILED
+OVER_PAID
 PAID
 PARTIALLY_PAID
+REFUNDED
 WAITING
 ```
+
+> **Corrected 2026-07-16.** The ikas.dev page lists only FAILED / PAID / PARTIALLY_PAID / WAITING.
+> `OVER_PAID` and `REFUNDED` are real and observed in production: after a partial refund the order
+> total drops while the collected amount stays, leaving the order in `OVER_PAID`.
+> Turkish labels live in `src/pages/OnlineSiparisler.jsx:31-37`.
 
 ### Mutations
 
