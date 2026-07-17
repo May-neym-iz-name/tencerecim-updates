@@ -32,6 +32,15 @@ function guncellemeDurum(payload) {
   }
 }
 
+// Arka plan çekimi sipariş eklediğinde/durum değiştirdiğinde açık ekrana haber ver.
+// Şart: main SQLite'a yazar ama renderer AYRI süreçtir — haber verilmezse React state
+// bayat kalır ve kullanıcı sekmeden çıkıp girene kadar eski durumu görür.
+function siparisDegisti(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ikas:siparis-degisti', payload)
+  }
+}
+
 autoUpdater.on('checking-for-update', () => guncellemeDurum({ tip: 'kontrol' }))
 autoUpdater.on('update-available', (info) =>
   guncellemeDurum({ tip: 'mevcut', surum: info?.version }))
@@ -99,16 +108,48 @@ const IKAS_SENK_ARALIGI_MS = 90 * 1000
 function ikasSiparisSenkBaslat() {
   const { _pullSiparisler } = require('./ikas')
   const { _ayarlariGetir } = require('./db/ikas-ayarlar')
-  const calistir = () => {
+  let calisiyor = false // çekim 90 sn'yi aşarsa turlar üst üste binmesin (meta ile aynı koruma)
+  const calistir = async () => {
+    if (calisiyor) return
     try {
       if (!_ayarlariGetir().otomatik_senk) return
-      _pullSiparisler().catch(err => console.error('[ikas] sipariş çekme hatası:', err.message))
+      calisiyor = true
+      const r = await _pullSiparisler()
+      // Yalnızca gerçekten bir şey değiştiyse haber ver — her turda boşuna yeniden
+      // yükleme yapıp açık ekranı titretmeyelim.
+      if (r?.kaydedilen || r?.guncellenen) siparisDegisti(r)
     } catch (err) {
-      console.error('[ikas] sipariş senkron başlatılamadı:', err.message)
+      console.error('[ikas] sipariş çekme hatası:', err.message)
+    } finally {
+      calisiyor = false
     }
   }
   setTimeout(calistir, 10 * 1000) // açılıştan 10 sn sonra ilk çekim
   setInterval(calistir, IKAS_SENK_ARALIGI_MS)
+}
+
+// UPS takip yoklayıcısı: gönderi ağa okutulunca "Gönderildi", teslim edilince "Teslim Edildi"
+// bilgisini UPS'ten öğrenip yerele yazar (ikas'ın kendi UPS entegrasyonunun yaptığının aynısı,
+// ama kontrol bizde). 30 dk: kargo durumu günde birkaç kez değişir, sık yoklamak boşuna yük.
+const UPS_TAKIP_ARALIGI_MS = 30 * 60 * 1000
+function upsTakipBaslat() {
+  const { _takipleriYokla } = require('./ups/takip')
+  let calisiyor = false // tur uzun sürerse üst üste binmesin
+  const calistir = async () => {
+    if (calisiyor) return
+    try {
+      calisiyor = true
+      const r = await _takipleriYokla()
+      if (r?.degisti) siparisDegisti(r) // açık sipariş ekranı anında tazelensin
+      if (r?.hatalar?.length) console.error('[ups-takip] hatalar:', r.hatalar.slice(0, 5))
+    } catch (err) {
+      console.error('[ups-takip] yoklama hatası:', err.message)
+    } finally {
+      calisiyor = false
+    }
+  }
+  setTimeout(calistir, 25 * 1000) // açılıştan 25 sn sonra (ikas/meta ile çakışmasın)
+  setInterval(calistir, UPS_TAKIP_ARALIGI_MS)
 }
 
 // Sosyal medya (Facebook/Instagram) yorum & DM polling. ikas deseniyle aynı:
@@ -143,6 +184,7 @@ if (tekOrnekKilidi) {
     require('./db/database').init()
     createWindow()
     ikasSiparisSenkBaslat()
+    upsTakipBaslat()
     metaSosyalSenkBaslat()
     // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
   })
@@ -174,6 +216,7 @@ const handlerModules = [
   require('./db/ups-ayarlar'),
   require('./db/lokasyon-gonderici'),
   require('./ups/kargo'),
+  require('./ups/takip'),
   require('./ups/yakit'),
   require('./ups/etiket-yazdir'),
   require('./db/ikas-ayarlar'),

@@ -91,14 +91,19 @@ export default function OnlineSiparisler() {
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
 
-  const yukle = useCallback(async () => {
-    setYukleniyor(true)
+  // sessiz=true: arka plan tazelemesi — yükleme göstergesini ve hata toast'ını atlar
+  // (kullanıcı bir şey istemedi; her 90 sn'de bir spinner titremesi veya ağ hatası
+  // toast'ı yağmuru olmasın).
+  const yukle = useCallback(async (sessiz = false) => {
+    if (!sessiz) setYukleniyor(true)
     try {
       const r = await onlineSiparisApi.listele({ arama, boyut: 0 })
       setSiparisler(r.siparisler)
       setToplam(r.toplam)
-    } catch (e) { toast.error('Siparişler yüklenemedi: ' + e.message) }
-    finally { setYukleniyor(false) }
+    } catch (e) {
+      if (!sessiz) toast.error('Siparişler yüklenemedi: ' + e.message)
+    }
+    finally { if (!sessiz) setYukleniyor(false) }
   }, [arama])
 
   // Tarih + ödeme + durum filtreleri (istemci tarafı).
@@ -124,6 +129,16 @@ export default function OnlineSiparisler() {
   const { dilim: sayfaSiparisler, ...sayfalama } = useSayfalama(sr.sirali, 50)
 
   useEffect(() => { yukle() }, [yukle])
+
+  // Arka plan ikas çekimi (main.js, 90 sn) bir şey değiştirdiğinde listeyi sessizce tazele.
+  // Olmadan: main SQLite'ı günceller ama açık ekran ilk açılıştaki fotoğrafta kalır —
+  // durumlar "otomatik güncellenmiyor" şikayetinin sebebi buydu.
+  // NOT: `yukle`yi doğrudan dinleyici olarak VERME — olay payload'ı ilk parametreye geçer
+  // ve sessiz=payload olur. Açık sarmalayıcı şart.
+  useEffect(() => {
+    window.api.on('ikas:siparis-degisti', () => yukle(true))
+    return () => window.api.removeAllListeners('ikas:siparis-degisti')
+  }, [yukle])
 
   async function detayAc(id) {
     try { setSecili(await onlineSiparisApi.getir(id)) }

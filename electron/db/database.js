@@ -407,6 +407,11 @@ function migrate() {
   // UPS etiket yazdırma linki (LinkForLabelPrinting) — ağır barkod_png'yi senkrona
   // sokmadan her PC'den etiket basılabilsin diye saklanır ve senkronlanır (minik URL).
   try { db.exec("ALTER TABLE kargolar ADD COLUMN etiket_link TEXT") } catch {}
+  // UPS takip yoklayıcısı: son görülen StatusCode (sayı) + son sorgu zamanı.
+  // son_durum SERBEST METİN'dir ve karar için KULLANILMAZ (docs/ups-api-reference.md §1:
+  // "HD" metninde 'teslim' geçer ama teslim değildir). Kararlar son_durum_kodu ile verilir.
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN son_durum_kodu INTEGER") } catch {}
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN takip_sorgu_tarihi TEXT") } catch {}
   // online_siparis_kalemleri — ikas sipariş kalemi id'si (iptal/iade için).
   try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN ikas_kalem_id TEXT") } catch {}
   // online_siparisler — "Kargolandı Bildir" ile gönderim yapıldığı an (yerel işaret).
