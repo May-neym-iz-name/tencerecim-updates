@@ -15,6 +15,10 @@ const PERSONEL_VARSAYILAN = new Set([
   'kargo_yonet',
   'online_siparis_goruntule',
   'kasa_kullan',
+  // Personel sosyal medyayı kullanabilir (yorum/DM görüntüleme + elle cevap).
+  // 'sosyal_otomasyon_yonet' BİLEREK yok: otomasyon tek tıkla yüzlerce kişiye DM
+  // gönderir, o yüzden varsayılan kapalı — kime açılacağına yönetici karar verir.
+  'sosyal_medya_yonet',
 ])
 
 // Renderer'dan gelen aktif kullanıcı profili (rol + izinler + izinli_lokasyonlar).

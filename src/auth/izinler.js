@@ -1,4 +1,7 @@
 // Yetki (izin) hesaplama mantığı — rol varsayılanları + kullanıcıya özel override'lar.
+// NOT: electron/yetki.js (main process, CJS) ile AYNI mantık; iki liste birebir aynı
+// tutulmalı. (2026-07-17'de kaymışlardı: burada sosyal_medya_yonet vardı, orada yoktu →
+// personel sekmeyi görüyor ama kaydedince "yetkiniz yok" yiyordu.)
 
 // Personel rolünün varsayılan açık yetkileri
 const PERSONEL_VARSAYILAN = new Set([
@@ -12,6 +15,8 @@ const PERSONEL_VARSAYILAN = new Set([
   'kargo_yonet',
   'online_siparis_goruntule',
   'kasa_kullan',
+  // Personel sosyal medyayı kullanabilir (yorum/DM görüntüleme + elle cevap).
+  // 'sosyal_otomasyon_yonet' BİLEREK yok — bkz. electron/yetki.js'teki aynı not.
   'sosyal_medya_yonet',
 ])
 

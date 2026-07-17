@@ -1,12 +1,17 @@
 // Gönderi başına otomatik yorum cevabı paneli. Gönderi detayında (sağ panel) görünür.
 import { useState, useEffect } from 'react'
 import { sosyalApi } from '../api/ipc'
+import { useAuth } from '../auth/AuthContext'
 import SablonKutuphanesi from './SablonKutuphanesi'
 import toast from 'react-hot-toast'
 
 const VARSAYILAN_YANIT = 'Bizler ile iletişime geçtiğiniz için teşekkür ederiz, DM\'den detaylı bilgi verilmiştir.'
 
 export default function OtomasyonPaneli({ konu }) {
+  // Otomasyon toplu DM tetikler → ayrı yetki. Sosyal medyayı kullanan personel yorumları
+  // elle cevaplar ama otomasyonu açamaz. Arayüz gizler, backend ayrıca reddeder (derinlik).
+  const { yetkiVar } = useAuth()
+  const yonetebilir = yetkiVar('sosyal_otomasyon_yonet')
   const [oto, setOto] = useState(null)
   const [sablonlar, setSablonlar] = useState([])
   const [yanit, setYanit] = useState(VARSAYILAN_YANIT)
@@ -59,38 +64,48 @@ export default function OtomasyonPaneli({ konu }) {
           {oto?.bugun_giden > 0 && (
             <span className="text-[11px] text-gray-500">Bugün {oto.bugun_giden} mesaj</span>
           )}
-          <button onClick={() => kaydet(!acik)} disabled={mesgul} title={acik ? 'Kapat' : 'Aç'}
-            className={`relative w-11 h-6 rounded-full transition-colors ${acik ? 'bg-emerald-500' : 'bg-gray-300'} disabled:opacity-50`}>
+          <button onClick={() => kaydet(!acik)} disabled={mesgul || !yonetebilir}
+            title={yonetebilir ? (acik ? 'Kapat' : 'Aç') : 'Otomasyon yetkiniz yok'}
+            className={`relative w-11 h-6 rounded-full transition-colors ${acik ? 'bg-emerald-500' : 'bg-gray-300'} disabled:opacity-50 disabled:cursor-not-allowed`}>
             <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${acik ? 'left-[22px]' : 'left-0.5'}`} />
           </button>
         </div>
       </div>
       <p className="text-[11px] text-gray-500 mb-2">
-        {acik
-          ? 'Bu gönderiye gelen her yoruma otomatik DM + açık yanıt gidiyor.'
-          : 'Kapalı. Açınca gelen yorumlara otomatik cevap verilir.'}
+        {!yonetebilir
+          ? (acik ? 'Bu gönderide otomasyon açık. (Değiştirme yetkiniz yok — salt görüntüleme.)'
+                  : 'Otomasyon kapalı. (Değiştirme yetkiniz yok — salt görüntüleme.)')
+          : acik
+            ? 'Bu gönderiye gelen her yoruma otomatik DM + açık yanıt gidiyor.'
+            : 'Kapalı. Açınca gelen yorumlara otomatik cevap verilir.'}
       </p>
 
       <div className="space-y-1 mb-2">
         {sablonlar.map(s => (
           <div key={s.id} className="flex items-center gap-2 bg-white border rounded-lg px-2 py-1.5">
             <span className="text-xs flex-1 truncate">{s.ad}</span>
-            <button onClick={() => cikar(s.id)} className="text-gray-400 text-xs hover:text-red-500">✕</button>
+            {yonetebilir && (
+              <button onClick={() => cikar(s.id)} className="text-gray-400 text-xs hover:text-red-500">✕</button>
+            )}
           </div>
         ))}
-        <button onClick={() => setSecici(true)} className="text-blue-600 text-xs font-medium hover:underline">
-          + Şablon ekle
-        </button>
+        {yonetebilir && (
+          <button onClick={() => setSecici(true)} className="text-blue-600 text-xs font-medium hover:underline">
+            + Şablon ekle
+          </button>
+        )}
       </div>
 
       <label className="text-[11px] font-semibold text-gray-600">Açık yanıt</label>
-      <textarea value={yanit} onChange={e => setYanit(e.target.value)} rows={2}
-        className="w-full border rounded-lg px-2 py-1.5 text-xs mt-1" />
+      <textarea value={yanit} onChange={e => setYanit(e.target.value)} rows={2} disabled={!yonetebilir}
+        className="w-full border rounded-lg px-2 py-1.5 text-xs mt-1 disabled:bg-gray-100 disabled:text-gray-500" />
 
-      <button onClick={() => kaydet(acik)} disabled={mesgul}
-        className="mt-2 w-full bg-white border text-sm py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50">
-        Değişiklikleri kaydet
-      </button>
+      {yonetebilir && (
+        <button onClick={() => kaydet(acik)} disabled={mesgul}
+          className="mt-2 w-full bg-white border text-sm py-1.5 rounded-lg hover:bg-gray-50 disabled:opacity-50">
+          Değişiklikleri kaydet
+        </button>
+      )}
 
       {secici && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setSecici(false)}>

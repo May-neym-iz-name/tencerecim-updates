@@ -66,19 +66,27 @@ module.exports = {
 
   // Şablon kütüphanesi. Bağlı kaynağın (ürün veya set) canlı fiyatını `kaynak_fiyati` olarak
   // döner — arayüz "canlı" rozetinde ve önizlemede kullanır.
+  // `aktif_otomasyon_sayisi`: bu şablonu kullanan AÇIK otomasyon sayısı. Arayüz düzenleme/silme
+  // uyarısında kullanır — şablon gönderim anında okunduğu için (bkz. _sablonlariCoz) değişiklik
+  // sıradaki mesajlara anında yansır; kullanıcı bunu körlemesine yapmasın.
   'sosyal:sablonlar': () => getDb().prepare(`
     SELECT s.*, COALESCE(u.satis_fiyati, st.fiyat) AS kaynak_fiyati,
            COALESCE(u.ad, st.ad) AS kaynak_adi,
            CASE WHEN s.set_id IS NOT NULL THEN 'set'
-                WHEN s.urun_id IS NOT NULL THEN 'urun' END AS kaynak_tipi
+                WHEN s.urun_id IS NOT NULL THEN 'urun' END AS kaynak_tipi,
+           (SELECT COUNT(*) FROM sosyal_otomasyon_sablonlar os
+              JOIN sosyal_otomasyonlar o ON o.id = os.otomasyon_id
+             WHERE os.sablon_id = s.id AND o.aktif = 1) AS aktif_otomasyon_sayisi
     FROM sosyal_sablonlar s
     LEFT JOIN urunler u ON u.id = s.urun_id
     LEFT JOIN setler st ON st.id = s.set_id
     WHERE s.aktif = 1 ORDER BY s.ad
   `).all(),
 
+  // Şablonlar YALNIZ otomasyon için var → otomasyon yetkisi ister ('sosyal_medya_yonet' DEĞİL).
+  // Sosyal medyayı kullanan personel yorumları elle cevaplar; toplu DM'in içeriğini değiştiremez.
   'sosyal:sablonKaydet': ({ id, ad, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp }) => {
-    yetkiKontrol('sosyal_medya_yonet')
+    yetkiKontrol('sosyal_otomasyon_yonet')
     if (!ad || !ad.trim()) throw new Error('Şablon adı gerekli.')
     if (!urun_adi || !urun_adi.trim()) throw new Error('Ürün adı gerekli.')
     if (urun_id && set_id) throw new Error('Şablon ya ürüne ya sete bağlanabilir, ikisine birden değil.')
@@ -97,7 +105,7 @@ module.exports = {
 
   // Soft delete: geçmiş otomasyonların bağlantısı kırılmasın.
   'sosyal:sablonSil': (id) => {
-    yetkiKontrol('sosyal_medya_yonet')
+    yetkiKontrol('sosyal_otomasyon_yonet')
     getDb().prepare('UPDATE sosyal_sablonlar SET aktif = 0 WHERE id = ?').run(id)
     return { ok: true }
   },
@@ -117,7 +125,7 @@ module.exports = {
   },
 
   'sosyal:otomasyonKaydet': ({ konu_id, platform, aktif, acik_yanit_metni, sablon_idler }) => {
-    yetkiKontrol('sosyal_medya_yonet')
+    yetkiKontrol('sosyal_otomasyon_yonet')
     const db = getDb()
     const tx = db.transaction(() => {
       let o = db.prepare('SELECT id, aktif FROM sosyal_otomasyonlar WHERE konu_id = ?').get(konu_id)
