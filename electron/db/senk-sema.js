@@ -34,6 +34,18 @@ const TABLOLAR = {
   sosyal_sablonlar: { kolonlar: ['ad', 'urun_adi', 'aciklama', 'fiyat', 'link', 'whatsapp', 'aktif'],
                       fk: { urun_id: 'urunler', set_id: 'setler' }, dogal: ['ad'], sonradanEklendi: true },
 
+  // Otomasyon durumu ORTAK (v1.2.114). Senkronlanmadığı sürece asıl tehlike buydu: diğer PC
+  // otomasyonu göremediği için AYNI gönderiye ikinci bir otomasyon kurup açabiliyordu →
+  // aynı yoruma iki DM. konu_id (Meta gönderi kimliği) tüm PC'lerde AYNI → doğal anahtar
+  // olarak iki kaydın birleşmesini garanti eder, yani mükerrer otomasyon üretilemez.
+  // Çift gönderimi asıl engelleyen: yürütmenin tek PC'de olması (bkz. meta/yurutucu.js).
+  sosyal_otomasyonlar: { kolonlar: ['konu_id', 'platform', 'aktif', 'acik_yanit_metni', 'baslangic_tarihi'],
+                         fk: {}, dogal: ['konu_id'], sonradanEklendi: true },
+  sosyal_otomasyon_sablonlar: { kolonlar: ['sira'],
+                                fk: { otomasyon_id: 'sosyal_otomasyonlar', sablon_id: 'sosyal_sablonlar' },
+                                zorunluFk: ['otomasyon_id', 'sablon_id'],
+                                dogalCift: ['otomasyon_id', 'sablon_id'], sonradanEklendi: true },
+
   // --- Faz 2: işlemsel veri (append-mostly). lokasyon_id her PC'de aynı seed → düz kolon. ---
   satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
   satis_kalemleri:    { kolonlar: ['miktar', 'birim_fiyat', 'iskonto_orani', 'kdv_orani', 'toplam', 'iade_miktar', 'set_adi'], fk: { satis_id: 'satislar', urun_id: 'urunler' }, zorunluFk: ['satis_id', 'urun_id'], dogal: [] },
@@ -54,13 +66,14 @@ const TABLOLAR = {
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
-// NOT: sosyal_otomasyonlar (gönderi bazlı aç/kapat) BİLEREK senkronlanmaz. Senkronlansaydı
-// iki PC'de birden "açık" olur, ikisi de Meta'yı yoklar ve AYNI yoruma iki DM giderdi.
-// Tek-örnek kilidi yalnız aynı makinede korur, PC'ler arasında korumaz. Şablonlar (içerik)
-// paylaşılır, otomasyonu hangi PC'nin yürüttüğü yerel karar olarak kalır.
+// Otomasyon senkronu (v1.2.114): durum ORTAK, yürütme TEK PC'de.
+// Önce "senkronlamayalım, çift DM olur" diye düşünülmüştü; yanlıştı — senkronlamamak asıl
+// tehlikeydi (diğer PC kapalı sanıp ikinci otomasyon kurar). Çift gönderimi engelleyen şey
+// senkronun yokluğu değil, yürütücü kilidi (meta/yurutucu.js).
 const SIRA = [
   'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
   'setler', 'set_urunler', 'sosyal_sablonlar',
+  'sosyal_otomasyonlar', 'sosyal_otomasyon_sablonlar',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',

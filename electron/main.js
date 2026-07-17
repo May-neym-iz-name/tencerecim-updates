@@ -159,12 +159,18 @@ const META_SENK_ARALIGI_MS = 120 * 1000
 function metaSosyalSenkBaslat() {
   const { _tumunuCek } = require('./meta')
   const { _ayarlariGetir } = require('./db/meta-ayarlar')
+  const { _yurutucuMu } = require('./meta/yurutucu')
   let calisiyor = false // IG çekimi 20-60 sn sürebilir → turların üst üste binmesini önle.
   const calistir = async () => {
     if (calisiyor) return
     try {
       const a = _ayarlariGetir()
       if (!a.sayfa_token || a.otomatik_senk === '0') return
+      // ÇİFT DM KİLİDİ: otomasyon durumu artık PC'ler arası ORTAK (her PC'den açılıp
+      // kapatılabiliyor) ama YÜRÜTME tek PC'de olmalı. İki PC yoklarsa aynı yoruma iki DM
+      // gider — "DM gitti" damgası (sosyal_mesajlar) senkronlanmadığı için dedup kurtarmaz.
+      // Yürütücü seçilmemişse token'ı olan bu PC kendini atar (otomasyon kesilmesin).
+      if (!_yurutucuMu({ sayfaToken: a.sayfa_token })) return
       calisiyor = true
       await _tumunuCek()
     } catch (err) {
@@ -236,6 +242,7 @@ const handlerModules = [
   require('./db/meta-ayarlar'),
   require('./db/sosyal-mesajlar'),
   require('./db/sosyal-otomasyon'),
+  require('./meta/yurutucu'),
   require('./meta'),
   require('./meta/giris'),
   require('./fis-yazdir'),

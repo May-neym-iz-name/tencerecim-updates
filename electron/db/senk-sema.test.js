@@ -68,8 +68,35 @@ describe('sosyal_sablonlar senkronu', () => {
     expect(TABLOLAR.sosyal_sablonlar.sonradanEklendi).toBe(true)
   })
 
-  test('otomasyonun kendisi senkronlanmaz (iki PC = çift DM riski)', () => {
-    expect(TABLOLAR.sosyal_otomasyonlar).toBeUndefined()
-    expect(TABLOLAR.sosyal_otomasyon_sablonlar).toBeUndefined()
+})
+
+describe('sosyal_otomasyonlar senkronu (v1.2.114)', () => {
+  test('otomasyon durumu ORTAK — her PC görsün/açsın/kapatsın', () => {
+    // Senkronlamamak asıl tehlikeydi: diğer PC kapalı sanıp AYNI gönderiye ikinci
+    // otomasyon kurup açabiliyordu → aynı yoruma iki DM.
+    expect(TABLOLAR.sosyal_otomasyonlar).toBeDefined()
+    expect(TABLOLAR.sosyal_otomasyon_sablonlar).toBeDefined()
+    expect(SIRA).toContain('sosyal_otomasyonlar')
+    expect(SIRA).toContain('sosyal_otomasyon_sablonlar')
+  })
+
+  test('konu_id doğal anahtar — iki PC aynı gönderi için MÜKERRER kayıt üretemez', () => {
+    // konu_id Meta gönderi kimliği: tüm PC'lerde AYNI → dedup birleştirir.
+    expect(TABLOLAR.sosyal_otomasyonlar.dogal).toEqual(['konu_id'])
+  })
+
+  test('bağlantı tablosu otomasyon+şablon çiftinde tekil', () => {
+    expect(TABLOLAR.sosyal_otomasyon_sablonlar.dogalCift).toEqual(['otomasyon_id', 'sablon_id'])
+    expect(TABLOLAR.sosyal_otomasyon_sablonlar.zorunluFk).toEqual(['otomasyon_id', 'sablon_id'])
+  })
+
+  test('otomasyon SIRA’da şablonlardan sonra (FK çözülebilsin)', () => {
+    expect(SIRA.indexOf('sosyal_otomasyon_sablonlar')).toBeGreaterThan(SIRA.indexOf('sosyal_otomasyonlar'))
+    expect(SIRA.indexOf('sosyal_otomasyon_sablonlar')).toBeGreaterThan(SIRA.indexOf('sosyal_sablonlar'))
+  })
+
+  test('sonradanEklendi: mevcut otomasyonlar da bir kez yukarı çıksın', () => {
+    expect(TABLOLAR.sosyal_otomasyonlar.sonradanEklendi).toBe(true)
+    expect(TABLOLAR.sosyal_otomasyon_sablonlar.sonradanEklendi).toBe(true)
   })
 })

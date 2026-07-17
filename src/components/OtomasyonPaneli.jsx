@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { sosyalApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
+import { senkTetikle } from '../lib/veriSenk'
 import SablonKutuphanesi from './SablonKutuphanesi'
 import toast from 'react-hot-toast'
 
@@ -13,6 +14,7 @@ export default function OtomasyonPaneli({ konu }) {
   const { yetkiVar } = useAuth()
   const yonetebilir = yetkiVar('sosyal_otomasyon_yonet')
   const [oto, setOto] = useState(null)
+  const [yurutucu, setYurutucu] = useState(null)
   const [sablonlar, setSablonlar] = useState([])
   const [yanit, setYanit] = useState(VARSAYILAN_YANIT)
   const [secici, setSecici] = useState(false)
@@ -26,6 +28,9 @@ export default function OtomasyonPaneli({ konu }) {
       setYanit(o?.acik_yanit_metni ?? VARSAYILAN_YANIT)
     }).catch(() => {})
   }, [konu?.konu_id])
+
+  // Otomasyonu hangi PC yürütüyor? Durum ortak ama yürütme tek PC'de (çift DM kilidi).
+  useEffect(() => { sosyalApi.yurutucuDurum().then(setYurutucu).catch(() => {}) }, [])
 
   const kaydet = async (aktif) => {
     // Açarken KAÇ KİŞİYE gideceğini göster — körlemesine tetiklenmesin.
@@ -42,6 +47,10 @@ export default function OtomasyonPaneli({ konu }) {
         konu_id: konu.konu_id, platform: konu.platform, aktif,
         acik_yanit_metni: yanit, sablon_idler: sablonlar.map(s => s.id),
       })
+      // Değişikliği HEMEN buluta it: yürütücü PC başka bir makine olabilir ve kapatmayı
+      // görene kadar mesaj göndermeye devam eder. 60 sn'lik tur beklenirse bir tur daha
+      // DM gidebilir; anında push penceresi birkaç saniyeye indirir.
+      senkTetikle()
       const o = await sosyalApi.otomasyonGetir({ konu_id: konu.konu_id })
       setOto(o)
       toast.success(aktif ? 'Otomasyon açıldı' : 'Otomasyon kapatıldı')
@@ -79,6 +88,18 @@ export default function OtomasyonPaneli({ konu }) {
             ? 'Bu gönderiye gelen her yoruma otomatik DM + açık yanıt gidiyor.'
             : 'Kapalı. Açınca gelen yorumlara otomatik cevap verilir.'}
       </p>
+
+      {/* Otomasyon durumu TÜM PC'lerde ortak; mesajları yalnız yürütücü PC gönderir.
+          Bunu göstermek şart: aksi halde "açtım ama mesaj gitmiyor" gibi görünür. */}
+      {yurutucu && !yurutucu.bu_pc_mi && !yurutucu.secilmedi && (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+          ⚡ Mesajları <b>{yurutucu.yurutucu_ad || 'başka bir PC'}</b> gönderiyor.
+          Buradan açıp kapatabilirsin — değişiklik birkaç saniye içinde oraya geçer.
+        </p>
+      )}
+      {yurutucu?.bu_pc_mi && (
+        <p className="text-[11px] text-emerald-700 mb-2">⚡ Mesajları bu PC gönderiyor.</p>
+      )}
 
       <div className="space-y-1 mb-2">
         {sablonlar.map(s => (

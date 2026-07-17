@@ -191,6 +191,9 @@ export const sosyalApi = {
   sablonlar: () => invoke('sosyal:sablonlar'),
   sablonKaydet: (v) => invoke('sosyal:sablonKaydet', v),
   sablonSil: (id) => invoke('sosyal:sablonSil', id),
+  // Otomasyonu hangi PC yürütüyor (çift DM kilidi — bkz. electron/meta/yurutucu.js)
+  yurutucuDurum: () => invoke('sosyal:yurutucuDurum'),
+  yurutucuDevral: (ad) => invoke('sosyal:yurutucuDevral', { ad }),
   otomasyonGetir: (v) => invoke('sosyal:otomasyonGetir', v),
   otomasyonKaydet: (v) => invoke('sosyal:otomasyonKaydet', v),
   otomasyonAdaySayisi: (v) => invoke('sosyal:otomasyonAdaySayisi', v),

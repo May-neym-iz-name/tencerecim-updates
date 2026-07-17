@@ -34,7 +34,14 @@ function topla() {
     if (Array.isArray(arr)) hizli_yanitlar = arr.filter(x => typeof x === 'string')
   } catch { /* bozuksa boş dizi */ }
 
-  return { ups: kv('ups_ayarlar'), ikas, gonderici, lokasyon_ikas, hizli_yanitlar }
+  // Otomasyonu YÜRÜTEN PC (v1.2.114). Senkron ŞART: otomasyon durumu artık ortak, ama
+  // yürütme tek PC'de olmalı — diğer PC'nin "yürütücü kim?" bilgisini bilmesi lazım ki
+  // sussun. cihaz_id senkronlanMAZ (her PC'nin kendi kimliği); yalnız SEÇİM taşınır.
+  const yur = db.prepare("SELECT anahtar, deger FROM meta_ayarlar WHERE anahtar IN ('otomasyon_yurutucu','otomasyon_yurutucu_ad')").all()
+  const otomasyon_yurutucu = {}
+  for (const r of yur) otomasyon_yurutucu[r.anahtar] = r.deger
+
+  return { ups: kv('ups_ayarlar'), ikas, gonderici, lokasyon_ikas, hizli_yanitlar, otomasyon_yurutucu }
 }
 
 function uygula(veri = {}) {
@@ -76,6 +83,11 @@ function uygula(veri = {}) {
   }
   // Sosyal medya hazır yanıtları (buluttan gelen dizi → meta_ayarlar). Yalnızca dizi
   // geldiğinde yaz; tanımsızsa mevcut yerel listeyi koru (eski istemcilerle uyumlu).
+  // Yürütücü seçimi (v1.2.114). Bu PC yürütücü değilse Meta yoklaması durur → çift DM olmaz.
+  // Eski istemcilerden gelen veride bu alan YOKTUR → mevcut yerel seçimi KORU (silme).
+  if (veri.otomasyon_yurutucu && typeof veri.otomasyon_yurutucu === 'object') {
+    upsertKv('meta_ayarlar', veri.otomasyon_yurutucu)
+  }
   if (Array.isArray(veri.hizli_yanitlar)) {
     const temiz = veri.hizli_yanitlar.filter(x => typeof x === 'string')
     db.prepare(
