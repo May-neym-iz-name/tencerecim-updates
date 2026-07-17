@@ -25,6 +25,14 @@ const TABLOLAR = {
   urun_stoklar: { kolonlar: ['lokasyon_id', 'miktar', 'minimum_stok'], fk: { urun_id: 'urunler' }, zorunluFk: ['urun_id'], dogalCift: ['urun_id', 'lokasyon_id'] },
   setler:       { kolonlar: ['ad', 'fiyat', 'aktif'], fk: {}, dogal: ['ad'] },
   set_urunler:  { kolonlar: ['miktar'], fk: { set_id: 'setler', urun_id: 'urunler' }, zorunluFk: ['set_id', 'urun_id'], dogalCift: ['set_id', 'urun_id'] },
+  // Sosyal medya otomasyon şablonları: içerik (metin/fiyat/link) — küçük, şişirmez.
+  // urun_id/set_id ZORUNLU DEĞİL: çözülemezse null kalır ve şablon elle yazılmış
+  // fiyatıyla çalışmaya devam eder (kaynak bağı kopar ama şablon kaybolmaz).
+  // sosyal_otomasyonlar / sosyal_otomasyon_sablonlar BİLEREK senkronlanmaz — bkz. SIRA notu.
+  // sonradanEklendi: senkrona v1.2.113'te eklendi → mevcut satırlar "şimdi" damgalanmalı,
+  // yoksa push imlecinin gerisinde kalıp hiç gönderilmezler (bkz. kur() içindeki not).
+  sosyal_sablonlar: { kolonlar: ['ad', 'urun_adi', 'aciklama', 'fiyat', 'link', 'whatsapp', 'aktif'],
+                      fk: { urun_id: 'urunler', set_id: 'setler' }, dogal: ['ad'], sonradanEklendi: true },
 
   // --- Faz 2: işlemsel veri (append-mostly). lokasyon_id her PC'de aynı seed → düz kolon. ---
   satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
@@ -46,9 +54,13 @@ const TABLOLAR = {
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
+// NOT: sosyal_otomasyonlar (gönderi bazlı aç/kapat) BİLEREK senkronlanmaz. Senkronlansaydı
+// iki PC'de birden "açık" olur, ikisi de Meta'yı yoklar ve AYNI yoruma iki DM giderdi.
+// Tek-örnek kilidi yalnız aynı makinede korur, PC'ler arasında korumaz. Şablonlar (içerik)
+// paylaşılır, otomasyonu hangi PC'nin yürüttüğü yerel karar olarak kalır.
 const SIRA = [
   'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
-  'setler', 'set_urunler',
+  'setler', 'set_urunler', 'sosyal_sablonlar',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',
@@ -64,8 +76,15 @@ function kur(db) {
     // sabit ts ile doldurulur (NOW değil): yükseltme öncesi mevcut veri "temel"dir;
     // yükseltme sonrası GERÇEK her işlem (satış/sayım/düzenleme) bunu yener → bir
     // lokasyonu fiilen işleyen PC'nin stoğu, işlemeyen PC'nin bayat değerini kazanır.
+    //
+    // AMA senkrona SONRADAN eklenen tablolarda bu ters teper: push imleci (senk-veri.js:
+    // "WHERE senk_guncelleme > ?") çoktan bugüne ilerlemiştir, 2000-01-01 damgalı satırlar
+    // imlecin GERİSİNDE kalır ve HİÇ GÖNDERİLMEZ — sessizce. Bu tablolar için damga "şimdi"
+    // olmalı ki mevcut kayıtlar bir kez yukarı çıksın. (Yalnız boş damgalıları etkiler →
+    // kendiliğinden tek seferlik.)
+    const damga = TABLOLAR[tablo].sonradanEklendi ? NOWMS : `'2000-01-01T00:00:00.000Z'`
     db.exec(`UPDATE ${tablo} SET senk_id = lower(hex(randomblob(16))) WHERE senk_id IS NULL OR senk_id = ''`)
-    db.exec(`UPDATE ${tablo} SET senk_guncelleme = '2000-01-01T00:00:00.000Z' WHERE senk_guncelleme IS NULL OR senk_guncelleme = ''`)
+    db.exec(`UPDATE ${tablo} SET senk_guncelleme = ${damga} WHERE senk_guncelleme IS NULL OR senk_guncelleme = ''`)
     // Tetikleyiciler.
     db.exec(`CREATE TRIGGER IF NOT EXISTS trg_${tablo}_senk_ins AFTER INSERT ON ${tablo}
       WHEN new.senk_id IS NULL BEGIN
