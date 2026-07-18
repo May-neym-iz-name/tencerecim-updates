@@ -101,7 +101,11 @@ export default function Satis() {
     })
     markaApi.listele().then(setMarkalar)
     setApi.listele().then(setSetler).catch(() => {})
-  }, [])
+    // erisilebilirLokasyonlar bağımlılıkta OLMALI: profil asenkron geliyor, boş [] ile
+    // yalnız mount'ta çalışsaydı ilk hesap eski/boş profille yapılır ve kullanıcı yetkili
+    // olduğu lokasyonu göremezdi. (AuthContext'te useCallback ile stabil hâle getirildi,
+    // bu yüzden yalnız profil değiştiğinde yeniden çalışır.)
+  }, [erisilebilirLokasyonlar])
 
   // Ürün listesini yükle. Arama modunda tüm ürünlerde arar; gezinmede seçili
   // markanın ürünleri gelir (kategori kartları da bu listeden türetilir).

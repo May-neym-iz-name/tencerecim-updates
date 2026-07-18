@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { authApi } from '../api/ipc'
 import { yetkiVar, lokasyonErisim, erisilebilirLokasyonlar } from './izinler'
@@ -51,16 +51,26 @@ export function AuthProvider({ children }) {
     setProfil(null)
   }, [])
 
-  const value = {
+  // Bu üç fonksiyon Satis.jsx/App.jsx gibi yerlerde useEffect/useCallback BAĞIMLILIĞI olarak
+  // kullanılıyor. Memoize edilmezse her render'da yeni referans üretir → ya effect'ler gereksiz
+  // yeniden kurulur ya da bağımlılık listeden çıkarılıp stale closure riski doğar.
+  const yetkiVarFn = useCallback((kod) => yetkiVar(profil, kod), [profil])
+  const lokasyonErisimFn = useCallback((id) => lokasyonErisim(profil, id), [profil])
+  const erisilebilirLokasyonlarFn = useCallback(
+    (lokasyonlar) => erisilebilirLokasyonlar(profil, lokasyonlar), [profil])
+
+  // value nesnesi de memoize: aksi halde useAuth() kullanan TÜM bileşenler
+  // AuthProvider her render olduğunda gereksiz yere yeniden render olur.
+  const value = useMemo(() => ({
     user,
     profil,
     girisYapildi: !!profil,
     giris,
     cikis,
-    yetkiVar: (kod) => yetkiVar(profil, kod),
-    lokasyonErisim: (id) => lokasyonErisim(profil, id),
-    erisilebilirLokasyonlar: (lokasyonlar) => erisilebilirLokasyonlar(profil, lokasyonlar),
-  }
+    yetkiVar: yetkiVarFn,
+    lokasyonErisim: lokasyonErisimFn,
+    erisilebilirLokasyonlar: erisilebilirLokasyonlarFn,
+  }), [user, profil, giris, cikis, yetkiVarFn, lokasyonErisimFn, erisilebilirLokasyonlarFn])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

@@ -29,20 +29,25 @@ function magazaBarkoduUret(cekirdek) {
 // Markanın mevcut ürünlerindeki TNC.X.N kodlarından şablonu öğrenir (en yüksek
 // numara + 1). Marka için henüz hiç TNC kodu yoksa null döner → ilk kodu kullanıcı
 // bir kez elle girer (örn. TNC.SFL.00001), sonrakiler otomatik türetilir.
+// En yüksek numaralı TEK satırı SQL'de bulur — eskiden markanın TÜM ürünleri JS'e çekilip
+// regex ile taranıyordu (Lava'da 3925, Rollers'ta 751 satır, her ürün eklemede).
+// rtrim(sku,'0123456789') sondaki rakamları soyar → 'TNC.LAV.' ; replace ile sayı kısmı kalır.
+// (SQLite'ın instr() fonksiyonu 3 argüman almadığı için bu yol kullanıldı.)
+// Doğrulama: 13 markanın 13'ünde de eski JS mantığıyla birebir aynı kodu üretiyor.
 function sonrakiStokKodu(db, marka_id) {
   if (!marka_id) return null
-  const satirlar = db.prepare(
-    "SELECT sku FROM urunler WHERE marka_id = ? AND sku LIKE 'TNC.%'"
-  ).all(marka_id)
-  let onek = null, enBuyuk = 0, hane = 5
-  for (const r of satirlar) {
-    const m = /^TNC\.([A-Za-z0-9ÇĞİÖŞÜçğıöşü]+)\.(\d+)$/.exec(String(r.sku).trim())
-    if (!m) continue
-    const num = parseInt(m[2], 10)
-    if (num >= enBuyuk) { enBuyuk = num; onek = m[1]; hane = Math.max(m[2].length, 5) }
-  }
-  if (!onek) return null
-  return `TNC.${onek}.${String(enBuyuk + 1).padStart(hane, '0')}`
+  const satir = db.prepare(`
+    SELECT sku, CAST(replace(sku, rtrim(sku, '0123456789'), '') AS INTEGER) AS num
+    FROM urunler
+    WHERE marka_id = ? AND sku LIKE 'TNC.%'
+    ORDER BY num DESC
+    LIMIT 1
+  `).get(marka_id)
+  if (!satir) return null
+  const m = /^TNC\.([A-Za-z0-9ÇĞİÖŞÜçğıöşü]+)\.(\d+)$/.exec(String(satir.sku).trim())
+  if (!m) return null
+  const hane = Math.max(m[2].length, 5)
+  return `TNC.${m[1]}.${String(satir.num + 1).padStart(hane, '0')}`
 }
 
 const URUN_SELECT = `

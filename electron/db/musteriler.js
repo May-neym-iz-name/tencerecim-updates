@@ -1,6 +1,25 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
+// Renderer'dan gelen nesnenin ANAHTARLARI doğrudan SQL kolon adı oluyordu. Değerler
+// parametrize olsa da kolon adı enjeksiyona açıktı (sorgu semantiğini bozma / şema keşfi).
+// id, olusturma_tarihi ve senk_* alanları BİLEREK yok: bunları istemci yazamamalı.
+const IZINLI_KOLONLAR = new Set([
+  'ad', 'soyad', 'telefon', 'email', 'tc_kimlik', 'vergi_no', 'vergi_dairesi',
+  'unvan', 'adres', 'il', 'ilce', 'aktif', 'iskonto_orani',
+  'ikas_musteri_id', 'ikas_siparis_sayisi', 'ikas_toplam_harcama',
+  'ikas_ilk_siparis', 'ikas_son_siparis',
+])
+
+function guvenliKolonlar(veri) {
+  const kolonlar = Object.keys(veri)
+  if (!kolonlar.length) throw new Error('Kaydedilecek alan yok')
+  for (const k of kolonlar) {
+    if (!IZINLI_KOLONLAR.has(k)) throw new Error(`Geçersiz alan: ${k}`)
+  }
+  return kolonlar
+}
+
 module.exports = {
   'musteriler:listele': ({ arama, sayfa = 1, boyut = 100 } = {}) => {
     const db = getDb()
@@ -29,16 +48,18 @@ module.exports = {
   'musteriler:olustur': (veri) => {
     yetkiKontrol('musteri_duzenle')
     const db = getDb()
-    const cols = Object.keys(veri).join(', ')
-    const placeholders = Object.keys(veri).map(k => `@${k}`).join(', ')
-    const result = db.prepare(`INSERT INTO musteriler (${cols}) VALUES (${placeholders})`).run(veri)
+    const kolonlar = guvenliKolonlar(veri)
+    const placeholders = kolonlar.map(k => `@${k}`).join(', ')
+    const result = db.prepare(
+      `INSERT INTO musteriler (${kolonlar.join(', ')}) VALUES (${placeholders})`
+    ).run(veri)
     return db.prepare('SELECT * FROM musteriler WHERE id = ?').get(result.lastInsertRowid)
   },
 
   'musteriler:guncelle': ({ id, ...veri }) => {
     yetkiKontrol('musteri_duzenle')
     const db = getDb()
-    const alanlar = Object.keys(veri).map(k => `${k} = @${k}`).join(', ')
+    const alanlar = guvenliKolonlar(veri).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE musteriler SET ${alanlar} WHERE id = @id`).run({ ...veri, id })
     return db.prepare('SELECT * FROM musteriler WHERE id = ?').get(id)
   },

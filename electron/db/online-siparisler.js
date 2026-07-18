@@ -2,7 +2,14 @@
 const { getDb } = require('./database')
 
 module.exports = {
-  'online-siparis:listele': ({ arama, sayfa = 1, boyut = 50 } = {}) => {
+  // Filtreler SQL'de uygulanır (eskiden boyut:0 ile TÜM siparişler çekilip istemcide
+  // filtreleniyordu — her satır için kargo alt sorgusu koştuğundan N kayıt = N alt sorgu,
+  // ve sonuç IPC üzerinden bütünüyle taşınıyordu). boyut<=0 hâlâ destekleniyor ama
+  // arayüz artık kullanmıyor.
+  'online-siparis:listele': ({
+    arama, sayfa = 1, boyut = 50,
+    tarihBas, tarihBit, odeme, durum, kargo,
+  } = {}) => {
     const db = getDb()
     let where = 'WHERE 1=1'
     const params = []
@@ -10,9 +17,14 @@ module.exports = {
       where += ' AND (s.siparis_no LIKE ? OR s.musteri_ad LIKE ? OR s.musteri_telefon LIKE ?)'
       params.push(`%${arama}%`, `%${arama}%`, `%${arama}%`)
     }
+    if (tarihBas) { where += ' AND date(s.siparis_tarihi) >= ?'; params.push(tarihBas) }
+    if (tarihBit) { where += ' AND date(s.siparis_tarihi) <= ?'; params.push(tarihBit) }
+    if (odeme)    { where += ' AND s.odeme_durumu = ?';          params.push(odeme) }
+    if (durum)    { where += ' AND s.durum = ?';                 params.push(durum) }
+    if (kargo)    { where += ' AND s.kargo_durumu = ?';          params.push(kargo) }
+
     const toplam = db.prepare(`SELECT COUNT(*) n FROM online_siparisler s ${where}`).get(...params).n
     // Her siparişe ilişkili (varsa) en güncel kargo takip no'sunu ekle.
-    // boyut <= 0 → tümünü döndür (istemci tarafı filtre/sayfalama için).
     const limitsiz = !boyut || boyut <= 0
     const sorgu = `
       SELECT s.*, (
@@ -24,6 +36,16 @@ module.exports = {
       FROM online_siparisler s ${where} ORDER BY s.siparis_tarihi DESC ${limitsiz ? '' : 'LIMIT ? OFFSET ?'}`
     if (!limitsiz) params.push(boyut, (sayfa - 1) * boyut)
     return { toplam, siparisler: db.prepare(sorgu).all(...params) }
+  },
+
+  // Filtre açılırlarını doldurmak için: tabloda GEÇEN farklı durum değerleri.
+  // Eskiden tüm siparişler istemciye çekilip Set ile türetiliyordu.
+  'online-siparis:filtre-secenekleri': () => {
+    const db = getDb()
+    const kolon = (k) => db.prepare(
+      `SELECT DISTINCT ${k} d FROM online_siparisler WHERE ${k} IS NOT NULL AND ${k} != '' ORDER BY ${k}`
+    ).all().map(r => r.d)
+    return { odeme: kolon('odeme_durumu'), durum: kolon('durum'), kargo: kolon('kargo_durumu') }
   },
 
   // Bir sipariş kaleminin çıkış (stok) lokasyonunu değiştirir. Sipariş stoktan

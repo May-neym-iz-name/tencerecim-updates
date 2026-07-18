@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu } = require('electron')
 const path = require('path')
 const { autoUpdater } = require('electron-updater')
 
@@ -75,6 +75,13 @@ ipcMain.handle('update:kurVeYenidenBaslat', () => {
 })
 
 function createWindow() {
+  // GÜVENLİK: Üretimde DevTools ve varsayılan menü KAPALI.
+  // Neden: yetki kontrolü renderer'ın bildirdiği profile bakıyor (yetki.js). DevTools açıkken
+  // personel konsoldan `window.api.invoke('auth:profil-ayarla', {aktif:true, rol:'super_admin'})`
+  // yazıp tüm yetkileri alabiliyordu. Bu ilk bariyer; kalıcı çözüm profilin main tarafında
+  // Supabase oturumuyla doğrulanmasıdır.
+  if (!isDev) Menu.setApplicationMenu(null)
+
   mainWindow = new BrowserWindow({
     width: 1366,
     height: 800,
@@ -86,7 +93,17 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      devTools: isDev,
     },
+  })
+
+  // Menü kapatılsa da kısayol DevTools'u açabilir → F12 ve Ctrl/Cmd+Shift+I engellenir.
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (isDev) return
+    const k = String(input.key || '').toLowerCase()
+    if (k === 'f12' || (k === 'i' && (input.control || input.meta) && input.shift)) {
+      event.preventDefault()
+    }
   })
 
   if (isDev) {

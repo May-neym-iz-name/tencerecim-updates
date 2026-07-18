@@ -801,20 +801,46 @@ module.exports = {
       const tahsilat = satislar.reduce((s, t) => s + (Number(t.amount) || 0), 0)
       // İade edilebilir tavan: tahsil edilen − daha önce iade edilen. İade tutarını aşma.
       let kalan = Math.min(iadeTutari, Math.round((tahsilat - zatenIade) * 100) / 100)
+
+      // BİLİNEN SINIR: bu dağıtım TOPLAM tavanı korur ama tek bir SALE işlemine, o işlemin
+      // KALAN kapasitesinden fazlasını atayabilir. Sebep: ikas API'si REFUND'u hangi SALE'e
+      // ait olduğunu söylemiyor — PublicTransaction tipinde ilişki alanı YOK (2026-07-18'de
+      // şema introspection ile doğrulandı: relatedTransactionId/parentTransactionId/... hiçbiri
+      // mevcut değil). Yani işlem-bazlı kalan hesaplanamıyor.
+      // Pratikte ölçüldü: son 25 siparişin 25'i TEK SALE → senaryo gerçekleşmiyor.
+      // Yine de çok-SALE + önceden iade durumunda sessiz başarısızlık olmasın diye uyarıyoruz.
+      if (satislar.length > 1 && zatenIade > 0) {
+        console.warn('[ikas] Kısmi iade uyarısı: sipariş', sip.siparis_no,
+          '— birden fazla ödeme işlemi (' + satislar.length + ') ve önceden yapılmış iade var.',
+          'İade tutarı işlemlere sırayla dağıtılıyor; ikas "amount exceeds transaction" hatası',
+          'verirse iadeyi ikas panelinden manuel yapmak gerekir.')
+      }
+
       for (const t of satislar) {
         if (kalan <= 0.001) break
         const pay = Math.round(Math.min(kalan, Number(t.amount) || 0) * 100) / 100
         if (pay > 0) { orderRefundTransactions.push({ transactionId: t.id, amount: pay, refundToStoreCredit: false }); kalan -= pay }
       }
     }
-    await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
-      input: {
-        orderId: sip.ikas_siparis_id, orderRefundLines,
-        ...(orderRefundTransactions.length ? { orderRefundTransactions } : {}),
-        ...(stockLocationId ? { stockLocationId } : {}),
-        refundShipping: !!refundShipping, sendNotificationToCustomer: !!bildir,
-      },
-    })
+    try {
+      await graphql('mutation R($input: OrderRefundInput!){ refundOrderLine(input:$input){ id } }', {
+        input: {
+          orderId: sip.ikas_siparis_id, orderRefundLines,
+          ...(orderRefundTransactions.length ? { orderRefundTransactions } : {}),
+          ...(stockLocationId ? { stockLocationId } : {}),
+          refundShipping: !!refundShipping, sendNotificationToCustomer: !!bildir,
+        },
+      })
+    } catch (e) {
+      // Ham API hatası kullanıcıya anlamsız gelir; en olası sebebi açıkça söyle.
+      // (Stok geri ekleme AŞAĞIDA — buraya düşersek yerel veriye HİÇ dokunulmamış olur.)
+      const m = String(e?.message || '')
+      if (/exceed|amount|transaction/i.test(m)) {
+        throw new Error('ikas iadeyi reddetti (tutar/işlem uyuşmazlığı): ' + m +
+          '\n\nBu siparişte birden fazla ödeme işlemi varsa iadeyi ikas panelinden manuel yapın.')
+      }
+      throw e
+    }
     const geriEkle = db.transaction(() => {
       if (restock && sip.stok_dusuldu) {
         const stokArt = db.prepare('UPDATE urun_stoklar SET miktar = miktar + ? WHERE urun_id = ? AND lokasyon_id = ?')

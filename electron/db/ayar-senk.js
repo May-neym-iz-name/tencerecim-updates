@@ -6,6 +6,11 @@ const { getDb } = require('./database')
 // ikas'ta cihaza özel olan, senkronlanMAMASI gereken anahtarlar.
 const IKAS_YEREL_ANAHTARLAR = new Set(['son_siparis_senk', 'gecmis_cekildi'])
 
+// lokasyon_gonderici'ye yazılabilir kolonlar (lokasyon-gonderici.js ALANLAR ile aynı).
+// Buluttan gelen veri kolon adı üretemesin diye whitelist olarak kullanılır.
+const GONDERICI_ALANLAR = ['ad', 'yetkili', 'adres', 'il', 'il_kodu', 'ilce', 'ilce_kodu',
+  'posta_kodu', 'telefon', 'cep', 'email']
+
 function topla() {
   const db = getDb()
   const kv = (tablo) => {
@@ -62,7 +67,9 @@ function uygula(veri = {}) {
     const tx = db.transaction(() => {
       for (const [lokId, alanlar] of Object.entries(veri.gonderici)) {
         const mevcut = db.prepare('SELECT 1 FROM lokasyon_gonderici WHERE lokasyon_id = ?').get(lokId)
-        const kolonlar = Object.keys(alanlar).filter(k => k !== 'lokasyon_id')
+        // Kolon adları buluttan gelen veriden türüyordu → whitelist ŞART.
+        // (lokasyon-gonderici.js aynı listeyi zaten kullanıyor; burası atlanmıştı.)
+        const kolonlar = GONDERICI_ALANLAR.filter(a => a in alanlar)
         if (!kolonlar.length) continue
         const params = { lokasyon_id: lokId }
         for (const k of kolonlar) params[k] = alanlar[k] ?? null
@@ -100,7 +107,16 @@ function uygula(veri = {}) {
   return { ok: true }
 }
 
+// GÜVENLİK: topla() ups_ayarlar + ikas_ayarlar'ın TÜM değerlerini döndürür — ikas client_secret,
+// UPS şifresi, Meta sayfa_token dahil. Yetki kontrolü olmadan herhangi bir oturum sahibi (personel)
+// DevTools'tan `window.api.invoke('ayar-senk:topla')` ile bu secret'ları düz metin alabiliyordu.
+//
+// uygula() BİLEREK yetkisiz: buluttanAl() ile HER GİRİŞTE çağrılır (App.jsx) — personelde
+// 'ayarlar_duzenle' olmadığı için yetki koymak ayar senkronunu tamamen kırardı. Buradaki veri
+// Supabase'den gelir, secret DÖNDÜRMEZ (yalnızca yerele yazar) ve yazdığı kolonlar whitelist'lidir.
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
+
 module.exports = {
-  'ayar-senk:topla': () => topla(),
+  'ayar-senk:topla': () => { yetkiKontrol('ayarlar_duzenle'); return topla() },
   'ayar-senk:uygula': (veri) => uygula(veri),
 }

@@ -6,6 +6,7 @@ import BarkodModal from '../components/BarkodModal'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { useSiralama } from '../hooks/useSiralama'
+import { useDebounce } from '../hooks/useDebounce'
 import SiraliBaslik from '../components/SiraliBaslik'
 import KategoriYonetim from '../components/KategoriYonetim'
 import MarkaYonetim from '../components/MarkaYonetim'
@@ -66,12 +67,17 @@ export default function Urunler() {
   // 'aktif' | 'pasif' — pasif ürünler YALNIZCA burada listelenir (satış/stok görmez).
   const [durum, setDurum] = useState('aktif')
 
+  // Arama DEBOUNCE'lu: doğrudan `arama` bağımlılıkta olsaydı her tuş vuruşu ayrı bir tam
+  // tablo sorgusu (2755 ürün + 3 JOIN) tetiklerdi. better-sqlite3 senkron olduğu için bu
+  // sorguların her biri main process'i bloklar → UI donar. 300 ms'de tek sorgu yeterli.
+  const geciktirilmisArama = useDebounce(arama, 300)
+
   const yukle = useCallback(async () => {
     try {
-      const r = await urunlerApi.listele({ arama, marka_id: filtreMarka || undefined, kategori_id: filtreKategori || undefined, boyut: 0, durum })
+      const r = await urunlerApi.listele({ arama: geciktirilmisArama, marka_id: filtreMarka || undefined, kategori_id: filtreKategori || undefined, boyut: 0, durum })
       setUrunler(r.urunler); setToplam(r.toplam)
     } catch (e) { toast.error(e.message) }
-  }, [arama, filtreMarka, filtreKategori, durum])
+  }, [geciktirilmisArama, filtreMarka, filtreKategori, durum])
 
   // Sütun sıralaması: türetilmiş alanlar (marka/kategori adı, sayısal fiyat) için deger().
   const sr = useSiralama(urunler, {

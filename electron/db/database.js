@@ -507,6 +507,18 @@ function migrate() {
   // Şablon bir SET'e de bağlanabilir (setler ayrı tabloda; satışta bileşenlere açıldıkları
   // için urunler'e yazılmazlar). Fiyat çözümü: sablon.fiyat → urun.satis_fiyati → set.fiyat.
   try { db.exec("ALTER TABLE sosyal_sablonlar ADD COLUMN set_id INTEGER REFERENCES setler(id)") } catch {}
+
+  // PERFORMANS index'leri:
+  // online-siparisler:listele her satır için kargolar'dan son takip no'yu alt sorguyla çekiyor;
+  // index olmadan bu N satırda N tam tablo taraması demek.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_kargolar_online_siparis ON kargolar(online_siparis_id)")
+  db.exec("CREATE INDEX IF NOT EXISTS idx_kargolar_ikas_siparis ON kargolar(ikas_siparis_id, durum)")
+  // sonrakiStokKodu marka bazlı en yüksek SKU'yu arıyor.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_urunler_marka_sku ON urunler(marka_id, sku)")
+  // Ürün listesi/arama en sık marka+kategori+aktif üzerinden filtreleniyor.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_urunler_aktif_marka ON urunler(aktif, marka_id)")
+  // Sipariş listesi tarihe göre sıralanıyor.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_online_siparis_tarih ON online_siparisler(siparis_tarihi)")
 }
 
 function seedLokasyonlar() {

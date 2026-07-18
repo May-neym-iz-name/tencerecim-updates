@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink } from '../api/ipc'
 import { takipUrl } from '../lib/kargo'
@@ -9,6 +9,7 @@ import KargoFormu from '../components/KargoFormu'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { useSiralama } from '../hooks/useSiralama'
+import { useDebounce } from '../hooks/useDebounce'
 import SiraliBaslik from '../components/SiraliBaslik'
 
 const PARA = (n, b = 'TRY') =>
@@ -94,20 +95,26 @@ export default function OnlineSiparisler() {
   // sessiz=true: arka plan tazelemesi — yükleme göstergesini ve hata toast'ını atlar
   // (kullanıcı bir şey istemedi; her 90 sn'de bir spinner titremesi veya ağ hatası
   // toast'ı yağmuru olmasın).
+  // Arama DEBOUNCE'lu: her tuş vuruşunda ayrı IPC + DB sorgusu atılmasın (her sorgu
+  // satır başına kargo alt sorgusu koşuyor ve main process senkron bloklanıyor).
+  const geciktirilmisArama = useDebounce(arama, 300)
+
   const yukle = useCallback(async (sessiz = false) => {
     if (!sessiz) setYukleniyor(true)
     try {
-      const r = await onlineSiparisApi.listele({ arama, boyut: 0 })
+      const r = await onlineSiparisApi.listele({ arama: geciktirilmisArama, boyut: 0 })
       setSiparisler(r.siparisler)
       setToplam(r.toplam)
     } catch (e) {
       if (!sessiz) toast.error('Siparişler yüklenemedi: ' + e.message)
     }
     finally { if (!sessiz) setYukleniyor(false) }
-  }, [arama])
+  }, [geciktirilmisArama])
 
   // Tarih + ödeme + durum filtreleri (istemci tarafı).
-  const filtreliSiparisler = siparisler.filter(s => {
+  // useMemo ŞART: bunlar her render'da (her tuş vuruşunda) binlerce kayıt üzerinde
+  // filter + 3 ayrı Set kurulumu yapıyordu → arama kutusu gözle görülür geciktiriyordu.
+  const filtreliSiparisler = useMemo(() => siparisler.filter(s => {
     if (tarihBas || tarihBit) {
       const gun = (s.siparis_tarihi || '').slice(0, 10) // YYYY-MM-DD
       if (tarihBas && gun < tarihBas) return false
@@ -117,12 +124,15 @@ export default function OnlineSiparisler() {
     if (durumFiltre && s.durum !== durumFiltre) return false
     if (kargoFiltre && s.kargo_durumu !== kargoFiltre) return false
     return true
-  })
+  }), [siparisler, tarihBas, tarihBit, odemeFiltre, durumFiltre, kargoFiltre])
 
   // Mevcut siparişlerde geçen ödeme/sipariş/kargo durumlarını filtre seçeneği olarak sun.
-  const odemeSecenekleri = [...new Set(siparisler.map(s => s.odeme_durumu).filter(Boolean))]
-  const durumSecenekleri = [...new Set(siparisler.map(s => s.durum).filter(Boolean))]
-  const kargoSecenekleri = [...new Set(siparisler.map(s => s.kargo_durumu).filter(Boolean))]
+  const odemeSecenekleri = useMemo(
+    () => [...new Set(siparisler.map(s => s.odeme_durumu).filter(Boolean))], [siparisler])
+  const durumSecenekleri = useMemo(
+    () => [...new Set(siparisler.map(s => s.durum).filter(Boolean))], [siparisler])
+  const kargoSecenekleri = useMemo(
+    () => [...new Set(siparisler.map(s => s.kargo_durumu).filter(Boolean))], [siparisler])
   const sr = useSiralama(filtreliSiparisler, {
     deger: (s, k) => k === 'teslimat' ? [s.teslimat_ilce, s.teslimat_il].filter(Boolean).join(' / ') : s[k],
   })
