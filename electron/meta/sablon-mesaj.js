@@ -7,7 +7,13 @@
 // çünkü yarısı kesilmiş bir fiyat mesajı müşteriye gitmemeli.
 
 const MAKS_KARAKTER = 1000
-const SELAMLAMA = 'Merhaba! 👋'
+const SELAMLAMA = 'Merhaba,'
+
+// Alan etiketleri. Eskiden yalnız emoji vardı (💰 / 🛒 / 📱) — ne olduğu belirsizdi ve
+// bazı cihazlarda emoji düşünce satır anlamsız kalıyordu. Artık açık yazı.
+const ETIKET_FIYAT = 'Fiyat:'
+const ETIKET_LINK = 'Online Sipariş Hattı:'
+const ETIKET_WHATSAPP = 'Whatsapp Sipariş Hattı:'
 
 /**
  * Fiyatı Türkçe biçimde yazar. Fiyat yoksa null → çağıran satırı hiç yazmaz.
@@ -27,12 +33,12 @@ function fiyatYaz(n) {
  * @returns {string}
  */
 function sablonBloku(s, whatsappYaz) {
-  const satirlar = [`🍲 ${s.urun_adi}`]
+  const satirlar = [s.urun_adi]
   if (s.aciklama) satirlar.push(s.aciklama)
   const f = fiyatYaz(s.fiyat)
-  if (f) satirlar.push(`💰 ${f}`)
-  if (s.link) satirlar.push(`🛒 ${s.link}`)
-  if (whatsappYaz && s.whatsapp) satirlar.push(`📱 Sipariş: ${s.whatsapp}`)
+  if (f) satirlar.push(`${ETIKET_FIYAT} ${f}`)
+  if (s.link) satirlar.push(`${ETIKET_LINK} ${s.link}`)
+  if (whatsappYaz && s.whatsapp) satirlar.push(`${ETIKET_WHATSAPP} ${s.whatsapp}`)
   return satirlar.join('\n')
 }
 
@@ -55,7 +61,7 @@ function mesajOlustur({ sablonlar, selamlama = SELAMLAMA }) {
     parcalar.push(sablonBloku(s, !ortakNumara))
     parcalar.push('')
   }
-  if (ortakNumara) parcalar.push(`📱 Sipariş ve bilgi: ${ortakNumara}`)
+  if (ortakNumara) parcalar.push(`${ETIKET_WHATSAPP} ${ortakNumara}`)
 
   const metin = parcalar.join('\n').replace(/\n{3,}/g, '\n\n').trim()
   return { metin, karakter: metin.length, asildi: metin.length > MAKS_KARAKTER }

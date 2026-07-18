@@ -8,14 +8,15 @@ import AranabilirSecici from './AranabilirSecici'
 
 const MAKS_KARAKTER = 1000
 
+// Etiketler sablon-mesaj.js ile BİREBİR aynı olmalı (ETIKET_* sabitleri).
 function onizle({ urun_adi, aciklama, fiyat, link, whatsapp }) {
-  const s = ['Merhaba! 👋', '', `🍲 ${urun_adi || '(ürün adı)'}`]
+  const s = ['Merhaba,', '', urun_adi || '(ürün adı)']
   if (aciklama) s.push(aciklama)
   const f = Number(fiyat)
-  if (f) s.push(`💰 ${f.toLocaleString('tr-TR')} TL`)
-  if (link) s.push(`🛒 ${link}`)
+  if (f) s.push(`Fiyat: ${f.toLocaleString('tr-TR')} TL`)
+  if (link) s.push(`Online Sipariş Hattı: ${link}`)
   s.push('')
-  if (whatsapp) s.push(`📱 Sipariş ve bilgi: ${whatsapp}`)
+  if (whatsapp) s.push(`Whatsapp Sipariş Hattı: ${whatsapp}`)
   return s.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
 

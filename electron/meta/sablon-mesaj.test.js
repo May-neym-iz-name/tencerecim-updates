@@ -31,6 +31,33 @@ describe('fiyatYaz', () => {
   })
 })
 
+describe('mesaj biçimi (etiketler)', () => {
+  // Eskiden alanlar YALNIZ emoji ile işaretliydi (💰/🛒/📱) — ne olduğu belirsizdi.
+  // v1.2.115'te açık yazı etiketlere geçildi. Bu testler biçimi kilitler.
+  test('alanlar açık yazı etiketle yazılır, emoji ile değil', () => {
+    const { metin } = mesajOlustur({ sablonlar: [kase] })
+    expect(metin).toContain('Fiyat: 1.450 TL')
+    expect(metin).toContain('Online Sipariş Hattı: tencerecim.store/celik-kase-seti')
+    expect(metin).toContain('Whatsapp Sipariş Hattı: 0555 123 45 67')
+  })
+
+  test('selamlama "Merhaba," (ünlemsiz, emojisiz)', () => {
+    const { metin } = mesajOlustur({ sablonlar: [kase] })
+    expect(metin.startsWith('Merhaba,')).toBe(true)
+  })
+
+  test('mesajda hiç emoji kalmaz', () => {
+    const { metin } = mesajOlustur({ sablonlar: [kase, granit] })
+    // Eski biçimdeki emojiler tamamen kalkmalı.
+    for (const e of ['🍲', '💰', '🛒', '📱', '👋']) expect(metin).not.toContain(e)
+  })
+
+  test('ürün adı etiketsiz, kendi satırında yazılır', () => {
+    const { metin } = mesajOlustur({ sablonlar: [kase] })
+    expect(metin.split('\n')).toContain("Çelik Kase Seti 6'lı")
+  })
+})
+
 describe('mesajOlustur', () => {
   test('tek ürünü selamlama + blok + whatsapp olarak yazar', () => {
     const { metin } = mesajOlustur({ sablonlar: [kase] })
