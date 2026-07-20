@@ -159,6 +159,11 @@ function upsTakipBaslat() {
       const r = await _takipleriYokla()
       if (r?.degisti) siparisDegisti(r) // açık sipariş ekranı anında tazelensin
       if (r?.hatalar?.length) console.error('[ups-takip] hatalar:', r.hatalar.slice(0, 5))
+      // ikas'a bildirim ayrı sayılır: UPS sorgusu başarılı olup ikas yazımı düşebilir
+      // (token süresi, paket durumu çakışması). Bu düşerse müşteri bildirim ALMAZ —
+      // sessiz kalmamalı. Ayrıca online_siparisler.ikas_kargo_hata'ya da yazılır.
+      if (r?.ikasBildirilen) console.log('[ups-takip] ikas\'a bildirilen sipariş:', r.ikasBildirilen)
+      if (r?.ikasHatalari?.length) console.error('[ups-takip] ikas bildirim hataları:', r.ikasHatalari.slice(0, 5))
     } catch (err) {
       console.error('[ups-takip] yoklama hatası:', err.message)
     } finally {

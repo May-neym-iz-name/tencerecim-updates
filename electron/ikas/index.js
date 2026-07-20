@@ -481,6 +481,8 @@ module.exports = {
   // satislar.js / stok.js arka plan push için kullanır (main.js _ önekini atlar).
   _pushArkaPlan: pushArkaPlan,
   _pullSiparisler: pullSiparisler,
+  // Arka plan kargo bildirimi (ikas/kargo-durum.js) kalem ID'lerini tazelemek için kullanır.
+  _tazeleSiparisKalemleri: tazeleSiparisKalemleri,
 
   // Kargo etiketi için sipariş verisini derler: yerel alanlar + ikas zenginleştirme
   // (satış kanalı adı, kargo kuralı/ücreti, ürün görselleri). ikas erişilemezse

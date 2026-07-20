@@ -13,6 +13,7 @@
 const { getDb } = require('../db/database')
 const { _ayarlariGetir } = require('../db/ups-ayarlar')
 const soap = require('./soap')
+const { _ikasaBildir: ikasaBildir } = require('../ikas/kargo-durum')
 
 // docs/ups-api-reference.md §1. Metne ASLA bakma — StatusCode tek doğru kaynak
 // ("HD" metninde 'teslim' geçer ama teslim değil; "S7"de geçmez ama teslim de değil).
@@ -54,6 +55,9 @@ function durumCevir(kod) {
 function _bekleyenKargolar(db) {
   return db.prepare(`
     SELECT k.id AS kargo_id, k.takip_no, k.son_durum_kodu,
+           -- tip NULL olabilir (eski kayıtlar): COALESCE şart, yoksa 'gonderi' filtresi
+           -- bu kayıtları sessizce eler ve ikas'a hiç bildirim gitmez.
+           COALESCE(k.tip, 'gonderi') AS tip,
            -- Sipariş bağı online_siparis_id'de OLMAYABİLİR: bazı kargo kayıtları siparişe
            -- yalnız ikas_siparis_id ile bağlı. Çözemezsek damga basacak sipariş bulunamaz.
            COALESCE(k.online_siparis_id,
@@ -67,7 +71,8 @@ function _bekleyenKargolar(db) {
 
     UNION ALL
 
-    SELECT NULL AS kargo_id, s.kargo_takip_no AS takip_no, NULL AS son_durum_kodu, s.id AS siparis_id
+    SELECT NULL AS kargo_id, s.kargo_takip_no AS takip_no, NULL AS son_durum_kodu,
+           'gonderi' AS tip, s.id AS siparis_id
     FROM online_siparisler s
     WHERE s.kargo_takip_no IS NOT NULL AND s.kargo_takip_no != ''
       AND COALESCE(s.kargo_durumu,'') NOT IN ('DELIVERED','CANCELLED','REFUNDED')
@@ -83,7 +88,10 @@ const bekle = (ms) => new Promise(r => setTimeout(r, ms))
 
 // Bir turu çalıştırır. Dönen: { sorgulanan, gonderildi, teslim, agdaDegil, hatalar }
 async function takipleriYokla() {
-  const sonuc = { sorgulanan: 0, gonderildi: 0, teslim: 0, agdaDegil: 0, hatalar: [], degisti: 0 }
+  const sonuc = {
+    sorgulanan: 0, gonderildi: 0, teslim: 0, agdaDegil: 0, hatalar: [], degisti: 0,
+    ikasBildirilen: 0, ikasHatalari: [],
+  }
   const db = getDb()
   const bekleyenler = _bekleyenKargolar(db)
   if (!bekleyenler.length) return sonuc
@@ -144,6 +152,23 @@ async function takipleriYokla() {
     if (k.siparis_id) {
       if (gonderildi) sonuc.degisti += gonderildiYaz.run(k.siparis_id).changes
       if (durum === 'teslim') sonuc.degisti += teslimYaz.run(k.siparis_id).changes
+
+      // ikas'a bildir. Durumu YALNIZ yerele yazmak müşteriyi bildirimsiz bırakıyordu:
+      // ikas kargo/teslim maillerini kendi sipariş durumu değişince gönderir, bizim
+      // tablomuza bakmaz. Bu yüzden ikas paneli "Hazırlanıyor"da takılı kalıyordu.
+      //
+      // İADE gönderileri HARİÇ: iade kargosu aynı online_siparis_id'yi paylaşır ama
+      // ikas'ın OrderPackageStatus'u yalnız GİDEN paketi tanımlar. Müşterinin geri
+      // gönderdiği kolinin teslimi, giden siparişi "Teslim Edildi" yapıp müşteriye
+      // yanlış bildirim gönderirdi. ikas'ta iade ayrı akıştır (refundOrderLine).
+      if (k.tip !== 'iade') {
+        // Her turda çağrılır ama modül son bildirdiği durumu damgalar: aynı durum
+        // ikinci kez GÖNDERİLMEZ (ağ çağrısı bile yapılmaz). Bu, daha önce hiç
+        // bildirilmemiş eski siparişleri de kendiliğinden telafi eder.
+        const r = await ikasaBildir(k.siparis_id, durum, k.takip_no)
+        if (r.ok && r.durum) sonuc.ikasBildirilen++
+        else if (r.hata) sonuc.ikasHatalari.push(`${k.takip_no}: ${r.hata}`)
+      }
     }
     if (durum === 'teslim') sonuc.teslim++
     else if (gonderildi) sonuc.gonderildi++

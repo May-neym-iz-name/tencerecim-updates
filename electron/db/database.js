@@ -436,6 +436,15 @@ function migrate() {
   try { db.exec("ALTER TABLE kargolar ADD COLUMN etiket_storage_yol TEXT") } catch {}
   // kargolar — gönderi tipi: 'gonderi' (mağaza→müşteri) | 'iade' (müşteri→mağaza, UPS'te swap).
   try { db.exec("ALTER TABLE kargolar ADD COLUMN tip TEXT DEFAULT 'gonderi'") } catch {}
+  // online_siparisler — ikas'a EN SON BİLDİRDİĞİMİZ paket durumu (ikas/kargo-durum.js).
+  // kargo_durumu'ndan AYRI tutulur: kargo_durumu ikas'tan OKUNAN durumdur ve her çekimde
+  // ezilir; bu alan ise "biz ne gönderdik"i tutar ve mükerrer müşteri bildirimini engeller.
+  // Aynı alana ikinci kez aynı durum yazılmaz → 30 dakikada bir tekrar bildirim gitmez.
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN ikas_kargo_durumu TEXT") } catch {}
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN ikas_kargo_bildirim_tarihi TEXT") } catch {}
+  // Son bildirim denemesinin hatası (NULL = sorun yok). Sessiz hata bırakmamak için:
+  // yoklayıcı hatayı yutar ama buraya yazar, ekranda gösterilir, sonraki turda yeniden denenir.
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN ikas_kargo_hata TEXT") } catch {}
   // Kendi setlerimiz: set = ad + tek SET fiyatı; bileşenler set_urunler'de.
   // Satışta set, bileşen ürünlere açılır (stok bileşenlerden düşer); fişte yalnız set fiyatı görünür.
   db.exec(`CREATE TABLE IF NOT EXISTS setler (
