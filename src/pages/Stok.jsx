@@ -34,6 +34,72 @@ export default function Stok() {
   const [sayilanlarUstte, setSayilanlarUstte] = usePersistentState('stok_sayim_sayilanlar_ustte', false)
   const barkodRef = useRef(null)
 
+  // ---- Sayım → veritabanı senkronu ----
+  // ESKİ HATA: barkod okutmada kaydedilecek değer setState güncelleyicisinin
+  // İÇİNDE hesaplanıp hemen dışında okunuyordu. React güncelleyiciyi çoğu kez
+  // sonraki render'da çalıştırır → değer null kalır → DB yazımı HİÇ yapılmazdı.
+  // Ekran (localStorage) doğru görünürken DB'de sayım NULL kalıyor, "Tamamla"
+  // yalnız NULL olmayanları işlediği için okutulan sayımlar kayboluyordu.
+  // YENİ YAKLAŞIM: UI iyimser güncellenir; DB yazımı bu effect'te yapılır.
+  // Effect her state değişiminde ekrandaki değerle DB'ye yazılmış değeri
+  // karşılaştırır, farklı olanları yazar; hata olursa kullanıcıya söyler ve
+  // 3 sn'de bir yeniden dener. Uygulama yeniden açılırsa (kalıcı sayım) tüm
+  // değerler yeniden yazılır — geçmişte düşen kayıtlar da böylece onarılır.
+  const aktifSayimRef = useRef(aktifSayim)
+  aktifSayimRef.current = aktifSayim
+  const senkRef = useRef({ sayimId: null, yazilan: new Map(), calisiyor: false, zamanlayici: null, hataToast: false })
+
+  const senkronla = useCallback(async () => {
+    const s = senkRef.current
+    if (s.calisiyor) return
+    s.calisiyor = true
+    try {
+      for (;;) {
+        const sayim = aktifSayimRef.current
+        if (!sayim || sayim.id !== s.sayimId) return
+        const bekleyen = sayim.kalemler.find(k =>
+          k.sayilan_miktar != null && s.yazilan.get(k.urun_id) !== k.sayilan_miktar)
+        if (!bekleyen) { s.hataToast = false; return }
+        const deger = bekleyen.sayilan_miktar
+        try {
+          await stokApi.sayimKalem(sayim.id, { urun_id: bekleyen.urun_id, sayilan_miktar: deger })
+          s.yazilan.set(bekleyen.urun_id, deger)
+        } catch (e) {
+          if (!s.hataToast) {
+            s.hataToast = true
+            toast.error('Sayım kaydedilemedi, yeniden denenecek: ' + e.message, { duration: 6000 })
+          }
+          clearTimeout(s.zamanlayici)
+          s.zamanlayici = setTimeout(() => senkronla(), 3000)
+          return
+        }
+      }
+    } finally { s.calisiyor = false }
+  }, [])
+
+  useEffect(() => {
+    const s = senkRef.current
+    if (!aktifSayim) {
+      s.sayimId = null; s.yazilan = new Map(); clearTimeout(s.zamanlayici)
+      return
+    }
+    if (s.sayimId !== aktifSayim.id) { s.sayimId = aktifSayim.id; s.yazilan = new Map() }
+    senkronla()
+  }, [aktifSayim, senkronla])
+
+  // Ekrandaki tüm sayımları DB'ye garanti yazar (Tamamla öncesi son kontrol).
+  async function tumunuDByeYaz() {
+    const sayim = aktifSayimRef.current
+    if (!sayim) return
+    const s = senkRef.current
+    for (const k of sayim.kalemler) {
+      if (k.sayilan_miktar == null) continue
+      if (s.yazilan.get(k.urun_id) === k.sayilan_miktar) continue
+      await stokApi.sayimKalem(sayim.id, { urun_id: k.urun_id, sayilan_miktar: k.sayilan_miktar })
+      s.yazilan.set(k.urun_id, k.sayilan_miktar)
+    }
+  }
+
   const yukle = useCallback(async () => {
     try {
       const r = await stokApi.listele({})
@@ -86,20 +152,23 @@ export default function Stok() {
     return Math.max(0, ...kalemler.map(k => Number(k._sira) || 0)) + 1
   }
 
-  async function kalemGir(urun_id, deger) {
+  function kalemGir(urun_id, deger) {
+    const sayi = parseInt(deger)
+    // Tek state güncellemesi: giriş metni + (geçerliyse) sayım ve fark birlikte.
+    // DB yazımı yukarıdaki senkron effect'inde — burada await/catch yok.
     setAktifSayim(prev => prev && ({
       ...prev,
-      kalemler: prev.kalemler.map(k => k.urun_id === urun_id
-        ? { ...k, _girilen: deger, _sira: deger === '' ? k._sira : sonrakiSira(prev.kalemler) }
-        : k),
+      kalemler: prev.kalemler.map(k => {
+        if (k.urun_id !== urun_id) return k
+        const guncel = { ...k, _girilen: deger, _sira: deger === '' ? k._sira : sonrakiSira(prev.kalemler) }
+        if (deger !== '' && !isNaN(sayi)) {
+          guncel.sayilan_miktar = sayi
+          guncel.fark = sayi - k.beklenen_miktar
+        }
+        return guncel
+      }),
     }))
     if (deger !== '') setSonOkutulanId(urun_id)
-    if (deger !== '' && !isNaN(parseInt(deger))) {
-      try {
-        const r = await stokApi.sayimKalem(aktifSayim.id, { urun_id, sayilan_miktar: parseInt(deger) })
-        setAktifSayim(prev => prev && ({ ...prev, kalemler: prev.kalemler.map(k => k.urun_id === urun_id ? { ...k, sayilan_miktar: parseInt(deger), fark: r.fark } : k) }))
-      } catch {}
-    }
   }
 
   // Okutulan ürünü görünür yap ve kısa süre vurgula
@@ -121,28 +190,28 @@ export default function Stok() {
     const kod = String(ham || '').trim()
     setBarkodInput('')
     if (!kod || !aktifSayim) return
-    const varMi = aktifSayim.kalemler.some(k => String(k.barkod || '').trim() === kod)
-    if (!varMi) { toast.error('Bu sayımda ürün bulunamadı: ' + kod); return }
-    const sayimId = aktifSayim.id
-    let hedef = null
+    // Ürün, güncelleyici DIŞINDA bulunur (barkod/urun_id sabittir, bayat state
+    // sorun olmaz). ESKİ HATA: hedef güncelleyicinin içinde hesaplanıp dışarıda
+    // senkron okunuyordu; React güncelleyiciyi genelde sonra çalıştırdığı için
+    // null kalıyor ve DB yazımı atlanıyordu. Artık DB yazımı senkron effect'inde.
+    const kalem = aktifSayim.kalemler.find(k => String(k.barkod || '').trim() === kod)
+    if (!kalem) { toast.error('Bu sayımda ürün bulunamadı: ' + kod); return }
     setAktifSayim(prev => {
       if (!prev) return prev
       return {
         ...prev,
         kalemler: prev.kalemler.map(k => {
-          if (String(k.barkod || '').trim() !== kod) return k
+          if (k.urun_id !== kalem.urun_id) return k
+          // +1 daima EN GÜNCEL değere (prev) uygulanır — art arda hızlı
+          // okutmalarda sayaç kaybolmaz.
           const yeni = (parseInt(k.sayilan_miktar ?? 0) || 0) + 1
-          hedef = { urun_id: k.urun_id, deger: yeni }
           return { ...k, _girilen: String(yeni), sayilan_miktar: yeni, fark: yeni - k.beklenen_miktar,
             _sira: sonrakiSira(prev.kalemler) }
         }),
       }
     })
-    if (hedef) {
-      stokApi.sayimKalem(sayimId, { urun_id: hedef.urun_id, sayilan_miktar: hedef.deger }).catch(() => {})
-      setSonOkutulanId(hedef.urun_id)   // üstteki sabit kart
-      vurgula(hedef.urun_id)
-    }
+    setSonOkutulanId(kalem.urun_id)   // üstteki sabit kart
+    vurgula(kalem.urun_id)
   }
 
   // Barkod okuyucu: kutu seçili olmasa da (ör. bir sayı alanına tıkladıktan sonra)
@@ -152,6 +221,9 @@ export default function Stok() {
   async function tamamlaSayim() {
     if (!confirm('Sayımı tamamlayıp stokları güncellemek istiyor musunuz?')) return
     try {
+      // Ekrandaki HER sayım DB'ye yazılmadan tamamlamaya geçilmez — yazım
+      // başarısızsa hata gösterilir ve sayım açık kalır (veri kaybı olmaz).
+      await tumunuDByeYaz()
       await stokApi.sayimTamamla(aktifSayim.id, true)
       toast.success('Sayım tamamlandı, stoklar güncellendi!')
       setAktifSayim(null)
