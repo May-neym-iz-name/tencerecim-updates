@@ -449,6 +449,45 @@ function migrate() {
   // Son bildirim denemesinin hatası (NULL = sorun yok). Sessiz hata bırakmamak için:
   // yoklayıcı hatayı yutar ama buraya yazar, ekranda gösterilir, sonraki turda yeniden denenir.
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN ikas_kargo_hata TEXT") } catch {}
+
+  // ONARIM — kargolar.ikas_siparis_id eksik olan ESKİ kayıtlar (2026-07-21).
+  //
+  // Sorun: online_siparis_id YEREL bir autoincrement'tir. Kargo kaydı senkronla başka
+  // PC'ye gittiğinde oradaki aynı numaralı sipariş BAŞKA bir siparişdir. Çapraz-PC
+  // anahtarı ikas_siparis_id'dir; kargo oluşturma kodu artık onu yazıyor (ups/kargo.js)
+  // ama daha eski kayıtlarda boş kaldı. Sonuç: diğer PC'de kargo hiçbir siparişe
+  // bağlanamıyor ve sipariş "kargo etiketi oluşturulmamış" gibi görünüyor.
+  //
+  // NEDEN ÇİFT DOĞRULAMA ŞART: bu göç HER PC'de çalışır. Koşulsuz yazsaydık, BAŞKA
+  // PC'den senkronla gelmiş bir satırda yereldeki 399 numaralı (bambaşka) siparişin
+  // kimliği yazılır ve kargo YANLIŞ müşteriye bağlanırdı. Hem AD hem TELEFON eşleşmesi,
+  // bağın gerçekten bu PC'ye ait olduğunun kanıtıdır. Ad tek başına yetmez: aynı müşteri
+  // birden çok siparişte geçiyor (canlı veride "Burak GÜL" iki ayrı siparişte).
+  // Telefon son 10 haneden karşılaştırılır (+90/0 önek farkları canlı veride mevcut).
+  // Canlı kuru çalıştırma: 11 kaydın 11'i ad+telefon doğrulamasından geçti, 0 yanlış eşleşme.
+  //
+  // Onarım senkronla YAYILIR: senk-sema'nın AFTER UPDATE tetikleyicisi senk_guncelleme'yi
+  // tazeler, düzeltilmiş satır diğer PC'lere gider. Orada bu göç kendi başına onaramazdı
+  // (yerel sipariş farklı) — düzeltmenin tek yerde yapılıp yayılması bu yüzden doğru.
+  try {
+    db.function('tel10', { deterministic: true }, (s) => {
+      const d = String(s == null ? '' : s).replace(/\D/g, '')
+      return d.slice(-10) || null
+    })
+    db.exec(`
+      UPDATE kargolar SET ikas_siparis_id = (
+        SELECT s.ikas_siparis_id FROM online_siparisler s WHERE s.id = kargolar.online_siparis_id
+      )
+      WHERE ikas_siparis_id IS NULL AND online_siparis_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM online_siparisler s
+          WHERE s.id = kargolar.online_siparis_id
+            AND s.ikas_siparis_id IS NOT NULL
+            AND tr_ara(s.musteri_ad) = tr_ara(kargolar.alici_ad)
+            AND tel10(s.musteri_telefon) IS NOT NULL
+            AND tel10(s.musteri_telefon) = tel10(kargolar.alici_telefon)
+        )`)
+  } catch (e) { console.error('kargo ikas_siparis_id onarimi:', e.message) }
   // Kendi setlerimiz: set = ad + tek SET fiyatı; bileşenler set_urunler'de.
   // Satışta set, bileşen ürünlere açılır (stok bileşenlerden düşer); fişte yalnız set fiyatı görünür.
   db.exec(`CREATE TABLE IF NOT EXISTS setler (
