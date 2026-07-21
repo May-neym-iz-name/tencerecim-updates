@@ -418,9 +418,10 @@ function migrate() {
   try { db.exec("ALTER TABLE kargolar ADD COLUMN takip_sorgu_tarihi TEXT") } catch {}
   // online_siparis_kalemleri — ikas sipariş kalemi id'si (iptal/iade için).
   try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN ikas_kalem_id TEXT") } catch {}
-  // online_siparisler — "Kargolandı Bildir" ile gönderim yapıldığı an (yerel işaret).
-  // ikas orderPackageStatus'ta ayrı bir "gönderildi" durumu yok (Kargoya Hazır → Teslim Edildi);
-  // bu alan set edilince arayüz teslim edilene kadar "Gönderildi" gösterir, senkron bunu ezmez.
+  // online_siparisler — kolinin UPS ağına GERÇEKTEN girdiği an (yerel işaret; yalnız
+  // ups/takip.js yoklayıcısı basar). ikas orderPackageStatus'ta ayrı bir "gönderildi"
+  // durumu yok (Kargoya Hazır → Teslim Edildi); bu alan set edilince arayüz teslim
+  // edilene kadar "Gönderildi" gösterir, senkron bunu ezmez.
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN gonderildi_tarihi TEXT") } catch {}
   // online_siparisler — ikas'tan okunan kargo takip bilgisi (orderPackages.trackingInfo).
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_no TEXT") } catch {}
@@ -488,6 +489,40 @@ function migrate() {
             AND tel10(s.musteri_telefon) = tel10(kargolar.alici_telefon)
         )`)
   } catch (e) { console.error('kargo ikas_siparis_id onarimi:', e.message) }
+
+  // ONARIM (TEK SEFER) — erken basılmış "Gönderildi" damgaları (2026-07-21).
+  //
+  // Sorun: 'ikas:siparis-kargola' etiket oluşturulur oluşturulmaz gonderildi_tarihi
+  // damgalıyordu; koli UPS'e hiç verilmese bile sipariş "Gönderildi" görünüyordu
+  // (ölçüm: 20 gönderinin 15'i UPS'e verilmeden ikas'tan sevk edilmişti). Damga artık
+  // yalnız UPS takip yoklayıcısından basılıyor; buradaki temizlik ESKİ yanlış damgaları
+  // siler. UPS ağına gerçekten girmiş olanlar (son_durum_kodu var ve 13 değil) korunur,
+  // teslim edilmişlere dokunulmaz. Silinenlerden gerçekten yolda olanları yoklayıcı
+  // 30 dk içinde yeniden damgalar.
+  //
+  // NEDEN TEK SEFERLİK (yerel_onarimlar tablosu): her açılışta çalışsaydı, ikas'ın kendi
+  // UPS entegrasyonuyla çıkan siparişlerde (kargolar'da satırı YOKTUR, kanıt bulunamaz)
+  // yoklayıcının bastığı MEŞRU damga her açılışta silinip 30 dk sonra geri gelirdi.
+  // uygulama_ayarlar KULLANILMAZ: o tablo PC'ler arası senkronlanır; işaret senkronla
+  // yayılsa diğer PC kendi yerel verisini hiç onaramazdı.
+  try {
+    db.exec("CREATE TABLE IF NOT EXISTS yerel_onarimlar (ad TEXT PRIMARY KEY, tarih TEXT)")
+    const yapildi = db.prepare("SELECT 1 FROM yerel_onarimlar WHERE ad = ?").get('gonderildi_erken_damga_2026_07')
+    if (!yapildi) {
+      db.exec(`
+        UPDATE online_siparisler SET gonderildi_tarihi = NULL
+        WHERE gonderildi_tarihi IS NOT NULL
+          AND COALESCE(kargo_durumu,'') NOT IN ('DELIVERED','PARTIALLY_DELIVERED')
+          AND NOT EXISTS (
+            SELECT 1 FROM kargolar k
+            WHERE (k.online_siparis_id = online_siparisler.id
+                   OR (k.ikas_siparis_id IS NOT NULL AND k.ikas_siparis_id = online_siparisler.ikas_siparis_id))
+              AND k.son_durum_kodu IS NOT NULL AND k.son_durum_kodu != 13
+          )`)
+      db.prepare("INSERT INTO yerel_onarimlar (ad, tarih) VALUES (?, datetime('now','localtime'))")
+        .run('gonderildi_erken_damga_2026_07')
+    }
+  } catch (e) { console.error('gonderildi damga onarimi:', e.message) }
   // Kendi setlerimiz: set = ad + tek SET fiyatı; bileşenler set_urunler'de.
   // Satışta set, bileşen ürünlere açılır (stok bileşenlerden düşer); fişte yalnız set fiyatı görünür.
   db.exec(`CREATE TABLE IF NOT EXISTS setler (

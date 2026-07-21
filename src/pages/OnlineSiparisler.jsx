@@ -43,7 +43,9 @@ const odemeRengi = (d) => d === 'PAID' ? 'bg-emerald-100 text-emerald-700'
 
 // ikas orderPackageStatus (kargo/paket durumu) — "Kargoya Hazır", "Teslim Edildi" buradan gelir.
 const KARGO_ETIKET = {
-  UNFULFILLED: 'Hazırlanmadı', FULFILLED: 'Hazırlandı', PARTIALLY_FULFILLED: 'Kısmen Hazırlandı',
+  // ikas terminolojisi: FULFILLED = paket oluşturuldu/kargolandı ("hazırlandı" DEĞİL —
+  // eski çeviri olduğundan geri bir aşama gibi okunuyordu, tutarsızlık hissi veriyordu).
+  UNFULFILLED: 'Hazırlanmadı', FULFILLED: 'Kargolandı (ikas)', PARTIALLY_FULFILLED: 'Kısmen Kargolandı (ikas)',
   READY_FOR_SHIPMENT: 'Kargoya Hazır', PARTIALLY_READY_FOR_SHIPMENT: 'Kısmen Kargoya Hazır',
   READY_FOR_PICK_UP: 'Teslim Almaya Hazır',
   DELIVERED: 'Teslim Edildi', PARTIALLY_DELIVERED: 'Kısmen Teslim', UNABLE_TO_DELIVER: 'Teslim Edilemedi',
@@ -56,9 +58,9 @@ const kargoRengi = (d) => (d === 'DELIVERED' || d === 'READY_FOR_PICK_UP') ? 'bg
   : (d === 'CANCELLED' || d === 'REFUNDED' || d === 'UNABLE_TO_DELIVER' || d === 'PARTIALLY_CANCELLED') ? 'bg-red-100 text-red-700'
   : 'bg-gray-100 text-gray-600'
 
-// "Kargolandı Bildir" ile gönderilen ama ikas'ta hâlâ "Kargoya Hazır/Hazırlandı" görünen
-// siparişleri "Gönderildi" olarak gösterir. ikas gerçek bir ilerleme (Teslim/İptal/İade)
-// bildirince o gerçek durum öne geçer. Böylece gönderim yerelde net görünür.
+// gonderildi_tarihi YALNIZ UPS takip yoklayıcısı basar (koli gerçekten UPS ağına girince —
+// ups/takip.js). Doluysa ve ikas gerçek bir ilerleme (Teslim/İptal/İade) bildirmediyse
+// "Gönderildi" gösterilir. Eskiden etiket oluşturmak da bu damgayı basıyordu; kaldırıldı.
 const GONDERILDI_EZILEBILIR = new Set([
   'UNFULFILLED', 'FULFILLED', 'PARTIALLY_FULFILLED', 'READY_FOR_SHIPMENT', 'PARTIALLY_READY_FOR_SHIPMENT',
 ])
@@ -207,8 +209,11 @@ export default function OnlineSiparisler() {
     if (!takip) { toast.error('Önce bu sipariş için kargo oluşturun.'); return }
     setIslemMesgul('kargola')
     try {
-      await ikasApi.siparisKargola({ id: s.id, takipNo: takip, kargoFirma: 'UPS', bildir: true })
-      toast.success('ikas siparişi kargolandı olarak işaretlendi, müşteriye bildirildi.')
+      // bildir:false — müşteriye "kargoya verildi" bildirimi koli UPS ağına girince
+      // otomatik gider (UPS takip yoklayıcısı + ikas köprüsü). Erken bildirim, hiç
+      // çıkmamış gönderiler için müşteriyi yanıltıyordu.
+      await ikasApi.siparisKargola({ id: s.id, takipNo: takip, kargoFirma: 'UPS', bildir: false })
+      toast.success('Takip no ikas siparişine işlendi. "Gönderildi" ve müşteri bildirimi UPS teyidiyle otomatik gelecek.')
       await detayAc(s.id); await yukle()
     } catch (e) { toast.error('ikas bildirimi başarısız: ' + e.message) }
     finally { setIslemMesgul('') }
@@ -778,12 +783,13 @@ export default function OnlineSiparisler() {
         kapat={() => setKargoAcik(false)}
         onTamam={async (kargo) => {
           setKargoAcik(false)
-          // Online sipariş kargosuysa takip no'yu ikas'a bildir (kargolandı + müşteri bildirimi).
+          // Online sipariş kargosuysa takip no'yu ikas'a işle (bildirimsiz). "Gönderildi"
+          // durumu ve müşteri bildirimi, koli UPS ağına girince yoklayıcıdan otomatik gelir.
           const sipId = kargoBaslangic?.onlineSiparisId
           if (sipId && kargo?.takip_no) {
             try {
-              await ikasApi.siparisKargola({ id: sipId, takipNo: kargo.takip_no, kargoFirma: 'UPS', bildir: true })
-              toast.success('Takip no ikas siparişine işlendi, müşteriye bildirildi.')
+              await ikasApi.siparisKargola({ id: sipId, takipNo: kargo.takip_no, kargoFirma: 'UPS', bildir: false })
+              toast.success('Takip no ikas siparişine işlendi. "Gönderildi" UPS teyidiyle otomatik güncellenecek.')
             } catch (e) { toast.error('ikas bildirimi yapılamadı (kargo yine de oluştu): ' + e.message) }
           }
           if (secili) await detayAc(secili.id)
