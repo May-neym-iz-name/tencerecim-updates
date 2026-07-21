@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useSiralama } from '../hooks/useSiralama'
 import SiraliBaslik from '../components/SiraliBaslik'
 import AranabilirSecici from '../components/AranabilirSecici'
+import { useBarkodTarama } from '../hooks/useBarkodTarama'
 
 const PARA = (n) => `₺${(Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const TARIH = (t) => t ? new Date(t).toLocaleString('tr-TR') : '—'
@@ -41,6 +42,11 @@ export default function MalKabul() {
     if (deger.length < 2) { setSonuc([]); return }
     try { const r = await urunlerApi.listele({ arama: deger, boyut: 8 }); setSonuc(r.urunler) } catch {}
   }, [])
+
+  // Barkod okuyucu: kutuya tıklamadan okutulabilsin, her okutmada eskisi silinsin.
+  // araFn hem state'i yazar hem aramayı çalıştırır — okunan kod doğrudan ona verilir.
+  // (araFn'in ALTINDA olmalı: yukarıda çağrılsa TDZ'ye yakın kırılgan bir bağ olurdu.)
+  useBarkodTarama({ ref: aramaRef, onKod: araFn })
 
   function kalemEkle(urun) {
     setKalemler(prev => {

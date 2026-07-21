@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { setApi, urunlerApi, markaApi, kategoriApi } from '../api/ipc'
 import AranabilirSecici from './AranabilirSecici'
+import { useBarkodTarama } from '../hooks/useBarkodTarama'
 
 // Kendi setlerimizi yönetme: mevcut ürünlerden set oluştur, tek SET fiyatı belirle.
 // Satışta set seçilince bileşenler fişe girer ama yalnızca set fiyatı geçerli olur.
@@ -76,6 +77,9 @@ function SetFormu({ set, kapat, onTamam }) {
   const [fiyat, setFiyat] = useState(set?.fiyat || '')
   const [kalemler, setKalemler] = useState(set?.bilesenler?.map(b => ({ urun_id: b.urun_id, ad: b.ad, miktar: b.miktar })) || [])
   const [arama, setArama] = useState('')
+  // Barkod okuyucu: kutuya tıklamadan okutulabilsin, her okutmada eskisi silinsin.
+  const aramaRef = useRef(null)
+  useBarkodTarama({ ref: aramaRef, onKod: setArama })
   const [markaF, setMarkaF] = useState('')     // marka filtresi
   const [kategoriF, setKategoriF] = useState('') // kategori filtresi
   const [markalar, setMarkalar] = useState([])
@@ -148,7 +152,7 @@ function SetFormu({ set, kapat, onTamam }) {
             {/* SOL: filtreli ürün havuzu */}
             <div className="flex flex-col min-h-0 border rounded-lg overflow-hidden">
               <div className="p-2 border-b bg-gray-50 space-y-2 flex-shrink-0">
-                <input value={arama} onChange={e => setArama(e.target.value)}
+                <input ref={aramaRef} value={arama} onChange={e => setArama(e.target.value)}
                   placeholder="🔍 Ürün / barkod ara…" className="border rounded px-2 py-1.5 text-sm w-full" />
                 <div className="grid grid-cols-2 gap-2">
                   <AranabilirSecici secenekler={markalar.map(m => ({ deger: m.id, etiket: m.ad }))}

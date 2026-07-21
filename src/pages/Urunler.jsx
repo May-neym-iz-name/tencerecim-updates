@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
@@ -7,6 +7,7 @@ import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { useSiralama } from '../hooks/useSiralama'
 import { useDebounce } from '../hooks/useDebounce'
+import { useBarkodTarama } from '../hooks/useBarkodTarama'
 import SiraliBaslik from '../components/SiraliBaslik'
 import KategoriYonetim from '../components/KategoriYonetim'
 import MarkaYonetim from '../components/MarkaYonetim'
@@ -52,6 +53,9 @@ export default function Urunler() {
   const [urunler, setUrunler] = useState([])
   const [toplam, setToplam] = useState(0)
   const [arama, setArama] = useState('')
+  // Barkod okutulunca: kutuyu seç + eski içeriği tamamen yenisiyle değiştir.
+  // Ürün formu açıkken kapalı — orada barkod alanına elle yazılıyor olabilir.
+  const aramaRef = useRef(null)
   const [filtreMarka, setFiltreMarka] = useState('')
   const [filtreKategori, setFiltreKategori] = useState('')
   const [formAcik, setFormAcik] = useState(false)
@@ -95,6 +99,10 @@ export default function Urunler() {
 
   useEffect(() => { yukle() }, [yukle])
   useEffect(() => { yukleYardimcilar() }, [yukleYardimcilar])
+
+  // Barkod okuyucu: kutuya tıklamadan okutulabilsin, her okutmada eskisi silinsin.
+  // Form/modal açıkken kapalı — o sırada barkod alanına elle yazılıyor olabilir.
+  useBarkodTarama({ ref: aramaRef, aktif: !formAcik, onKod: setArama })
 
   function handleDuzenle(u) {
     setForm({ ad: u.ad||'', barkod: u.barkod||'', sku: u.sku||'', marka_id: u.marka_id||'', kategori_id: u.kategori_id||'', tedarikci_id: u.tedarikci_id||'', aciklama: u.aciklama||'', alis_fiyati: u.alis_fiyati||'', satis_fiyati: u.satis_fiyati||'', kdv_orani: u.kdv_orani||20 })
@@ -223,7 +231,7 @@ export default function Urunler() {
 
       {/* Filtreler */}
       <div className="flex gap-2 mb-3 flex-shrink-0 flex-wrap">
-        <input value={arama} onChange={e => setArama(e.target.value)}
+        <input ref={aramaRef} value={arama} onChange={e => setArama(e.target.value)}
           placeholder="Ürün, barkod veya SKU ara..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-40" />
         <AranabilirSecici className="w-44" secenekler={markalar.map(m => ({ deger: m.id, etiket: m.ad }))}
           deger={filtreMarka} onChange={v => setFiltreMarka(v)} placeholder="Tüm Markalar" />
