@@ -48,3 +48,93 @@ describe('durumCevir', () => {
     expect(durumCevir('13')).toEqual({ durum: 'yok', gonderildi: false })
   })
 })
+
+// 2026-07-20: ikas panelinde teslim edilmis siparisler "Kargoya Hazir"da takili kaldi.
+// Kok neden: _bekleyenKargolar teslim olmus kargolari `son_durum_kodu != 2` ile eliyor
+// (UPS'i bosuna sorgulamamak icin dogru bir optimizasyon), ama kopru eklenmeden ONCE
+// teslim olmus kargolar ikas'a hic bildirilmedigi icin o eleme onlari sonsuza dek
+// gorunmez yapiyordu. Olcum: yerelde teslim 73 kargo, ikas'a bildirilen 1.
+describe('_ikasBekleyenTeslimler (telafi turu)', () => {
+  // better-sqlite3 DEGIL: o prebuilt ikili Electron icin derlenmis (npmRebuild:false),
+  // vitest'in Node'unda NODE_MODULE_VERSION uyusmazligiyla yuklenmiyor. node:sqlite
+  // ayni prepare/run/all/exec yuzeyini sunuyor ve SQL'i gercek SQLite'a calistiriyor.
+  const { DatabaseSync } = require('node:sqlite')
+  const kur = () => {
+    const db = new DatabaseSync(':memory:')
+    db.exec(`
+      CREATE TABLE online_siparisler(id INTEGER PRIMARY KEY, ikas_siparis_id TEXT,
+        kargo_durumu TEXT, ikas_kargo_durumu TEXT);
+      CREATE TABLE kargolar(id INTEGER PRIMARY KEY, takip_no TEXT, durum TEXT,
+        son_durum_kodu INTEGER, olusturma_tarihi TEXT, online_siparis_id INTEGER,
+        ikas_siparis_id TEXT, tip TEXT);`)
+    return db
+  }
+  const siparis = (db, id, kargoDurumu, bizYazdik) =>
+    db.prepare('INSERT INTO online_siparisler VALUES(?,?,?,?)')
+      .run(id, 'IK' + id, kargoDurumu, bizYazdik)
+  const kargo = (db, id, sipId, kod, tip = 'gonderi', durum = null) =>
+    db.prepare("INSERT INTO kargolar VALUES(?,?,?,?,datetime('now','localtime'),?,NULL,?)")
+      .run(id, 'T' + id, durum, kod, sipId, tip)
+
+  test('UPS teslim ama ikas bildirilmemis -> TELAFI EDILIR', () => {
+    const db = kur()
+    siparis(db, 1, 'READY_FOR_SHIPMENT', null)
+    kargo(db, 10, 1, 2)
+    const r = takip._ikasBekleyenTeslimler(db)
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ siparis_id: 1, takip_no: 'T10' })
+  })
+
+  test('zaten bildirilmisse tekrar edilmez', () => {
+    const db = kur()
+    siparis(db, 1, 'READY_FOR_SHIPMENT', 'DELIVERED')
+    kargo(db, 10, 1, 2)
+    expect(takip._ikasBekleyenTeslimler(db)).toHaveLength(0)
+  })
+
+  test('ikas zaten DELIVERED ise dokunulmaz', () => {
+    const db = kur()
+    siparis(db, 1, 'DELIVERED', null)
+    kargo(db, 10, 1, 2)
+    expect(takip._ikasBekleyenTeslimler(db)).toHaveLength(0)
+  })
+
+  test('teslim OLMAYAN kargo telafiye girmez (normal tur zaten isler)', () => {
+    const db = kur()
+    siparis(db, 1, 'READY_FOR_SHIPMENT', null)
+    kargo(db, 10, 1, 31)          // agda ama teslim degil
+    expect(takip._ikasBekleyenTeslimler(db)).toHaveLength(0)
+  })
+
+  test('IADE kargosu telafiye GIRMEZ', () => {
+    // Iadenin ikas karsiligi yok: giden siparisi "Teslim Edildi" yapip yanlis bildirim gonderirdi.
+    const db = kur()
+    siparis(db, 1, 'READY_FOR_SHIPMENT', null)
+    kargo(db, 10, 1, 2, 'iade')
+    expect(takip._ikasBekleyenTeslimler(db)).toHaveLength(0)
+  })
+
+  test('iptal edilmis kargo telafiye girmez', () => {
+    const db = kur()
+    siparis(db, 1, 'READY_FOR_SHIPMENT', null)
+    kargo(db, 10, 1, 2, 'gonderi', 'iptal')
+    expect(takip._ikasBekleyenTeslimler(db)).toHaveLength(0)
+  })
+
+  test('cok kargolu siparis: TESLIM olanin takip no su secilir, satir TEK olur', () => {
+    const db = kur()
+    siparis(db, 1, 'READY_FOR_SHIPMENT', null)
+    kargo(db, 10, 1, 31)   // yolda
+    kargo(db, 11, 1, 2)    // teslim
+    const r = takip._ikasBekleyenTeslimler(db)
+    expect(r).toHaveLength(1)
+    expect(r[0].takip_no).toBe('T11')
+  })
+
+  test('ikas siparisi olmayan (magaza ici) kargo telafiye girmez', () => {
+    const db = kur()
+    db.prepare('INSERT INTO online_siparisler VALUES(?,?,?,?)').run(1, null, 'READY_FOR_SHIPMENT', null)
+    kargo(db, 10, 1, 2)
+    expect(takip._ikasBekleyenTeslimler(db)).toHaveLength(0)
+  })
+})

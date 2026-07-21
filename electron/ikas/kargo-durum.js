@@ -166,7 +166,7 @@ function bildirimKarari(durum, sonBildirilen, ikasDurumu) {
  *
  * Hata FIRLATMAZ — yoklayıcının turunu kesmemeli. Hatayı kaydeder ve döner.
  */
-async function ikasaBildir(siparisId, durum, takipNo) {
+async function ikasaBildir(siparisId, durum, takipNo, { sessiz = false } = {}) {
   if (!IKAS_KARSILIGI[durum]) return { ok: false, atlandi: 'karsiligi-yok' }
 
   const db = getDb()
@@ -197,7 +197,10 @@ async function ikasaBildir(siparisId, durum, takipNo) {
     // 2. AŞAMA — canlı duruma göre nihai karar (çakışma/iptal/teslim korumaları).
     const karar = bildirimKarari(durum, sip.ikas_kargo_durumu, kayit?.orderPackageStatus ?? null)
     if (!karar.gonder) return { ok: true, atlandi: karar.atlandi }
-    const { status: hedef, bildir, cakisma } = karar
+    const { status: hedef, cakisma } = karar
+    // sessiz: telafi turu (gecmisi tarama). Gunler once teslim olmus bir siparis icin
+    // simdi "teslim edildi" maili atmak musteriye anlamsiz gelir - panel duzelsin yeter.
+    const bildir = karar.bildir && !sessiz
 
     if (!paketler.length) {
       // Paket yok → fulfillOrder ile aç (takip no'yu da yazar, sipariş FULFILLED olur).

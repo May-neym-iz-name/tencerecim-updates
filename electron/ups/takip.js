@@ -84,15 +84,55 @@ function _bekleyenKargolar(db) {
   `).all()
 }
 
+// TELAFİ TURU: yerelde TESLİM bilinen ama ikas'a hiç bildirilmemiş siparişler.
+//
+// Neden ayrı bir sorgu gerekiyor: yukarıdaki _bekleyenKargolar, teslim olmuş kargoları
+// `son_durum_kodu != 2` ile ELER (UPS'i boşuna tekrar sorgulamamak için — doğru bir
+// optimizasyon). Ama köprü eklenmeden ÖNCE teslim olmuş kargolar ikas'a hiç bildirilmedi
+// ve o eleme yüzünden asla da bildirilemezdi: ikas panelinde sipariş "Kargoya Hazır"da
+// takılı kalıyordu (ölçüm 2026-07-20: yerelde teslim 73 kargo, ikas'a bildirilen 1).
+//
+// Bu tur UPS'e HİÇ ÇIKMAZ — durumu zaten yerelde biliyoruz (son_durum_kodu = 2).
+// Yalnız ikas'a yazar ve BİLDİRİMSİZ yazar: günler önce teslim olmuş bir sipariş için
+// müşteriye şimdi "teslim edildi" maili göndermek anlamsız olurdu.
+function _ikasBekleyenTeslimler(db) {
+  return db.prepare(`
+    SELECT s.id AS siparis_id,
+           -- Siparişin birden fazla kargosu olabilir: teslim olanın takip no'sunu tercih et.
+           COALESCE(MAX(CASE WHEN k.son_durum_kodu = ${TESLIM} THEN k.takip_no END),
+                    MAX(k.takip_no)) AS takip_no
+    FROM online_siparisler s
+    JOIN kargolar k ON (k.online_siparis_id = s.id OR k.ikas_siparis_id = s.ikas_siparis_id)
+    WHERE s.ikas_siparis_id IS NOT NULL
+      AND COALESCE(s.ikas_kargo_durumu,'') = ''           -- bize göre HİÇ bildirilmemiş
+      AND COALESCE(s.kargo_durumu,'') != 'DELIVERED'      -- ikas'a göre zaten teslim değil
+      AND COALESCE(k.tip,'gonderi') != 'iade'
+      AND COALESCE(k.durum,'') != 'iptal'
+      AND COALESCE(k.olusturma_tarihi, datetime('now','localtime')) >= datetime('now','localtime', '-${PENCERE_GUN} days')
+    GROUP BY s.id
+    HAVING MAX(CASE WHEN k.son_durum_kodu = ${TESLIM} THEN 1 ELSE 0 END) = 1
+  `).all()
+}
+
 const bekle = (ms) => new Promise(r => setTimeout(r, ms))
 
 // Bir turu çalıştırır. Dönen: { sorgulanan, gonderildi, teslim, agdaDegil, hatalar }
 async function takipleriYokla() {
   const sonuc = {
     sorgulanan: 0, gonderildi: 0, teslim: 0, agdaDegil: 0, hatalar: [], degisti: 0,
-    ikasBildirilen: 0, ikasHatalari: [],
+    ikasBildirilen: 0, ikasTelafi: 0, ikasHatalari: [],
   }
   const db = getDb()
+
+  // TELAFİ TURU EN BAŞTA: UPS'e ihtiyaç duymaz (durumu yerelde biliyoruz), bu yüzden
+  // aşağıdaki erken dönüşlerin ARKASINDA kalmamalı — yoklanacak yeni kargo yoksa veya
+  // UPS ayarları eksikse bile ikas'ın düzeltilmesi gerekir.
+  for (const t of _ikasBekleyenTeslimler(db)) {
+    const r = await ikasaBildir(t.siparis_id, 'teslim', t.takip_no, { sessiz: true })
+    if (r.ok && r.durum) { sonuc.ikasTelafi++; sonuc.degisti++ }
+    else if (r.hata) sonuc.ikasHatalari.push(`telafi ${t.takip_no}: ${r.hata}`)
+  }
+
   const bekleyenler = _bekleyenKargolar(db)
   if (!bekleyenler.length) return sonuc
 
@@ -175,6 +215,7 @@ async function takipleriYokla() {
 
     await bekle(CAGRI_ARASI_MS)
   }
+
   return sonuc
 }
 
@@ -183,6 +224,7 @@ module.exports = {
   _takipleriYokla: takipleriYokla,
   _durumCevir: durumCevir,
   _bekleyenKargolar,
+  _ikasBekleyenTeslimler,
 
   // Elle tetikleme (Kargo ekranından "Durumları güncelle").
   'kargo:takip-yokla': async () => takipleriYokla(),

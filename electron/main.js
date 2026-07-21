@@ -163,6 +163,9 @@ function upsTakipBaslat() {
       // (token süresi, paket durumu çakışması). Bu düşerse müşteri bildirim ALMAZ —
       // sessiz kalmamalı. Ayrıca online_siparisler.ikas_kargo_hata'ya da yazılır.
       if (r?.ikasBildirilen) console.log('[ups-takip] ikas\'a bildirilen sipariş:', r.ikasBildirilen)
+      // Telafi: köprü eklenmeden önce teslim olmuş, ikas'ta "Kargoya Hazır"da takılı
+      // kalmış siparişler. Bildirimsiz düzeltilir; sayı zamanla 0'a inmeli.
+      if (r?.ikasTelafi) console.log('[ups-takip] ikas telafi (geçmiş teslim):', r.ikasTelafi)
       if (r?.ikasHatalari?.length) console.error('[ups-takip] ikas bildirim hataları:', r.ikasHatalari.slice(0, 5))
     } catch (err) {
       console.error('[ups-takip] yoklama hatası:', err.message)
