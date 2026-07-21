@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { eslesirMi } from '../utils/arama'
 
 // Aranabilir seçici (combobox): uzun listelerde kaydırmak yerine yazarak filtrele + seç.
 // Klavye: ↑/↓ gezin, Enter seç, Esc kapat. Dış tıklama kapatır.
@@ -24,12 +25,12 @@ export default function AranabilirSecici({
     return s ? s.etiket : ''
   }, [secenekler, deger])
 
-  // Türkçe duyarlı küçük harf ile alt-dize araması.
-  const kucuk = (s) => String(s || '').toLocaleLowerCase('tr')
+  // Kelime bazlı + Türkçe duyarsız (bkz. src/utils/arama.js). Eskiden toLocaleLowerCase('tr')
+  // ile TEK PARÇA aranıyordu; "LINES" yazan "LİNES"i bulamıyordu (tr locale I → ı yapar)
+  // ve kelimeleri ürün adındaki sırayla yazmak zorunluydu.
   const filtreli = useMemo(() => {
-    const q = kucuk(sorgu).trim()
-    if (!q) return secenekler
-    return secenekler.filter(x => kucuk(x.etiket).includes(q))
+    if (!sorgu.trim()) return secenekler
+    return secenekler.filter(x => eslesirMi(x.etiket, sorgu))
   }, [secenekler, sorgu])
 
   // Dış tıklama → kapat ve sorguyu sıfırla (girdi seçili etikete döner).

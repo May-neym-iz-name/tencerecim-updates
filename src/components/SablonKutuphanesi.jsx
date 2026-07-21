@@ -4,6 +4,7 @@
 // hep onSec ile çağrıldığı için düzenle/sil hiç ekrana gelmiyordu (ölü kod). v1.2.111'de açıldı.
 import { useState, useEffect } from 'react'
 import { sosyalApi } from '../api/ipc'
+import { eslesirMi } from '../utils/arama'
 import { useAuth } from '../auth/AuthContext'
 import SablonFormu from './SablonFormu'
 import toast from 'react-hot-toast'
@@ -46,9 +47,8 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
     catch (e) { toast.error(e.message) }
   }
 
-  // Türkçe duyarlı arama (tr locale — I/ı, İ/i doğru eşleşsin).
-  const suz = liste.filter(s =>
-    !ara.trim() || `${s.ad} ${s.urun_adi}`.toLocaleLowerCase('tr').includes(ara.toLocaleLowerCase('tr')))
+  // Kelime bazlı + Türkçe duyarsız (bkz. src/utils/arama.js).
+  const suz = liste.filter(s => eslesirMi(`${s.ad} ${s.urun_adi || ''}`, ara))
 
   return (
     <div className="space-y-3">

@@ -1,5 +1,6 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
+const { kelimeKosulu } = require('./tr-arama')
 
 // Ürün her lokasyonda 0 stokla görünsün ki Stok ekranında bulunabilsin.
 function stokSatirlariOlustur(db, urunId) {
@@ -67,8 +68,13 @@ module.exports = {
     let where = durum === 'pasif' ? 'WHERE u.aktif = 0' : 'WHERE u.aktif = 1'
     const params = []
     if (arama) {
-      where += ' AND (u.ad LIKE ? OR u.barkod LIKE ? OR u.sku LIKE ?)'
-      params.push(`%${arama}%`, `%${arama}%`, `%${arama}%`)
+      // KELİME BAZLI + Türkçe duyarsız. Eskiden tek parça LIKE'tı: "çelik tencere kulp"
+      // ancak bu sıra ve boşluklarla BİREBİR geçiyorsa eşleşiyordu, ayrıca "ÇELİK"
+      // büyük yazılınca hiç bulunmuyordu (LIKE yalnız ASCII'de duyarsız).
+      // Marka adı da aranır: ürün adında marka geçmese bile "lava tencere" çalışsın.
+      const k = kelimeKosulu("u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE(m.ad,'')", arama)
+      where += k.sql
+      params.push(...k.params)
     }
     if (kategori_id) {
       // Seçilen kategori + tüm alt kategorilerindeki ürünleri kapsa (tam_yol prefix eşleşmesi).
@@ -82,7 +88,11 @@ module.exports = {
       }
     }
     if (marka_id) { where += ' AND u.marka_id = ?'; params.push(marka_id) }
-    const toplam = db.prepare(`SELECT COUNT(*) as n FROM urunler u ${where}`).get(...params).n
+    // markalar JOIN'i ŞART: WHERE artık m.ad'ı da arıyor (URUN_SELECT'te zaten var,
+    // burada eksikti → "no such column: m.ad" verirdi).
+    const toplam = db.prepare(
+      `SELECT COUNT(*) as n FROM urunler u LEFT JOIN markalar m ON u.marka_id = m.id ${where}`
+    ).get(...params).n
     // boyut <= 0 => sınırsız (tüm ürünler). Aksi halde sayfalama uygulanır.
     if (!boyut || boyut <= 0) {
       const sorgu = `${URUN_SELECT} ${where} ORDER BY u.ad`

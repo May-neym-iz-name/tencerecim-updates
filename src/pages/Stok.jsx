@@ -4,6 +4,7 @@ import { stokApi, lokasyonApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
+import { eslesirMi } from '../utils/arama'
 import { useSiralama } from '../hooks/useSiralama'
 import SiraliBaslik from '../components/SiraliBaslik'
 import { usePersistentState } from '../hooks/usePersistentState'
@@ -45,8 +46,11 @@ export default function Stok() {
   }
 
   function magazaStoklari(lokId) {
+    // Kelime bazlı + Türkçe duyarsız (bkz. src/utils/arama.js). Eskiden locale'siz
+    // toLowerCase() vardı: "ÇELİK" aranınca bulunmuyordu, kelime sırası da zorunluydu.
+    // SKU de kapsama alındı — Ürünler/Satış ekranlarıyla aynı davransın.
     return stoklar.filter(s => s.lokasyon_id === lokId).filter(s =>
-      !arama || s.urun_adi?.toLowerCase().includes(arama.toLowerCase()) || s.barkod?.includes(arama)
+      eslesirMi([s.urun_adi, s.barkod, s.sku].filter(Boolean).join(' '), arama)
     ).filter(s => !dusukStok || s.miktar <= s.minimum_stok)
   }
 
@@ -279,7 +283,7 @@ function StokTablosu({ satirlar, duzenleYetkisi, onDuzenle }) {
 // Aktif sayım tablosu (barkod okutma + manuel giriş)
 function SayimTablosu({ aktifSayim, arama, vurgulanan, barkodInput, setBarkodInput, barkodOkut, barkodRef, kalemGir }) {
   const kalemler = aktifSayim.kalemler.filter(k =>
-    !arama || k.urun_adi?.toLowerCase().includes(arama.toLowerCase()) || k.barkod?.includes(arama)
+    eslesirMi([k.urun_adi, k.barkod, k.sku].filter(Boolean).join(' '), arama)
   )
   return (
     <div>

@@ -15,6 +15,10 @@ function init() {
   // Türkçe duyarlı küçük harf — SQLite lower()/LIKE yalnız ASCII'de büyük/küçük
   // duyarsızdır (Ö/ö, İ/i, Ş/ş eşleşmez). Aramalarda tr_kucuk(alan) LIKE tr_kucuk(?) kullanılır.
   db.function('tr_kucuk', { deterministic: true }, (s) => (s == null ? null : String(s).toLocaleLowerCase('tr')))
+  // tr_ara: aramaya özel, DAHA güçlü normalize — Türkçe harfleri KATLAR (i/ı/İ/I → i,
+  // ş→s, ğ→g, ü→u, ö→o, ç→c). tr_kucuk yetmiyordu: "LINES" onunla "lınes" olup
+  // "LİNES" ürününü bulamıyordu. Ürün aramalarında bu kullanılır.
+  db.function('tr_ara', { deterministic: true }, (s) => require('./tr-arama').trNormal(s))
   createTables()
   migrate()
   try { require('./senk-sema').kur(db) } catch (e) { console.error('senk-sema kur:', e.message) }
