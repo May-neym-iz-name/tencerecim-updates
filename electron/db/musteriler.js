@@ -1,4 +1,5 @@
 const { getDb } = require('./database')
+const { kelimeKosulu } = require('./tr-arama')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 // Renderer'dan gelen nesnenin ANAHTARLARI doğrudan SQL kolon adı oluyordu. Değerler
@@ -26,14 +27,15 @@ module.exports = {
     let sorgu = 'SELECT * FROM musteriler WHERE aktif = 1'
     const params = []
     if (arama) {
-      // Kelime bazlı arama: "ömer keskin" gibi tam ad sorguları için her kelime,
-      // ad+soyad+telefon+vergi birleşiminde ayrı ayrı aranır (hepsi eşleşmeli).
-      // tr_kucuk: Türkçe duyarlı küçük harf (Ö/ö, İ/i LIKE'ta eşleşsin diye).
-      const kelimeler = String(arama).trim().split(/\s+/).filter(Boolean)
-      for (const kelime of kelimeler) {
-        sorgu += " AND tr_kucuk(ad || ' ' || COALESCE(soyad,'') || ' ' || COALESCE(telefon,'') || ' ' || COALESCE(vergi_no,'')) LIKE tr_kucuk(?)"
-        params.push(`%${kelime}%`)
-      }
+      // Kelime bazlı arama (sıra önemsiz): "ömer keskin" gibi tam ad sorguları için
+      // her kelime ad+soyad+telefon+vergi birleşiminde ayrı ayrı aranır.
+      //
+      // tr_kucuk → tr_ara: eskisi toLocaleLowerCase('tr') idi ve ASCII "I"yi NOKTASIZ "ı"
+      // yapıyordu; "ISMAIL" yazan "İSMAİL"i BULAMIYORDU. tr_ara harfleri katlar
+      // (i/ı/İ/I → i, ö→o, ç→c...), böylece "omer keskin" de "ÖMER KESKİN"i bulur.
+      const k = kelimeKosulu("ad || ' ' || COALESCE(soyad,'') || ' ' || COALESCE(telefon,'') || ' ' || COALESCE(vergi_no,'')", arama)
+      sorgu += k.sql
+      params.push(...k.params)
     }
     const toplam = db.prepare(`SELECT COUNT(*) as n FROM (${sorgu})`).get(...params).n
     sorgu += ' ORDER BY ad, soyad'

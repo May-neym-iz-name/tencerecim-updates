@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { eslesirMi } from '../utils/arama'
+import { useBarkodTarama } from '../hooks/useBarkodTarama'
 import { useSiralama } from '../hooks/useSiralama'
 import SiraliBaslik from '../components/SiraliBaslik'
 import { usePersistentState } from '../hooks/usePersistentState'
@@ -26,6 +27,11 @@ export default function Stok() {
   const [aktifSayim, setAktifSayim] = usePersistentState('stok_aktif_sayim', null)
   const [barkodInput, setBarkodInput] = useState('')
   const [vurgulanan, setVurgulanan] = useState(null) // okutulan ürün id (kaydır+vurgula)
+  // Son okutulan ürün, üstteki sabit kartta gösterilir. Sadece id tutulur; sayı/fark
+  // aktifSayim'dan TÜRETİLİR ki elle düzeltme yapılınca kart da anında güncellensin.
+  const [sonOkutulanId, setSonOkutulanId] = useState(null)
+  // "Sayılanlar üstte" tercihi cihazda kalıcı — her sayımda yeniden açmaya gerek yok.
+  const [sayilanlarUstte, setSayilanlarUstte] = usePersistentState('stok_sayim_sayilanlar_ustte', false)
   const barkodRef = useRef(null)
 
   const yukle = useCallback(async () => {
@@ -74,8 +80,20 @@ export default function Stok() {
     } catch (e) { toast.error(e.message) }
   }
 
+  // Sayım sırası damgası: "Sayılanlar üstte" sıralaması ve son okutulan kartı bunu kullanır.
+  // Saat yerine artan sayaç: cihaz saati değişse de sıra bozulmaz.
+  function sonrakiSira(kalemler) {
+    return Math.max(0, ...kalemler.map(k => Number(k._sira) || 0)) + 1
+  }
+
   async function kalemGir(urun_id, deger) {
-    setAktifSayim(prev => prev && ({ ...prev, kalemler: prev.kalemler.map(k => k.urun_id === urun_id ? { ...k, _girilen: deger } : k) }))
+    setAktifSayim(prev => prev && ({
+      ...prev,
+      kalemler: prev.kalemler.map(k => k.urun_id === urun_id
+        ? { ...k, _girilen: deger, _sira: deger === '' ? k._sira : sonrakiSira(prev.kalemler) }
+        : k),
+    }))
+    if (deger !== '') setSonOkutulanId(urun_id)
     if (deger !== '' && !isNaN(parseInt(deger))) {
       try {
         const r = await stokApi.sayimKalem(aktifSayim.id, { urun_id, sayilan_miktar: parseInt(deger) })
@@ -91,10 +109,16 @@ export default function Stok() {
     setTimeout(() => setVurgulanan(v => (v === urun_id ? null : v)), 1600)
   }
 
-  // Barkod okutma → ilgili ürünün sayımını otomatik +1
+  // Barkod okutma → ilgili ürünün sayımını otomatik +1.
+  // Form gönderimi (Enter) VE barkod okuyucu kancası aynı yere düşsün diye kod
+  // parametreye alındı: kanca taramayı algılayınca Enter'ı yutar, form tetiklenmez.
   function barkodOkut(e) {
     e.preventDefault()
-    const kod = barkodInput.trim()
+    kodIsle(barkodInput)
+  }
+
+  function kodIsle(ham) {
+    const kod = String(ham || '').trim()
     setBarkodInput('')
     if (!kod || !aktifSayim) return
     const varMi = aktifSayim.kalemler.some(k => String(k.barkod || '').trim() === kod)
@@ -109,15 +133,21 @@ export default function Stok() {
           if (String(k.barkod || '').trim() !== kod) return k
           const yeni = (parseInt(k.sayilan_miktar ?? 0) || 0) + 1
           hedef = { urun_id: k.urun_id, deger: yeni }
-          return { ...k, _girilen: String(yeni), sayilan_miktar: yeni, fark: yeni - k.beklenen_miktar }
+          return { ...k, _girilen: String(yeni), sayilan_miktar: yeni, fark: yeni - k.beklenen_miktar,
+            _sira: sonrakiSira(prev.kalemler) }
         }),
       }
     })
     if (hedef) {
       stokApi.sayimKalem(sayimId, { urun_id: hedef.urun_id, sayilan_miktar: hedef.deger }).catch(() => {})
+      setSonOkutulanId(hedef.urun_id)   // üstteki sabit kart
       vurgula(hedef.urun_id)
     }
   }
+
+  // Barkod okuyucu: kutu seçili olmasa da (ör. bir sayı alanına tıkladıktan sonra)
+  // okutma çalışsın. Yalnız sayım açıkken dinlenir.
+  useBarkodTarama({ ref: barkodRef, aktif: !!aktifSayim, onKod: kodIsle })
 
   async function tamamlaSayim() {
     if (!confirm('Sayımı tamamlayıp stokları güncellemek istiyor musunuz?')) return
@@ -191,7 +221,8 @@ export default function Stok() {
               {acik && (sayimAktif
                 ? <SayimTablosu aktifSayim={aktifSayim} arama={arama} vurgulanan={vurgulanan}
                     barkodInput={barkodInput} setBarkodInput={setBarkodInput} barkodOkut={barkodOkut} barkodRef={barkodRef}
-                    kalemGir={kalemGir} />
+                    kalemGir={kalemGir} sonOkutulanId={sonOkutulanId}
+                    sayilanlarUstte={sayilanlarUstte} setSayilanlarUstte={setSayilanlarUstte} />
                 : <StokTablosu satirlar={magazaStoklari(lok.id)} duzenleYetkisi={duzenleYetkisi}
                     onDuzenle={s => setDuzenleModal({ ...s, yeni_miktar: s.miktar })} />)}
             </section>
@@ -281,10 +312,21 @@ function StokTablosu({ satirlar, duzenleYetkisi, onDuzenle }) {
 }
 
 // Aktif sayım tablosu (barkod okutma + manuel giriş)
-function SayimTablosu({ aktifSayim, arama, vurgulanan, barkodInput, setBarkodInput, barkodOkut, barkodRef, kalemGir }) {
-  const kalemler = aktifSayim.kalemler.filter(k =>
+function SayimTablosu({ aktifSayim, arama, vurgulanan, barkodInput, setBarkodInput, barkodOkut, barkodRef, kalemGir,
+  sonOkutulanId, sayilanlarUstte, setSayilanlarUstte }) {
+  const suzulen = aktifSayim.kalemler.filter(k =>
     eslesirMi([k.urun_adi, k.barkod, k.sku].filter(Boolean).join(' '), arama)
   )
+  // "Sayılanlar üstte": en son sayılan 1. sırada. Kapalıyken liste sırası HİÇ değişmez —
+  // rafta ilerlerken satırların yer değiştirmemesi sayım güvenliği açısından önemli.
+  const kalemler = sayilanlarUstte
+    ? [...suzulen].sort((a, b) => (Number(b._sira) || 0) - (Number(a._sira) || 0))
+    : suzulen
+
+  // Son okutulan kart: sayı/fark aktifSayim'dan TÜRETİLİR (elle düzeltmede de güncel kalır).
+  const son = sonOkutulanId != null ? aktifSayim.kalemler.find(k => k.urun_id === sonOkutulanId) : null
+  const sonFark = son && son.sayilan_miktar != null ? son.sayilan_miktar - son.beklenen_miktar : null
+
   return (
     <div>
       <form onSubmit={barkodOkut} className="p-3 bg-blue-50 border-b flex gap-2">
@@ -293,6 +335,27 @@ function SayimTablosu({ aktifSayim, arama, vurgulanan, barkodInput, setBarkodInp
           className="flex-1 border rounded-lg px-3 py-2 text-sm" autoFocus />
         <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+1 Ekle</button>
       </form>
+
+      {/* Son okutulan ürün — bir sonraki okutmaya kadar durur. Sarı vurgu 1.6 sn'de
+          kaybolduğu için hangi ürünün sayıldığını bulmak zordu. */}
+      {son && (
+        <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 flex items-baseline gap-x-4 gap-y-1 flex-wrap">
+          <span className="text-[11px] font-semibold tracking-wide text-amber-700 uppercase">Son okutulan</span>
+          <span className="font-semibold text-gray-800 flex-1 min-w-40">{son.urun_adi}</span>
+          <span className="text-xs text-gray-500">Sistemde <b className="text-gray-800 text-sm">{son.beklenen_miktar}</b></span>
+          <span className="text-xs text-gray-500">Sayılan <b className="text-gray-800 text-sm">{son.sayilan_miktar ?? '—'}</b></span>
+          <span className={`text-xs ${sonFark === null ? 'text-gray-400' : sonFark < 0 ? 'text-red-600' : sonFark > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+            Fark <b className="text-sm">{sonFark === null ? '—' : sonFark > 0 ? `+${sonFark}` : sonFark}</b>
+          </span>
+        </div>
+      )}
+
+      <div className="px-4 py-2 border-b bg-gray-50">
+        <label className="inline-flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+          <input type="checkbox" checked={sayilanlarUstte} onChange={e => setSayilanlarUstte(e.target.checked)} />
+          Sayılanlar üstte
+        </label>
+      </div>
       <table className="w-full text-sm">
         <thead className="bg-white border-b">
           <tr>
@@ -312,8 +375,13 @@ function SayimTablosu({ aktifSayim, arama, vurgulanan, barkodInput, setBarkodInp
                 <td className="px-4 py-2 font-mono text-xs text-gray-500">{k.barkod || '—'}</td>
                 <td className="px-4 py-2 font-bold">{k.beklenen_miktar}</td>
                 <td className="px-4 py-2">
+                  {/* Enter → odak barkod kutusuna döner. Barkod okuyucu kancası, BAŞKA bir
+                      yazı alanı seçiliyken bilerek devreye girmez (yoksa barkodun ilk
+                      rakamları bu sayı alanına düşer ve yanlış miktar kaydedilir).
+                      Bu yüzden "say → Enter → okutmaya devam et" akışı gerekiyor. */}
                   <input type="number" value={k._girilen} min="0"
                     onChange={e => kalemGir(k.urun_id, e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); barkodRef.current?.focus() } }}
                     className="w-20 border rounded px-2 py-1 text-center text-sm" placeholder="—" />
                 </td>
                 <td className={`px-4 py-2 font-semibold ${fark === null ? 'text-gray-300' : fark < 0 ? 'text-red-600' : fark > 0 ? 'text-blue-600' : 'text-gray-400'}`}>

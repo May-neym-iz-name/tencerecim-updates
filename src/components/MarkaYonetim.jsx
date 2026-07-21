@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { eslesirMi } from '../utils/arama'
 import toast from 'react-hot-toast'
 import { markaApi } from '../api/ipc'
 import Sayfalama from './Sayfalama'
@@ -46,7 +47,8 @@ export default function MarkaYonetim() {
     catch (e) { toast.error(e.message) }
   }
 
-  const filtreli = markalar.filter(m => m.ad.toLowerCase().includes(ara.toLowerCase()))
+  // Türkçe duyarsız: marka adları büyük harfli ("LİNES"), toLowerCase() ile "lines" bulmuyordu.
+  const filtreli = markalar.filter(m => eslesirMi(m.ad, ara))
   const { dilim, ...sayfalama } = useSayfalama(filtreli, 50)
 
   return (

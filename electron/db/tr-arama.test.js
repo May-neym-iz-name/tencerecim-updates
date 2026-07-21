@@ -98,3 +98,49 @@ describe('kelimeKosulu — gerçek SQL sonuçları', () => {
     expect(k.params).toEqual(['%bir%', '%iki%', '%uc%'])
   })
 })
+
+// Müşteri araması (musteriler.js). Eskiden tr_kucuk kullaniyordu; o da toLocaleLowerCase('tr')
+// oldugu icin ASCII "I" yazan "ISMAIL" ile "ISMAIL"i eslestiremiyordu, harf katlama da yoktu.
+describe('musteri aramasi — gercek SQL', () => {
+  const M_ALAN = "ad || ' ' || COALESCE(soyad,'') || ' ' || COALESCE(telefon,'') || ' ' || COALESCE(vergi_no,'')"
+  let mdb
+  beforeEach(() => {
+    mdb = new DatabaseSync(':memory:')
+    mdb.function('tr_ara', { deterministic: true }, (s) => trNormal(s))
+    mdb.exec('CREATE TABLE musteriler(id INTEGER PRIMARY KEY, ad TEXT, soyad TEXT, telefon TEXT, vergi_no TEXT, aktif INTEGER DEFAULT 1)')
+    const ek = mdb.prepare('INSERT INTO musteriler VALUES(?,?,?,?,?,1)')
+    ek.run(1, 'ÖMER', 'KESKİN', '05551112233', null)
+    ek.run(2, 'İsmail', 'Şahin', '05324445566', null)
+    ek.run(3, 'Ayşe', 'Güngör', '05337778899', '1234567890')
+  })
+  const mAra = (a) => {
+    const k = kelimeKosulu(M_ALAN, a)
+    return mdb.prepare(`SELECT id FROM musteriler WHERE aktif = 1 ${k.sql} ORDER BY id`).all(...k.params).map(r => r.id)
+  }
+
+  test('Turkce karakter yazmadan bulunur', () => {
+    expect(mAra('omer keskin')).toEqual([1])
+    expect(mAra('ismail sahin')).toEqual([2])
+    expect(mAra('ayse gungor')).toEqual([3])
+  })
+
+  test('ASCII I sorunu: "ISMAIL" de bulur', () => {
+    // tr_kucuk ile "ISMAIL" -> "ısmaıl" oluyordu ve ESLESMIYORDU.
+    expect(mAra('ISMAIL')).toEqual([2])
+    expect(mAra('İSMAİL')).toEqual([2])
+  })
+
+  test('ad-soyad sirasi onemsiz', () => {
+    expect(mAra('keskin omer')).toEqual([1])
+    expect(mAra('KESKIN ÖMER')).toEqual([1])
+  })
+
+  test('telefon ve vergi no ile bulunur', () => {
+    expect(mAra('05551112233')).toEqual([1])
+    expect(mAra('1234567890')).toEqual([3])
+  })
+
+  test('eslesmeyen kelime varsa bulunmaz', () => {
+    expect(mAra('omer sahin')).toEqual([])
+  })
+})

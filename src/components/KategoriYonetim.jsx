@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { eslesirMi } from '../utils/arama'
 import toast from 'react-hot-toast'
 import { kategoriApi } from '../api/ipc'
 
@@ -47,8 +48,9 @@ export default function KategoriYonetim() {
     catch (e) { toast.error(e.message) }
   }
 
+  // Türkçe duyarsız + kelime bazlı ("dokum tencere" → "Döküm > Tencere").
   const filtreli = ara
-    ? kategoriler.filter(k => (k.tam_yol || k.ad).toLowerCase().includes(ara.toLowerCase()))
+    ? kategoriler.filter(k => eslesirMi(k.tam_yol || k.ad, ara))
     : kategoriler
 
   return (

@@ -6,6 +6,7 @@ import { ucretHesapla, tl, desiHesapla, IL_BOLGE } from '../lib/kargoUcret'
 import IlIlceSecici from '../components/IlIlceSecici'
 import { senkTetikle } from '../lib/veriSenk'
 import { etiketIndir } from '../lib/etiketDepo'
+import { eslesirMi } from '../utils/arama'
 import { useAuth } from '../auth/AuthContext'
 import KargoFormu from '../components/KargoFormu'
 import KargoDetayModal from '../components/KargoDetayModal'
@@ -86,8 +87,11 @@ export default function Kargo() {
     // görür (lokasyonsuz/eski kayıtlar herkese açık). Yönetici/admin hepsini görür.
     if (k.lokasyon_id != null && !lokasyonErisim(k.lokasyon_id)) return false
     if (filtre.lokasyon && String(k.lokasyon_id ?? '') !== filtre.lokasyon) return false
-    if (filtre.takip && !(k.takip_no || '').toLowerCase().includes(filtre.takip.toLowerCase())) return false
-    if (filtre.musteri && !(k.alici_ad || '').toLowerCase().includes(filtre.musteri.toLowerCase())) return false
+    // Kelime bazlı + Türkçe duyarsız (bkz. src/utils/arama.js). Eskiden toLowerCase()
+    // vardı: yalnız ASCII'de duyarsız olduğu için alıcı adı "ÖMER KESKİN" iken
+    // "ömer" yazan BULAMIYORDU. Artık sıra da önemsiz: "keskin ömer" de bulur.
+    if (!eslesirMi(k.takip_no, filtre.takip)) return false
+    if (!eslesirMi(k.alici_ad, filtre.musteri)) return false
     const gun = (k.olusturma_tarihi || '').slice(0, 10) // YYYY-MM-DD
     if (filtre.bas && gun && gun < filtre.bas) return false
     if (filtre.bit && gun && gun > filtre.bit) return false
