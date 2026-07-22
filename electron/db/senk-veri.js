@@ -50,7 +50,10 @@ module.exports = {
     const db = getDb()
     const cfg = TABLOLAR[tablo]
     if (!cfg || !Array.isArray(kayitlar)) return { uygulanan: 0, atlanan: 0 }
-    const bulSenk = db.prepare(`SELECT id, senk_guncelleme FROM ${tablo} WHERE senk_id = ?`)
+    // rowid kullanılır, id DEĞİL: sosyal_otomasyon_sablonlar gibi bileşik anahtarlı
+    // tablolarda id kolonu yoktur ("no such column: id" pull'u komple kilitliyordu);
+    // id INTEGER PRIMARY KEY olan tablolarda rowid zaten id'nin takma adıdır.
+    const bulSenk = db.prepare(`SELECT rowid AS id, senk_guncelleme FROM ${tablo} WHERE senk_id = ?`)
     let uygulanan = 0, atlanan = 0
 
     const tx = db.transaction(() => {
@@ -82,7 +85,7 @@ module.exports = {
         const kolonAdlari = Object.keys(cols)
 
         if (mevcut) {
-          db.prepare(`UPDATE ${tablo} SET ${kolonAdlari.map(c => `${c}=@${c}`).join(', ')}, senk_id=@_sid, senk_guncelleme=@_g WHERE id=@_id`)
+          db.prepare(`UPDATE ${tablo} SET ${kolonAdlari.map(c => `${c}=@${c}`).join(', ')}, senk_id=@_sid, senk_guncelleme=@_g WHERE rowid=@_id`)
             .run({ ...cols, _sid: k.senk_id, _g: k.guncelleme, _id: mevcut.id })
           uygulanan++; continue
         }
@@ -90,18 +93,18 @@ module.exports = {
         // Yeni: önce doğal anahtarla yerel eşi bul (iki PC bağımsız oluşturmuşsa birleştir).
         let eslesen = null
         if (cfg.dogalCift) {
-          eslesen = db.prepare(`SELECT id, senk_guncelleme FROM ${tablo} WHERE ${cfg.dogalCift.map(c => `${c}=@${c}`).join(' AND ')}`).get(cols)
+          eslesen = db.prepare(`SELECT rowid AS id, senk_guncelleme FROM ${tablo} WHERE ${cfg.dogalCift.map(c => `${c}=@${c}`).join(' AND ')}`).get(cols)
         } else {
           for (const dk of (cfg.dogal || [])) {
             if (cols[dk] == null || cols[dk] === '') continue
-            eslesen = db.prepare(`SELECT id, senk_guncelleme FROM ${tablo} WHERE ${dk} = ?`).get(cols[dk])
+            eslesen = db.prepare(`SELECT rowid AS id, senk_guncelleme FROM ${tablo} WHERE ${dk} = ?`).get(cols[dk])
             if (eslesen) break
           }
         }
         if (eslesen) {
           // Son-yazan-kazanır: yalnızca uzak DAHA YENİ ise ez (bayat veri tazeyi ezmesin).
           if (eslesen.senk_guncelleme >= k.guncelleme) { atlanan++; continue }
-          db.prepare(`UPDATE ${tablo} SET ${kolonAdlari.map(c => `${c}=@${c}`).join(', ')}, senk_id=@_sid, senk_guncelleme=@_g WHERE id=@_id`)
+          db.prepare(`UPDATE ${tablo} SET ${kolonAdlari.map(c => `${c}=@${c}`).join(', ')}, senk_id=@_sid, senk_guncelleme=@_g WHERE rowid=@_id`)
             .run({ ...cols, _sid: k.senk_id, _g: k.guncelleme, _id: eslesen.id })
           uygulanan++; continue
         }

@@ -91,13 +91,26 @@ export async function veriSenk() {
       const grup = {}
       for (const r of tum) (grup[r.tablo] ||= []).push(r)
       const SIRA = await siraAl()
+      // Tek tablonun hatası TÜM pull'u kilitlemesin: her tablo ayrı denenir, hata
+      // toplanır. İmleç yalnız hepsi başarılıysa ilerler — başarısız tablo varsa
+      // sonraki turda aynı delta yeniden çekilir (apply idempotent, veri kaybolmaz).
+      // (17 Temmuz vakası: sosyal_otomasyon_sablonlar "no such column: id" hatası
+      // fiyat/kargo dahil her şeyin çekimini 5 gün durdurdu.)
+      const hatalar = []
       for (const tablo of SIRA) {
         if (grup[tablo]?.length) {
-          const sonuc = await invoke('veri-senk:uygula', { tablo, kayitlar: grup[tablo] })
-          alinan += sonuc.uygulanan
+          try {
+            const sonuc = await invoke('veri-senk:uygula', { tablo, kayitlar: grup[tablo] })
+            alinan += sonuc.uygulanan
+          } catch (err) {
+            hatalar.push(`${tablo}: ${err.message}`)
+            console.error(`Veri senkron uygula (${tablo}):`, err.message)
+          }
         }
       }
-      await invoke('veri-senk:imlec-yaz', { anahtar: 'pull', deger: cursor })
+      if (hatalar.length === 0) {
+        await invoke('veri-senk:imlec-yaz', { anahtar: 'pull', deger: cursor })
+      }
     }
 
     // Bu PC'de oluşan yeni etiketleri Storage'a yükle (PC'ler arası basım). Sync'i
