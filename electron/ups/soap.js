@@ -133,6 +133,10 @@ async function login({ musteriKodu, kullaniciKodu, sifre }) {
 // ShipmentInfo XML'ini kurar. veri: gönderici + alıcı + paket bilgileri.
 function shipmentInfoXml(v) {
   const koliAdedi = Math.max(1, parseInt(v.koliAdedi, 10) || 1)
+  // Kapıda ödeme tutarı: UPS örnek kodu tutarı tam sayı bekliyor → yukarı yuvarlamadan
+  // en yakın tam sayıya yuvarlanır (kuruşlu tutar girilirse).
+  const kapidaTutar = Math.round(Number(v.kapidaOdemeTutar) || 0)
+  const kapidaTip = parseInt(v.kapidaOdemeTipi, 10) || 1
   // Her koli için bir DimensionInfo gerekli (adet eşit olmalı).
   const agirlik = Number(v.agirlik) || 1
   let boyutlar = ''
@@ -186,9 +190,16 @@ function shipmentInfoXml(v) {
     `<SmsToConsignee>${v.aliciSms ? 1 : 0}</SmsToConsignee>` +
     '<InsuranceValue>0</InsuranceValue>' +
     '<InsuranceValueCurrency />' +
-    '<ValueOfGoods>0</ValueOfGoods>' +
-    '<ValueOfGoodsCurrency />' +
-    '<ValueOfGoodsPaymentType>0</ValueOfGoodsPaymentType>' +
+    // Kapıda ödeme (tahsilatlı gönderi): ValueOfGoods = tahsil edilecek mal bedeli.
+    // UPS örnek kodu (Örnek C# Kodları.txt): tutar TAM SAYI, para birimi TL,
+    // ValueOfGoodsPaymentType 1=Nakit, 2=Çek, 3=Kredi Kartı tek çekim.
+    (kapidaTutar > 0
+      ? `<ValueOfGoods>${kapidaTutar}</ValueOfGoods>` +
+        '<ValueOfGoodsCurrency>TL</ValueOfGoodsCurrency>' +
+        `<ValueOfGoodsPaymentType>${[1, 2, 3].includes(kapidaTip) ? kapidaTip : 1}</ValueOfGoodsPaymentType>`
+      : '<ValueOfGoods>0</ValueOfGoods>' +
+        '<ValueOfGoodsCurrency />' +
+        '<ValueOfGoodsPaymentType>0</ValueOfGoodsPaymentType>') +
     '<ThirdPartyAccountNumber />' +
     '<ThirdPartyExpenseCode />' +
     `<PackageDimensions>${boyutlar}</PackageDimensions>` +

@@ -441,6 +441,10 @@ function migrate() {
   try { db.exec("ALTER TABLE kargolar ADD COLUMN etiket_storage_yol TEXT") } catch {}
   // kargolar — gönderi tipi: 'gonderi' (mağaza→müşteri) | 'iade' (müşteri→mağaza, UPS'te swap).
   try { db.exec("ALTER TABLE kargolar ADD COLUMN tip TEXT DEFAULT 'gonderi'") } catch {}
+  // kargolar — kapıda ödeme (UPS ValueOfGoods): tahsil edilecek tutar + tahsilat şekli
+  // (1=Nakit, 2=Çek, 3=Kredi Kartı — UPS örnek kodundaki resmi değerler).
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN kapida_odeme_tutar REAL") } catch {}
+  try { db.exec("ALTER TABLE kargolar ADD COLUMN kapida_odeme_tipi INTEGER") } catch {}
   // online_siparisler — ikas'a EN SON BİLDİRDİĞİMİZ paket durumu (ikas/kargo-durum.js).
   // kargo_durumu'ndan AYRI tutulur: kargo_durumu ikas'tan OKUNAN durumdur ve her çekimde
   // ezilir; bu alan ise "biz ne gönderdik"i tutar ve mükerrer müşteri bildirimini engeller.

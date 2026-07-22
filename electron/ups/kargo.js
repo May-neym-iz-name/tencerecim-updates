@@ -163,6 +163,9 @@ module.exports = {
       referans: veri.referans,
       faturaNo: veri.faturaNo,
       bildirimEmail: veri.aliciEmail,
+      // Kapıda ödeme: iade gönderisinde anlamsız (paket bize gelir) → gönderilmez.
+      kapidaOdemeTutar: veri.iade ? 0 : (Number(veri.kapidaOdemeTutar) || 0),
+      kapidaOdemeTipi: veri.kapidaOdemeTipi || 1,
     }
 
     const session = await soap.login(kimlik(ayar))
@@ -174,8 +177,8 @@ module.exports = {
       ? (db.prepare('SELECT ikas_siparis_id FROM online_siparisler WHERE id=?').get(veri.onlineSiparisId)?.ikas_siparis_id || null)
       : null
     const ekle = db.prepare(`INSERT INTO kargolar
-      (takip_no, durum, tip, musteri_id, satis_id, online_siparis_id, lokasyon_id, ikas_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png, etiket_link)
-      VALUES (@takip_no, 'olusturuldu', @tip, @musteri_id, @satis_id, @online_siparis_id, @lokasyon_id, @ikas_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png, @etiket_link)`)
+      (takip_no, durum, tip, musteri_id, satis_id, online_siparis_id, lokasyon_id, ikas_siparis_id, alici_ad, alici_telefon, alici_adres, il, ilce, il_kodu, ilce_kodu, koli_adedi, agirlik, servis_seviyesi, odeme_tipi, aciklama, barkod_png, etiket_link, kapida_odeme_tutar, kapida_odeme_tipi)
+      VALUES (@takip_no, 'olusturuldu', @tip, @musteri_id, @satis_id, @online_siparis_id, @lokasyon_id, @ikas_siparis_id, @alici_ad, @alici_telefon, @alici_adres, @il, @ilce, @il_kodu, @ilce_kodu, @koli_adedi, @agirlik, @servis_seviyesi, @odeme_tipi, @aciklama, @barkod_png, @etiket_link, @kapida_odeme_tutar, @kapida_odeme_tipi)`)
     // Kargo müşterisini müşteri kartına kaydet (varsa mevcut id kullanılır, üzerine yazılmaz).
     const otoMusteriId = veri.musteriId || musteriKaydet(db, veri)
     const r = ekle.run({
@@ -200,6 +203,8 @@ module.exports = {
       aciklama: veri.aciklama || '',
       barkod_png: JSON.stringify(sonuc.barkodPng || []),
       etiket_link: sonuc.etiketLink || null,
+      kapida_odeme_tutar: istek.kapidaOdemeTutar > 0 ? istek.kapidaOdemeTutar : null,
+      kapida_odeme_tipi: istek.kapidaOdemeTutar > 0 ? (Number(veri.kapidaOdemeTipi) || 1) : null,
     })
     const kayit = db.prepare('SELECT * FROM kargolar WHERE id = ?').get(r.lastInsertRowid)
     return { ...kayit, barkodPng: sonuc.barkodPng, etiketLink: sonuc.etiketLink }

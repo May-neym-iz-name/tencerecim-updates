@@ -108,6 +108,9 @@ export default function KargoDetayModal({ acik, kapat, kargoId }) {
             <Satir etiket="Ağırlık" deger={k.agirlik ? `${k.agirlik} kg` : null} />
             <Satir etiket="Servis" deger={SERVIS[k.servis_seviyesi] || k.servis_seviyesi} />
             <Satir etiket="Ödeme" deger={ODEME[k.odeme_tipi] || k.odeme_tipi} />
+            <Satir etiket="Kapıda Ödeme" deger={k.kapida_odeme_tutar
+              ? `${k.kapida_odeme_tutar} TL (${{ 1: 'Nakit', 2: 'Çek', 3: 'Kredi kartı' }[k.kapida_odeme_tipi] || 'Nakit'})`
+              : null} />
             <Satir etiket="Açıklama" deger={k.aciklama} />
             <Satir etiket="İkas Sipariş" deger={k.ikas_siparis_id} />
             <Satir etiket="Bağlı Satış No" deger={k.satis_id} />

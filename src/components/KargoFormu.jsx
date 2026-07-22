@@ -11,6 +11,7 @@ const BOS = {
   faturaNo: '', referans: '', musteriId: null, satisId: null,
   gondericiLokasyonId: null, onlineSiparisId: null,
   iade: false, // true → İADE gönderisi: paket müşteriden mağazaya (UPS'te taraflar ters çevrilir)
+  kapidaOdeme: false, kapidaOdemeTutar: '', kapidaOdemeTipi: 1, // kapıda ödeme (tahsilatlı gönderi)
 }
 
 // UPS gönderi oluşturma formu (modal). baslangic ile ön-doldurulabilir.
@@ -85,10 +86,17 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
     // Dolu telefonlar tam 10 hane olmalı: (5xx) xxx xx xx.
     const telHata = telefonHatasi(form.aliciTelefon) || telefonHatasi(form.aliciCep, 'Cep telefonu')
     if (telHata) { toast.error(telHata); return }
+    const kapidaTutar = Number(form.kapidaOdemeTutar) || 0
+    if (form.kapidaOdeme && !form.iade && kapidaTutar <= 0) {
+      toast.error('Kapıda ödeme için tahsil edilecek tutarı girin'); return
+    }
 
     setGonderiliyor(true)
     try {
-      const kargo = await kargoApi.olustur(form)
+      const kargo = await kargoApi.olustur({
+        ...form,
+        kapidaOdemeTutar: form.kapidaOdeme && !form.iade ? kapidaTutar : 0,
+      })
       toast.success(`✓ ${form.iade ? 'İade gönderisi' : 'Kargo'} oluşturuldu — Takip No: ${kargo.takip_no}`)
       // Etiketi önizleme penceresinde aç (hata olursa gönderiyi engellemesin).
       if (kargo.barkodPng?.length) {
@@ -190,6 +198,33 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
               </select>
             </label>
           </div>
+          {/* Kapıda ödeme: UPS tahsilatlı gönderi (ValueOfGoods). İadede anlamsız → gizli. */}
+          {!form.iade && (
+            <div className={`rounded-lg border px-3 py-2 space-y-2 ${form.kapidaOdeme ? 'bg-amber-50 border-amber-300' : 'border-gray-200'}`}>
+              <label className="flex items-center gap-2 text-sm cursor-pointer text-gray-700">
+                <input type="checkbox" checked={form.kapidaOdeme} onChange={e => alan('kapidaOdeme', e.target.checked)} />
+                <span><b>Kapıda ödeme</b> — tutar teslimatta UPS tarafından tahsil edilir</span>
+              </label>
+              {form.kapidaOdeme && (
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs text-gray-500">Tahsil edilecek tutar (TL)
+                    <input type="number" min="1" step="1" value={form.kapidaOdemeTutar}
+                      onChange={e => alan('kapidaOdemeTutar', e.target.value)}
+                      placeholder="Örn: 1250" className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
+                  </label>
+                  <label className="text-xs text-gray-500">Tahsilat şekli
+                    <select value={form.kapidaOdemeTipi} onChange={e => alan('kapidaOdemeTipi', Number(e.target.value))}
+                      className="border rounded px-2 py-1.5 text-sm w-full mt-0.5 bg-white">
+                      <option value={1}>Nakit</option>
+                      <option value={3}>Kredi kartı (tek çekim)</option>
+                      <option value={2}>Çek</option>
+                    </select>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs text-gray-500">Servis
               <select value={form.servisSeviyesi} onChange={e => alan('servisSeviyesi', Number(e.target.value))}

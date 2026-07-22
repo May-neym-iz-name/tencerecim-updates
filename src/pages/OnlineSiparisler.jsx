@@ -175,6 +175,10 @@ export default function OnlineSiparisler() {
       musteriId: s.musteri_id || null,
       onlineSiparisId: s.id,
       gondericiLokasyonId: ilkLok,
+      // Sipariş kapıda ödemeli ve henüz ödenmemişse tahsilat tutarını önceden doldur.
+      ...(/kap[ıi]da/i.test(s.odeme_yontemi || '') && s.odeme_durumu !== 'PAID'
+        ? { kapidaOdeme: true, kapidaOdemeTutar: Math.round(Number(s.toplam) || 0), kapidaOdemeTipi: 1 }
+        : {}),
     })
     setKargoAcik(true)
   }
