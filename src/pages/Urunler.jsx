@@ -8,6 +8,7 @@ import { useSayfalama } from '../hooks/useSayfalama'
 import { useSiralama } from '../hooks/useSiralama'
 import { useDebounce } from '../hooks/useDebounce'
 import { useBarkodTarama } from '../hooks/useBarkodTarama'
+import { usePersistentState } from '../hooks/usePersistentState'
 import SiraliBaslik from '../components/SiraliBaslik'
 import KategoriYonetim from '../components/KategoriYonetim'
 import MarkaYonetim from '../components/MarkaYonetim'
@@ -52,12 +53,13 @@ export default function Urunler() {
   const excelYetkisi = yetkiVar('excel_ice_aktar')
   const [urunler, setUrunler] = useState([])
   const [toplam, setToplam] = useState(0)
-  const [arama, setArama] = useState('')
+  // Arama/filtreler KALICI: sekmeler arasında gezinince sıfırlanmaz (cihaza özel).
+  const [arama, setArama] = usePersistentState('urunler_arama', '')
   // Barkod okutulunca: kutuyu seç + eski içeriği tamamen yenisiyle değiştir.
   // Ürün formu açıkken kapalı — orada barkod alanına elle yazılıyor olabilir.
   const aramaRef = useRef(null)
-  const [filtreMarka, setFiltreMarka] = useState('')
-  const [filtreKategori, setFiltreKategori] = useState('')
+  const [filtreMarka, setFiltreMarka] = usePersistentState('urunler_filtre_marka', '')
+  const [filtreKategori, setFiltreKategori] = usePersistentState('urunler_filtre_kategori', '')
   const [formAcik, setFormAcik] = useState(false)
   const [form, setForm] = useState(BOSH)
   const [duzenlenenId, setDuzenlenenId] = useState(null)
@@ -255,6 +257,7 @@ export default function Urunler() {
               <SiraliBaslik k="tedarikci_adi" {...sr}>Tedarikçi</SiraliBaslik>
               <SiraliBaslik k="alis_fiyati" {...sr}>Alış</SiraliBaslik>
               <SiraliBaslik k="satis_fiyati" {...sr}>Satış</SiraliBaslik>
+              <SiraliBaslik k="toplam_stok" {...sr}>Stok</SiraliBaslik>
               <SiraliBaslik k="kdv_orani" {...sr}>KDV</SiraliBaslik>
               {/* Sabit genişlik: aktif/pasif işlem sütunu aynı kalsın → başlık satırı kaymaz. */}
               <th className="px-3 py-2.5 w-[230px]"></th>
@@ -279,6 +282,7 @@ export default function Urunler() {
                 <td className="px-3 py-2 text-xs text-gray-500">{u.tedarikci_adi||'—'}</td>
                 <td className="px-3 py-2 text-gray-500 whitespace-nowrap">₺{(u.alis_fiyati||0).toFixed(2)}</td>
                 <td className="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">₺{u.satis_fiyati?.toFixed(2)}</td>
+                <td className={`px-3 py-2 font-semibold whitespace-nowrap ${(u.toplam_stok || 0) > 0 ? 'text-blue-700' : 'text-gray-300'}`}>{u.toplam_stok || 0}</td>
                 <td className="px-3 py-2 text-gray-500">%{u.kdv_orani}</td>
                 <td className="px-3 py-2 whitespace-nowrap w-[230px]">
                   {durum === 'pasif' ? (
@@ -306,7 +310,7 @@ export default function Urunler() {
               </tr>
             ))}
             {urunler.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-12 text-gray-400">
+              <tr><td colSpan={11} className="text-center py-12 text-gray-400">
                 {durum === 'pasif' ? 'Pasif ürün yok.' : 'Ürün bulunamadı'}
               </td></tr>
             )}

@@ -52,7 +52,8 @@ function sonrakiStokKodu(db, marka_id) {
 }
 
 const URUN_SELECT = `
-  SELECT u.*, m.ad as marka_adi, k.tam_yol as kategori_yol, t.ad as tedarikci_adi
+  SELECT u.*, m.ad as marka_adi, k.tam_yol as kategori_yol, t.ad as tedarikci_adi,
+    (SELECT COALESCE(SUM(us.miktar), 0) FROM urun_stoklar us WHERE us.urun_id = u.id) AS toplam_stok
   FROM urunler u
   LEFT JOIN markalar m ON u.marka_id = m.id
   LEFT JOIN kategoriler k ON u.kategori_id = k.id

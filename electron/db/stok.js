@@ -6,7 +6,7 @@ module.exports = {
   'stok:listele': ({ lokasyon_id, dusuk_stok } = {}) => {
     const db = getDb()
     let sorgu = `
-      SELECT us.*, u.ad as urun_adi, u.barkod, u.kategori, u.marka
+      SELECT us.*, u.ad as urun_adi, u.barkod, u.sku, u.kategori, u.marka
       FROM urun_stoklar us
       JOIN urunler u ON us.urun_id = u.id
       WHERE u.aktif = 1

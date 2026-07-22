@@ -17,8 +17,9 @@ export default function Stok() {
 
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [stoklar, setStoklar] = useState([])
-  const [arama, setArama] = useState('')
-  const [dusukStok, setDusukStok] = useState(false)
+  // Arama/filtre KALICI: sekmeler arasında gezinince sıfırlanmaz (cihaza özel).
+  const [arama, setArama] = usePersistentState('stok_arama', '')
+  const [dusukStok, setDusukStok] = usePersistentState('stok_dusuk_filtre', false)
   const [duzenleModal, setDuzenleModal] = useState(null)
   const [acikLokasyonlar, setAcikLokasyonlar] = useState([]) // tıklanınca açılan mağaza id'leri
 
@@ -242,7 +243,7 @@ export default function Stok() {
       {/* Genel arama + düşük stok filtresi */}
       <div className="flex gap-3 mb-5 flex-wrap">
         <input value={arama} onChange={e => setArama(e.target.value)}
-          placeholder="Ürün ara (tüm mağazalar)..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" />
+          placeholder="Ürün adı, stok kodu veya barkod ara (tüm mağazalar)..." className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" />
         <label className="flex items-center gap-2 cursor-pointer border rounded-lg px-3 py-2 text-sm hover:bg-gray-50">
           <input type="checkbox" checked={dusukStok} onChange={e => setDusukStok(e.target.checked)} />
           <span className="text-red-600 font-medium">⚠ Düşük Stok</span>
