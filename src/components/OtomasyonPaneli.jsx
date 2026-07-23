@@ -60,6 +60,11 @@ export default function OtomasyonPaneli({ konu }) {
 
   const ekle = (s) => {
     if (sablonlar.some(x => x.id === s.id)) return toast.error('Bu şablon zaten ekli.')
+    // Tek-tür kuralı: genel şablon tek başına; ürün ve genel karıştırılamaz.
+    const eklininGenel = s.tur === 'genel'
+    const vardirGenel = sablonlar.some(x => x.tur === 'genel')
+    if (eklininGenel && sablonlar.length) return toast.error('Genel şablon tek başına bağlanır — önce diğerlerini çıkarın.')
+    if (!eklininGenel && vardirGenel) return toast.error('Bu otomasyonda genel şablon var; ürün şablonu ile karıştırılamaz.')
     setSablonlar(l => [...l, s]); setSecici(false)
   }
   const cikar = (id) => setSablonlar(l => l.filter(s => s.id !== id))
@@ -104,6 +109,7 @@ export default function OtomasyonPaneli({ konu }) {
       <div className="space-y-1 mb-2">
         {sablonlar.map(s => (
           <div key={s.id} className="flex items-center gap-2 bg-white border rounded-lg px-2 py-1.5">
+            {s.tur === 'genel' && <span className="text-[10px] text-violet-600">📝</span>}
             <span className="text-xs flex-1 truncate">{s.ad}</span>
             {yonetebilir && (
               <button onClick={() => cikar(s.id)} className="text-gray-400 text-xs hover:text-red-500">✕</button>
