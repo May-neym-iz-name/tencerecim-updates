@@ -217,6 +217,14 @@ export const bildirimApi = {
   tumunuOku: () => invoke('bildirim:tumunuOku'),
 }
 
+export const istekApi = {
+  listele: () => invoke('istek:listele'),
+  getir: (id) => invoke('istek:getir', id),
+  kaydet: (veri) => invoke('istek:kaydet', veri),
+  sil: (id) => invoke('istek:sil', id),
+  pdf: (id) => invoke('istek:pdf', id),
+}
+
 export const raporApi = {
   ozet: (params) => invoke('raporlar:ozet', params),
   enCokUrunler: (params) => invoke('raporlar:en-cok-urunler', params),
