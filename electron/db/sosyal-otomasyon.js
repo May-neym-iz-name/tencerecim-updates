@@ -13,7 +13,7 @@ const MAKS_DENEME = 3            // bu kadar hatadan sonra o yorumdan vazgeç (s
 // bileşenlerine açılıyorlar, urunler'de karşılıkları yok.
 function _sablonlariCoz(db, otomasyonId) {
   return db.prepare(`
-    SELECT s.urun_adi, s.aciklama, s.link, s.whatsapp,
+    SELECT s.urun_adi, s.aciklama, s.link, s.whatsapp, s.tur, s.serbest_metin,
            COALESCE(s.fiyat, u.satis_fiyati, st.fiyat) AS fiyat
     FROM sosyal_otomasyon_sablonlar os
     JOIN sosyal_sablonlar s ON s.id = os.sablon_id
@@ -85,21 +85,32 @@ module.exports = {
 
   // Şablonlar YALNIZ otomasyon için var → otomasyon yetkisi ister ('sosyal_medya_yonet' DEĞİL).
   // Sosyal medyayı kullanan personel yorumları elle cevaplar; toplu DM'in içeriğini değiştiremez.
-  'sosyal:sablonKaydet': ({ id, ad, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp }) => {
+  'sosyal:sablonKaydet': ({ id, ad, tur, serbest_metin, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp }) => {
     yetkiKontrol('sosyal_otomasyon_yonet')
     if (!ad || !ad.trim()) throw new Error('Şablon adı gerekli.')
-    if (!urun_adi || !urun_adi.trim()) throw new Error('Ürün adı gerekli.')
-    if (urun_id && set_id) throw new Error('Şablon ya ürüne ya sete bağlanabilir, ikisine birden değil.')
+    const t = tur === 'genel' ? 'genel' : 'urun'
     const db = getDb()
-    const p = [ad.trim(), urun_id || null, set_id || null, urun_adi.trim(), aciklama || null,
-      fiyat === '' || fiyat == null ? null : Number(fiyat), link || null, whatsapp || null]
+    let p
+    if (t === 'genel') {
+      const sm = (serbest_metin || '').trim()
+      if (!sm) throw new Error('Genel şablonda mesaj metni gerekli.')
+      if (sm.length > 1000) throw new Error('Mesaj metni 1000 karakteri aşamaz.')
+      // Genel türde ürün alanları anlamsız → boşaltılır. urun_adi NOT NULL olduğu için ''.
+      p = [ad.trim(), null, null, '', null, null, null, null, 'genel', sm]
+    } else {
+      if (!urun_adi || !urun_adi.trim()) throw new Error('Ürün adı gerekli.')
+      if (urun_id && set_id) throw new Error('Şablon ya ürüne ya sete bağlanabilir, ikisine birden değil.')
+      p = [ad.trim(), urun_id || null, set_id || null, urun_adi.trim(), aciklama || null,
+        fiyat === '' || fiyat == null ? null : Number(fiyat), link || null, whatsapp || null, 'urun', null]
+    }
     if (id) {
       db.prepare(`UPDATE sosyal_sablonlar SET ad=?, urun_id=?, set_id=?, urun_adi=?, aciklama=?,
-        fiyat=?, link=?, whatsapp=? WHERE id=?`).run(...p, id)
+        fiyat=?, link=?, whatsapp=?, tur=?, serbest_metin=? WHERE id=?`).run(...p, id)
       return { id }
     }
     const r = db.prepare(`INSERT INTO sosyal_sablonlar
-      (ad, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp) VALUES (?,?,?,?,?,?,?,?)`).run(...p)
+      (ad, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp, tur, serbest_metin)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(...p)
     return { id: r.lastInsertRowid }
   },
 
@@ -127,6 +138,17 @@ module.exports = {
   'sosyal:otomasyonKaydet': ({ konu_id, platform, aktif, acik_yanit_metni, sablon_idler }) => {
     yetkiKontrol('sosyal_otomasyon_yonet')
     const db = getDb()
+    // Tek-tür kuralı: bir otomasyona ya birden çok ürün şablonu YA DA tek bir genel şablon.
+    const idler = sablon_idler || []
+    if (idler.length) {
+      const turler = db.prepare(
+        `SELECT tur, COUNT(*) n FROM sosyal_sablonlar WHERE id IN (${idler.map(() => '?').join(',')}) GROUP BY tur`
+      ).all(...idler)
+      const genelSayi = turler.find(x => x.tur === 'genel')?.n || 0
+      const urunSayi = turler.find(x => x.tur !== 'genel')?.n || 0
+      if (genelSayi && urunSayi) throw new Error('Bir otomasyonda ürün ve genel şablon karıştırılamaz.')
+      if (genelSayi > 1) throw new Error('Bir otomasyona yalnız tek genel şablon bağlanabilir.')
+    }
     const tx = db.transaction(() => {
       let o = db.prepare('SELECT id, aktif FROM sosyal_otomasyonlar WHERE konu_id = ?').get(konu_id)
       if (!o) {
