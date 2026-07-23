@@ -14,7 +14,8 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
   const yonetebilir = yetkiVar('sosyal_otomasyon_yonet')
   const [liste, setListe] = useState([])
   const [ara, setAra] = useState('')
-  const [formda, setFormda] = useState(null) // null=kapalı, {}=yeni, {id..}=düzenle
+  const [formda, setFormda] = useState(null) // null=kapalı, {tur}=yeni, {id..}=düzenle
+  const [menuAcik, setMenuAcik] = useState(false)
 
   const yukle = () => sosyalApi.sablonlar().then(setListe).catch(e => toast.error(e.message))
   useEffect(() => { yukle() }, [])
@@ -48,7 +49,7 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
   }
 
   // Kelime bazlı + Türkçe duyarsız (bkz. src/utils/arama.js).
-  const suz = liste.filter(s => eslesirMi(`${s.ad} ${s.urun_adi || ''}`, ara))
+  const suz = liste.filter(s => eslesirMi(`${s.ad} ${s.urun_adi || ''} ${s.serbest_metin || ''}`, ara))
 
   return (
     <div className="space-y-3">
@@ -56,9 +57,18 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
         <input value={ara} onChange={e => setAra(e.target.value)} placeholder="🔍 Şablon ara…"
           className="flex-1 border rounded-lg px-3 py-2 text-sm" />
         {yonetebilir && (
-          <button onClick={() => setFormda({})} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm whitespace-nowrap">
-            + Yeni
-          </button>
+          <div className="relative">
+            <button onClick={() => setMenuAcik(m => !m)}
+              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm whitespace-nowrap">+ Yeni ▾</button>
+            {menuAcik && (
+              <div className="absolute right-0 mt-1 bg-white border rounded-lg shadow-lg z-10 w-44 overflow-hidden">
+                <button onClick={() => { setFormda({ tur: 'urun' }); setMenuAcik(false) }}
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">💰 Ürün şablonu</button>
+                <button onClick={() => { setFormda({ tur: 'genel' }); setMenuAcik(false) }}
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">📝 Genel şablon</button>
+              </div>
+            )}
+          </div>
         )}
         {kapat && <button onClick={kapat} className="text-gray-400 px-2">✕</button>}
       </div>
@@ -75,13 +85,18 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
             <div className="min-w-0 flex-1">
               <div className="font-semibold text-sm truncate">{s.ad}</div>
               <div className="text-xs text-gray-500 truncate">
-                {s.kaynak_tipi === 'set' && <span title="Set">📦 </span>}
-                {s.urun_adi}
-                {s.fiyat != null
-                  ? <span className="text-gray-400"> · {Number(s.fiyat).toLocaleString('tr-TR')} TL (sabit)</span>
-                  : s.kaynak_fiyati != null
-                    ? <span className="text-emerald-600"> · {Number(s.kaynak_fiyati).toLocaleString('tr-TR')} TL (canlı)</span>
-                    : <span className="text-amber-600"> · fiyat yok</span>}
+                {s.tur === 'genel' ? (
+                  <><span className="text-violet-600">📝 Genel</span>
+                    <span className="text-gray-400"> · {(s.serbest_metin || '').split('\n')[0].slice(0, 60)}</span></>
+                ) : (<>
+                  {s.kaynak_tipi === 'set' && <span title="Set">📦 </span>}
+                  {s.urun_adi}
+                  {s.fiyat != null
+                    ? <span className="text-gray-400"> · {Number(s.fiyat).toLocaleString('tr-TR')} TL (sabit)</span>
+                    : s.kaynak_fiyati != null
+                      ? <span className="text-emerald-600"> · {Number(s.kaynak_fiyati).toLocaleString('tr-TR')} TL (canlı)</span>
+                      : <span className="text-amber-600"> · fiyat yok</span>}
+                </>)}
               </div>
             </div>
             {yonetebilir && <>
@@ -97,7 +112,7 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
         ))}
       </div>
 
-      {formda && <SablonFormu sablon={formda.id ? formda : null}
+      {formda && <SablonFormu sablon={formda.id ? formda : { tur: formda.tur || 'urun' }}
         onKapat={() => setFormda(null)} onKaydet={kaydet} />}
     </div>
   )
