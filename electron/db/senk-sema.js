@@ -31,7 +31,7 @@ const TABLOLAR = {
   // sosyal_otomasyonlar / sosyal_otomasyon_sablonlar BİLEREK senkronlanmaz — bkz. SIRA notu.
   // sonradanEklendi: senkrona v1.2.113'te eklendi → mevcut satırlar "şimdi" damgalanmalı,
   // yoksa push imlecinin gerisinde kalıp hiç gönderilmezler (bkz. kur() içindeki not).
-  sosyal_sablonlar: { kolonlar: ['ad', 'urun_adi', 'aciklama', 'fiyat', 'link', 'whatsapp', 'aktif'],
+  sosyal_sablonlar: { kolonlar: ['ad', 'urun_adi', 'aciklama', 'fiyat', 'link', 'whatsapp', 'tur', 'serbest_metin', 'aktif'],
                       fk: { urun_id: 'urunler', set_id: 'setler' }, dogal: ['ad'], sonradanEklendi: true },
 
   // Otomasyon durumu ORTAK (v1.2.114). Senkronlanmadığı sürece asıl tehlike buydu: diğer PC

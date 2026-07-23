@@ -572,6 +572,8 @@ function migrate() {
     fiyat REAL,
     link TEXT,
     whatsapp TEXT,
+    tur TEXT NOT NULL DEFAULT 'urun',
+    serbest_metin TEXT,
     aktif INTEGER DEFAULT 1,
     olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
   );`)
@@ -598,6 +600,10 @@ function migrate() {
   // Şablon bir SET'e de bağlanabilir (setler ayrı tabloda; satışta bileşenlere açıldıkları
   // için urunler'e yazılmazlar). Fiyat çözümü: sablon.fiyat → urun.satis_fiyati → set.fiyat.
   try { db.exec("ALTER TABLE sosyal_sablonlar ADD COLUMN set_id INTEGER REFERENCES setler(id)") } catch {}
+  // Şablon türü: 'urun' (fiyat odaklı, mevcut) | 'genel' (serbest metin aynen gider).
+  // Mevcut satırlar 'urun' varsayılır — geriye dönük uyumlu.
+  try { db.exec("ALTER TABLE sosyal_sablonlar ADD COLUMN tur TEXT NOT NULL DEFAULT 'urun'") } catch {}
+  try { db.exec("ALTER TABLE sosyal_sablonlar ADD COLUMN serbest_metin TEXT") } catch {}
 
   // PERFORMANS index'leri:
   // online-siparisler:listele her satır için kargolar'dan son takip no'yu alt sorguyla çekiyor;
