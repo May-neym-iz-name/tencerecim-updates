@@ -32,9 +32,11 @@ function Alan({ etiket, not, children }) {
 
 export default function SablonFormu({ sablon, onKapat, onKaydet }) {
   const [v, setV] = useState({
-    ad: '', urun_id: null, set_id: null, urun_adi: '', aciklama: '', fiyat: '', link: '', whatsapp: '',
+    ad: '', tur: 'urun', serbest_metin: '',
+    urun_id: null, set_id: null, urun_adi: '', aciklama: '', fiyat: '', link: '', whatsapp: '',
     ...(sablon || {}),
   })
+  const genelMi = v.tur === 'genel'
   const [urunler, setUrunler] = useState([])
   const [setler, setSetler] = useState([])
   // Kaynak (ürün/set) YOKKEN "üründen al" anlamsız — false başlar, yoksa fiyat kutusu kilitli
@@ -85,13 +87,42 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
   const metin = onizle({ ...v, fiyat: etkinFiyat })
   const asildi = metin.length > MAKS_KARAKTER
 
-  const kaydet = () => onKaydet({ ...v, fiyat: urundenAlEtkin ? null : (v.fiyat || null) })
+  const kaydet = () => genelMi
+    ? onKaydet({ id: v.id, ad: v.ad, tur: 'genel', serbest_metin: v.serbest_metin })
+    : onKaydet({ ...v, tur: 'urun', fiyat: urundenAlEtkin ? null : (v.fiyat || null) })
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onKapat}>
       <div className="bg-white rounded-2xl p-5 w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-auto"
         onClick={e => e.stopPropagation()}>
-        <h3 className="font-bold text-lg mb-4">{sablon?.id ? 'Şablonu Düzenle' : 'Yeni Şablon'}</h3>
+        <h3 className="font-bold text-lg mb-4">
+          {sablon?.id ? 'Şablonu Düzenle' : (genelMi ? 'Yeni Genel Şablon' : 'Yeni Ürün Şablonu')}
+        </h3>
+        {genelMi ? (
+          <div className="grid grid-cols-2 gap-5">
+            <div className="space-y-3">
+              <Alan etiket="Şablon adı" not="listede göreceğin isim">
+                <input value={v.ad} onChange={e => setV(o => ({ ...o, ad: e.target.value }))}
+                  placeholder="Tarif çağrısı" className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </Alan>
+              <Alan etiket="Mesaj metni" not="müşteriye AYNEN bu gider">
+                <textarea value={v.serbest_metin || ''} onChange={e => setV(o => ({ ...o, serbest_metin: e.target.value }))}
+                  rows={10} placeholder={"Bu tarifin malzeme listesi için\nDM'den 'TARİF' yazın 👇"}
+                  className="w-full border rounded-lg px-3 py-2 text-sm" />
+              </Alan>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-1">Müşteriye gidecek mesaj</p>
+              <pre className="bg-gray-50 border rounded-xl p-3 text-sm whitespace-pre-wrap font-sans h-80 overflow-auto">
+                {(v.serbest_metin || '').trim()}
+              </pre>
+              <p className={`text-xs mt-2 ${(v.serbest_metin || '').length > MAKS_KARAKTER ? 'text-red-600 font-semibold' : 'text-gray-400'}`}>
+                {(v.serbest_metin || '').length}/{MAKS_KARAKTER} karakter
+                {(v.serbest_metin || '').length > MAKS_KARAKTER && ' — sınır aşıldı, kısaltın'}
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="grid grid-cols-2 gap-5">
           <div className="space-y-3">
             <Alan etiket="Şablon adı" not="listede göreceğin isim">
@@ -152,9 +183,13 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
             </p>
           </div>
         </div>
+        )}
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onKapat} className="px-4 py-2 text-sm text-gray-600">İptal</button>
-          <button onClick={kaydet} disabled={!v.ad?.trim() || !v.urun_adi?.trim() || asildi}
+          <button onClick={kaydet}
+            disabled={genelMi
+              ? (!v.ad?.trim() || !(v.serbest_metin || '').trim() || (v.serbest_metin || '').length > MAKS_KARAKTER)
+              : (!v.ad?.trim() || !v.urun_adi?.trim() || asildi)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-40">Kaydet</button>
         </div>
       </div>
