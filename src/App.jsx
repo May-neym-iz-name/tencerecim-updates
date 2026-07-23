@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
@@ -6,6 +6,7 @@ import { uygulamaApi, sosyalApi, bildirimApi } from './api/ipc'
 import { buluttanAl } from './lib/ayarSenk'
 import { veriSenk } from './lib/veriSenk'
 import { eskiEtiketleriTemizle } from './lib/etiketDepo'
+import { bildirimSesiCal } from './lib/bildirimSes'
 import { AyarlarProvider, useAyarlar } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import HataSiniri from './components/HataSiniri'
@@ -66,10 +67,17 @@ function Uygulama() {
   }, [yetkiVar])
 
   // Bildirim okunmamış rozeti: yetki varsa 30 sn'de bir okunmamış sayısını çeker.
+  // Sayaç ARTARSA (yeni talep geldi) sesli bildirim çalar; ilk yüklemede çalmaz.
   const [bildirimRozet, setBildirimRozet] = useState(0)
+  const oncekiBildirimSayac = useRef(null)
   useEffect(() => {
     if (!yetkiVar('bildirim_goruntule')) return
-    const yukle = () => bildirimApi.sayac().then(setBildirimRozet).catch(() => {})
+    const yukle = () => bildirimApi.sayac().then(sayi => {
+      setBildirimRozet(sayi)
+      const onceki = oncekiBildirimSayac.current
+      if (onceki !== null && sayi > onceki) bildirimSesiCal()
+      oncekiBildirimSayac.current = sayi
+    }).catch(() => {})
     yukle()
     const i = setInterval(yukle, 30 * 1000)
     return () => clearInterval(i)
