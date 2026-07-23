@@ -114,7 +114,16 @@ function Duzenle({ taslak, lokasyonlar, tedarikciler, onKapat, onKaydedildi }) {
   const [arama, setArama] = useState('')
   const [sonuc, setSonuc] = useState([])
   const [mesgul, setMesgul] = useState(false)
+  const [stoklar, setStoklar] = useState({}) // { urun_id: seçili şubedeki miktar }
   const aramaRef = useRef()
+
+  // Eklenen kalemlerin seçili şubedeki mevcut stok adetlerini çek.
+  const stokAnahtar = kalemler.map(k => k.urun_id).filter(Boolean).join(',')
+  useEffect(() => {
+    const idler = kalemler.map(k => k.urun_id).filter(Boolean)
+    if (!lokId || idler.length === 0) { setStoklar({}); return }
+    istekApi.stoklar({ lokasyon_id: lokId, urun_idler: idler }).then(setStoklar).catch(() => {})
+  }, [lokId, stokAnahtar])
 
   const araFn = useCallback(async (deger) => {
     setArama(deger)
@@ -199,6 +208,7 @@ function Duzenle({ taslak, lokasyonlar, tedarikciler, onKapat, onKaydedildi }) {
               <thead className="bg-gray-50 text-gray-500 text-xs">
                 <tr>
                   <th className="text-left px-3 py-2 font-medium">Ürün</th>
+                  <th className="text-center px-3 py-2 font-medium w-28">Mevcut Stok</th>
                   <th className="text-center px-3 py-2 font-medium w-28">Adet</th>
                   <th className="w-10"></th>
                 </tr>
@@ -207,6 +217,7 @@ function Duzenle({ taslak, lokasyonlar, tedarikciler, onKapat, onKaydedildi }) {
                 {kalemler.map(k => (
                   <tr key={k.urun_id} className="border-t">
                     <td className="px-3 py-1.5">{k.ad}</td>
+                    <td className="px-3 py-1.5 text-center text-gray-500">{stoklar[k.urun_id] ?? 0}</td>
                     <td className="px-3 py-1.5 text-center">
                       <input type="number" min="1" value={k.miktar}
                         onChange={e => kalemGuncelle(k.urun_id, e.target.value)}
@@ -220,7 +231,7 @@ function Duzenle({ taslak, lokasyonlar, tedarikciler, onKapat, onKaydedildi }) {
               </tbody>
               <tfoot>
                 <tr className="border-t bg-gray-50">
-                  <td className="px-3 py-2 text-right font-semibold text-gray-600">Toplam Adet</td>
+                  <td colSpan={2} className="px-3 py-2 text-right font-semibold text-gray-600">Toplam Adet</td>
                   <td className="px-3 py-2 text-center font-bold text-gray-800">{toplamAdet}</td>
                   <td></td>
                 </tr>

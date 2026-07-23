@@ -219,6 +219,7 @@ export const bildirimApi = {
 
 export const istekApi = {
   listele: () => invoke('istek:listele'),
+  stoklar: (params) => invoke('istek:stoklar', params),
   getir: (id) => invoke('istek:getir', id),
   kaydet: (veri) => invoke('istek:kaydet', veri),
   sil: (id) => invoke('istek:sil', id),

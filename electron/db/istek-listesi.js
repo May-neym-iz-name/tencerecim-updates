@@ -17,6 +17,20 @@ module.exports = {
     `).all()
   },
 
+  // Seçili şubedeki mevcut stokları toplu getir: { urun_id: miktar }.
+  // Ürün ekleme ekranında eklenen kalemlerin stok adedini göstermek için.
+  'istek:stoklar': ({ lokasyon_id, urun_idler }) => {
+    const db = getDb()
+    if (!lokasyon_id || !Array.isArray(urun_idler) || urun_idler.length === 0) return {}
+    const yer = urun_idler.map(() => '?').join(',')
+    const rows = db.prepare(
+      `SELECT urun_id, miktar FROM urun_stoklar WHERE lokasyon_id = ? AND urun_id IN (${yer})`
+    ).all(lokasyon_id, ...urun_idler)
+    const harita = {}
+    for (const r of rows) harita[r.urun_id] = r.miktar
+    return harita
+  },
+
   'istek:getir': (id) => {
     const db = getDb()
     const liste = db.prepare(`
