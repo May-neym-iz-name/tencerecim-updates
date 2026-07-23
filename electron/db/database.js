@@ -259,6 +259,26 @@ function createTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_bildirim_okundu ON bildirimler(okundu);
 
+    -- İstek listeleri (tedarikçiden tedarik istek listesi): şube + tedarikçi başına.
+    -- Bulut senkron: jenerik senk_kayitlar (senk-sema.js). PDF yerel üretilir.
+    CREATE TABLE IF NOT EXISTS istek_listeleri (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lokasyon_id INTEGER,
+      tedarikci_id INTEGER REFERENCES tedarikciler(id),
+      baslik TEXT,
+      tarih TEXT,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
+    -- urun_adi: anlık kopya (FK yarışına dayanıklı PDF; satis_kalemleri.set_adi emsali).
+    CREATE TABLE IF NOT EXISTS istek_listesi_kalemleri (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      istek_id INTEGER NOT NULL REFERENCES istek_listeleri(id),
+      urun_id INTEGER REFERENCES urunler(id),
+      urun_adi TEXT,
+      miktar INTEGER DEFAULT 1
+    );
+    CREATE INDEX IF NOT EXISTS idx_istek_kalem_istek ON istek_listesi_kalemleri(istek_id);
+
     -- Her mağaza için ayrı UPS gönderici (çıkış) adresi. UPS hesap bilgileri
     -- (müşteri/kullanıcı kodu, şifre) ups_ayarlar'da ortak kalır; burada sadece
     -- gönderici adres/iletişim bilgisi mağaza bazında tutulur.

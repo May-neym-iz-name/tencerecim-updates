@@ -63,6 +63,14 @@ const TABLOLAR = {
   // ve etiket zaten oluşturan mağazanın PC'sinde yerelde durur. Diğer alanlar (takip no,
   // alıcı, adres, durum, lokasyon) senkronlanır → görünürlük + takip + WhatsApp çalışır.
   kargolar: { kolonlar: ['takip_no', 'durum', 'tip', 'lokasyon_id', 'ikas_siparis_id', 'alici_ad', 'alici_telefon', 'alici_adres', 'il', 'ilce', 'il_kodu', 'ilce_kodu', 'koli_adedi', 'agirlik', 'servis_seviyesi', 'odeme_tipi', 'aciklama', 'etiket_link', 'etiket_storage_yol', 'son_durum', 'son_durum_tarihi', 'olusturma_tarihi'], fk: { musteri_id: 'musteriler', satis_id: 'satislar' }, dogal: ['takip_no'] },
+
+  // İstek listeleri: şube+tedarikçi bazlı tedarik istek listesi. urun_adi anlık kopya.
+  // lokasyon_id düz kolon (her PC aynı seed, satislar emsali).
+  istek_listeleri: { kolonlar: ['lokasyon_id', 'baslik', 'tarih', 'olusturma_tarihi'],
+                     fk: { tedarikci_id: 'tedarikciler' }, dogal: [], sonradanEklendi: true },
+  istek_listesi_kalemleri: { kolonlar: ['urun_adi', 'miktar'],
+                             fk: { istek_id: 'istek_listeleri', urun_id: 'urunler' },
+                             zorunluFk: ['istek_id'], dogal: [], sonradanEklendi: true },
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
@@ -77,6 +85,7 @@ const SIRA = [
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',
+  'istek_listeleri', 'istek_listesi_kalemleri',
 ]
 
 function kur(db) {

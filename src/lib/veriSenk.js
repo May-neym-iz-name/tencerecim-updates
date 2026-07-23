@@ -19,6 +19,7 @@ const SIRA_YEDEK = [
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',
+  'istek_listeleri', 'istek_listesi_kalemleri',
 ]
 let siraCache = null
 async function siraAl() {
