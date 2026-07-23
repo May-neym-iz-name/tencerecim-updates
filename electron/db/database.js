@@ -243,6 +243,22 @@ function createTables() {
       ikas_lokasyon_id TEXT
     );
 
+    -- Bildirim merkezi: iptal/iade talepleri ve ileride diğer olaylar.
+    -- Her PC ikas çekiminde kendi yerelinde üretir (bulut senkronu yok).
+    -- dedup_anahtar UNIQUE: aynı olay her çekimde tekrar bildirilmez.
+    CREATE TABLE IF NOT EXISTS bildirimler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tip TEXT NOT NULL,
+      baslik TEXT NOT NULL,
+      mesaj TEXT,
+      onem TEXT DEFAULT 'normal',
+      ikas_siparis_id TEXT,
+      dedup_anahtar TEXT UNIQUE,
+      okundu INTEGER DEFAULT 0,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_bildirim_okundu ON bildirimler(okundu);
+
     -- Her mağaza için ayrı UPS gönderici (çıkış) adresi. UPS hesap bilgileri
     -- (müşteri/kullanıcı kodu, şifre) ups_ayarlar'da ortak kalır; burada sadece
     -- gönderici adres/iletişim bilgisi mağaza bazında tutulur.
