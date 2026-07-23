@@ -118,3 +118,34 @@ describe('mesajOlustur', () => {
     expect(metin).toContain('x'.repeat(400))
   })
 })
+
+describe('genel (serbest metin) şablonlar', () => {
+  const genel = { tur: 'genel', serbest_metin: "Bu tarifin malzemeleri için DM'den 'TARİF' yazın 👇" }
+
+  test('tek genel şablon metni AYNEN gider (selamlama/fiyat yok)', () => {
+    const { metin } = mesajOlustur({ sablonlar: [genel] })
+    expect(metin).toBe("Bu tarifin malzemeleri için DM'den 'TARİF' yazın 👇")
+    expect(metin.startsWith('Merhaba')).toBe(false)
+    expect(metin).not.toContain('Fiyat:')
+  })
+
+  test('birden çok genel boş satırla alt alta birleşir', () => {
+    const g2 = { tur: 'genel', serbest_metin: 'İkinci metin' }
+    const { metin } = mesajOlustur({ sablonlar: [genel, g2] })
+    expect(metin).toBe(genel.serbest_metin + '\n\n' + 'İkinci metin')
+  })
+
+  test('genel metin 1000 karakteri aşınca asildi=true, metin kesilmez', () => {
+    const uzun = { tur: 'genel', serbest_metin: 'y'.repeat(1200) }
+    const { metin, asildi, karakter } = mesajOlustur({ sablonlar: [uzun] })
+    expect(asildi).toBe(true)
+    expect(karakter).toBeGreaterThan(MAKS_KARAKTER)
+    expect(metin).toContain('y'.repeat(1200))
+  })
+
+  test('genel şablonlarda ürün biçim etiketleri hiç yazılmaz', () => {
+    const { metin } = mesajOlustur({ sablonlar: [genel] })
+    expect(metin).not.toContain('Whatsapp Sipariş Hattı:')
+    expect(metin).not.toContain('Online Sipariş Hattı:')
+  })
+})

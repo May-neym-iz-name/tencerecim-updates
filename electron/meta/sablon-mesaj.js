@@ -53,6 +53,18 @@ function mesajOlustur({ sablonlar, selamlama = SELAMLAMA }) {
   const liste = (sablonlar || []).filter(Boolean)
   if (!liste.length) return { metin: '', karakter: 0, asildi: false }
 
+  // Genel (serbest) şablon: metin AYNEN gider — ürün/fiyat biçimi uygulanmaz.
+  // Tek-tür kuralı gereği liste ya tümüyle genel ya tümüyle ürün olur; defansif olarak
+  // "hepsi genel mi?" testine bakıyoruz.
+  if (liste.every(s => s.tur === 'genel')) {
+    const metin = liste
+      .map(s => (s.serbest_metin || '').trim())
+      .filter(Boolean)
+      .join('\n\n')
+      .trim()
+    return { metin, karakter: metin.length, asildi: metin.length > MAKS_KARAKTER }
+  }
+
   const numaralar = [...new Set(liste.map(s => (s.whatsapp || '').trim()).filter(Boolean))]
   const ortakNumara = numaralar.length === 1 ? numaralar[0] : null
 
