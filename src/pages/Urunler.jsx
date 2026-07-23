@@ -30,18 +30,20 @@ function kategoriHiyerarsik(kategoriler) {
 
 function InlineEkle({ label, onEkle }) {
   const [deger, setDeger] = useState('')
-  async function submit(e) {
-    e.preventDefault()
+  async function submit() {
     if (!deger.trim()) return
     await onEkle(deger.trim())
     setDeger('')
   }
+  // İç içe <form> HTML'de geçersiz (dış ürün formunun içindeyiz); bu yüzden form değil
+  // div + type="button" kullanıyoruz. Enter'ı elle yakalayıp dış formun submit'ini engelliyoruz.
   return (
-    <form onSubmit={submit} className="flex gap-1 mt-1">
+    <div className="flex gap-1 mt-1">
       <input value={deger} onChange={e => setDeger(e.target.value)} placeholder={`Yeni ${label}...`}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submit() } }}
         className="flex-1 border rounded px-2 py-1 text-xs" />
-      <button type="submit" className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700">+</button>
-    </form>
+      <button type="button" onClick={submit} className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700">+</button>
+    </div>
   )
 }
 
