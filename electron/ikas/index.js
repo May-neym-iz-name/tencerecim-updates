@@ -3,6 +3,7 @@
 const { getDb } = require('../db/database')
 const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
+const { bildirimUret } = require('./bildirim-uret')
 
 const PUSH_PARTI = 50      // saveProductStockLocations parti boyutu
 const SIPARIS_LIMIT = 200  // listOrder sayfa boyutu (ikas tavanı 200 — daha az istek)
@@ -260,6 +261,10 @@ async function pullSiparisler() {
       for (const sip of siparisler) {
         if (sip.updatedAt && sip.updatedAt > enSonUpdatedAt) enSonUpdatedAt = sip.updatedAt
         if (sip.salesChannel?.type !== ONLINE_KANAL_TIPI) continue // sadece web sitesi siparişleri
+
+        // Bildirim merkezi: iptal/iade talebi vb. durumları yakala (ilk kurulumda üretmez;
+        // dedup_anahtar UNIQUE olduğu için aynı olay tekrar bildirilmez).
+        bildirimUret(db, sip, ilkKurulum)
 
         // Zaten kayıtlı: yeniden ekleme ama durum/ödeme bilgisini ikas'tan tazele.
         const mevcut = mevcutGetir.get(sip.id)

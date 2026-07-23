@@ -209,6 +209,14 @@ export const onlineSiparisApi = {
   etiketOnizle: (html, baslik) => invoke('kargo-etiket:onizle', { html, baslik }),
 }
 
+export const bildirimApi = {
+  liste: (params) => invoke('bildirim:liste', params),
+  onemliler: () => invoke('bildirim:onemliler'),
+  sayac: () => invoke('bildirim:sayac'),
+  okundu: (id) => invoke('bildirim:okundu', id),
+  tumunuOku: () => invoke('bildirim:tumunuOku'),
+}
+
 export const raporApi = {
   ozet: (params) => invoke('raporlar:ozet', params),
   enCokUrunler: (params) => invoke('raporlar:en-cok-urunler', params),

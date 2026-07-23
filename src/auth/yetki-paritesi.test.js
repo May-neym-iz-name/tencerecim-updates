@@ -33,7 +33,7 @@ const TUM_KODLAR = [
   'urun_goruntule', 'urun_duzenle', 'urun_sil', 'fiyat_degistir',
   'stok_goruntule', 'stok_duzenle', 'stok_sayim', 'mal_kabul_yonet',
   'musteri_goruntule', 'musteri_duzenle', 'musteri_sil',
-  'kargo_yonet', 'kargo_iptal', 'online_siparis_goruntule',
+  'kargo_yonet', 'kargo_iptal', 'online_siparis_goruntule', 'bildirim_goruntule',
   'kasa_kullan', 'gider_yonet', 'rapor_goruntule',
   'ayarlar_duzenle', 'excel_ice_aktar', 'ikas_yonet', 'kullanici_yonetimi',
   'sosyal_medya_yonet', 'sosyal_otomasyon_yonet',
@@ -60,6 +60,18 @@ describe('yetki paritesi (frontend izinler.js ↔ backend yetki.js)', () => {
     const profil = { rol: 'super_admin', aktif: false, izinler: {} }
     expect(yetkiVar(profil, 'satis_yap')).toBe(false)
     expect(backendYetkiVar(profil, 'satis_yap')).toBe(false)
+  })
+})
+
+describe('bildirim yetkisi', () => {
+  test('personel bildirimleri varsayılan görebilir', () => {
+    const p = { rol: 'personel', aktif: true, izinler: {} }
+    expect(yetkiVar(p, 'bildirim_goruntule')).toBe(true)
+  })
+
+  test('özel rol yalnızca override ile görür', () => {
+    expect(yetkiVar({ rol: 'ozel', aktif: true, izinler: {} }, 'bildirim_goruntule')).toBe(false)
+    expect(yetkiVar({ rol: 'ozel', aktif: true, izinler: { bildirim_goruntule: true } }, 'bildirim_goruntule')).toBe(true)
   })
 })
 

@@ -1,11 +1,12 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
-import { uygulamaApi, sosyalApi } from './api/ipc'
+import { uygulamaApi, sosyalApi, bildirimApi } from './api/ipc'
 import { buluttanAl } from './lib/ayarSenk'
 import { veriSenk } from './lib/veriSenk'
 import { eskiEtiketleriTemizle } from './lib/etiketDepo'
+import { bildirimSesiCal } from './lib/bildirimSes'
 import { AyarlarProvider, useAyarlar } from './ayarlar/AyarlarContext'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import HataSiniri from './components/HataSiniri'
@@ -20,6 +21,7 @@ import Kargo from './pages/Kargo.jsx'
 import Ayarlar from './pages/Ayarlar.jsx'
 import SatisFinans from './pages/SatisFinans.jsx'
 import OnlineSiparisler from './pages/OnlineSiparisler.jsx'
+import Bildirimler from './pages/Bildirimler.jsx'
 import SosyalMedya from './pages/SosyalMedya.jsx'
 import Kullanicilar from './pages/Kullanicilar.jsx'
 
@@ -33,6 +35,7 @@ const navItems = [
   { to: '/urunler', label: '📦 Ürünler', yetki: 'urun_goruntule', el: <Urunler /> },
   { to: '/stok', label: '📊 Stok', yetkiler: ['stok_goruntule', 'mal_kabul_yonet'], el: <StokYonetim /> },
   { to: '/online-siparisler', label: '🛍️ Online Siparişler', yetki: 'online_siparis_goruntule', el: <OnlineSiparisler /> },
+  { to: '/bildirimler', label: '🔔 Bildirimler', yetki: 'bildirim_goruntule', el: <Bildirimler /> },
   { to: '/sosyal-medya', label: '💬 Sosyal Medya', yetki: 'sosyal_medya_yonet', el: <SosyalMedya /> },
   { to: '/raporlar', label: '📈 Raporlar', yetki: 'rapor_goruntule', el: <Raporlar /> },
   { to: '/musteriler', label: '👥 Müşteriler', yetki: 'musteri_goruntule', el: <Musteriler /> },
@@ -58,6 +61,23 @@ function Uygulama() {
   useEffect(() => {
     if (!yetkiVar('sosyal_medya_yonet')) return
     const yukle = () => sosyalApi.sayac().then(setSosyalRozet).catch(() => {})
+    yukle()
+    const i = setInterval(yukle, 30 * 1000)
+    return () => clearInterval(i)
+  }, [yetkiVar])
+
+  // Bildirim okunmamış rozeti: yetki varsa 30 sn'de bir okunmamış sayısını çeker.
+  // Sayaç ARTARSA (yeni talep geldi) sesli bildirim çalar; ilk yüklemede çalmaz.
+  const [bildirimRozet, setBildirimRozet] = useState(0)
+  const oncekiBildirimSayac = useRef(null)
+  useEffect(() => {
+    if (!yetkiVar('bildirim_goruntule')) return
+    const yukle = () => bildirimApi.sayac().then(sayi => {
+      setBildirimRozet(sayi)
+      const onceki = oncekiBildirimSayac.current
+      if (onceki !== null && sayi > onceki) bildirimSesiCal()
+      oncekiBildirimSayac.current = sayi
+    }).catch(() => {})
     yukle()
     const i = setInterval(yukle, 30 * 1000)
     return () => clearInterval(i)
@@ -121,6 +141,11 @@ function Uygulama() {
                 {item.to === '/sosyal-medya' && sosyalRozet > 0 && (
                   <span className="bg-red-600 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center flex-shrink-0">
                     {sosyalRozet > 99 ? '99+' : sosyalRozet}
+                  </span>
+                )}
+                {item.to === '/bildirimler' && bildirimRozet > 0 && (
+                  <span className="bg-red-600 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center flex-shrink-0">
+                    {bildirimRozet > 99 ? '99+' : bildirimRozet}
                   </span>
                 )}
               </NavLink>
