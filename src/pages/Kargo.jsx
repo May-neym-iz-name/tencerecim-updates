@@ -24,6 +24,19 @@ const DURUM_RENK = {
   iptal: 'bg-red-100 text-red-700',
 }
 
+// UPS canlı durumu — YALNIZCA son_durum_kodu (StatusCode) ile karar verilir; serbest metin
+// (son_durum) iki yönden de yanıltır (docs/ups-api-reference.md §1). Otomatik yoklayıcı
+// (electron/ups/takip.js) bu kodu 30 dk'da bir yazar; kod null ise koli henüz UPS ağına girmemiştir.
+const UPS_TESLIM = 2   // ALICIYA TESLİM EDİLDİ — tek gerçek teslim kodu
+const UPS_OZEL = 3     // ÖZEL DURUM (sebep genişletilmiş tabloda)
+function upsDurumBilgi(kod) {
+  if (kod == null) return { etiket: 'Oluşturuldu', renk: DURUM_RENK.olusturuldu }
+  const n = Number(kod)
+  if (n === UPS_TESLIM) return { etiket: 'Teslim Edildi', renk: 'bg-emerald-100 text-emerald-700' }
+  if (n === UPS_OZEL) return { etiket: 'Özel Durum', renk: 'bg-amber-100 text-amber-700' }
+  return { etiket: 'Yolda', renk: 'bg-teal-100 text-teal-700' } // ağdaki tüm ara kodlar (1/4/6/7/…)
+}
+
 export default function Kargo() {
   const { yetkiVar, lokasyonErisim } = useAuth()
   const iptalYetkisi = yetkiVar('kargo_iptal')
@@ -114,6 +127,30 @@ export default function Kargo() {
     kargoApi.listele().then(setKargolar).catch(e => toast.error(e.message)).finally(() => setYukleniyor(false))
   }
   useEffect(yenile, [])
+
+  // Otomatik tazeleme: 30 dk'lık UPS takip yoklayıcısı bir durum yazınca main süreç
+  // 'ikas:siparis-degisti' yayar (electron/main.js). Online Siparişler ekranıyla aynı desen —
+  // açık Kargo listesi kendiliğinden güncel durumu gösterir. Sarmalayıcı şart: olay payload'ı
+  // ilk parametreye geçer, yenile'yi doğrudan verirsek beklenmedik argümanla çağrılır.
+  useEffect(() => {
+    window.api.on('ikas:siparis-degisti', () => yenile())
+    return () => window.api.removeAllListeners('ikas:siparis-degisti')
+  }, [])
+
+  // Elle tetik: 30 dk'yı beklemeden tüm bekleyen gönderileri UPS'ten anında sorgular.
+  const [durumYenileniyor, setDurumYenileniyor] = useState(false)
+  async function durumlariYenile() {
+    setDurumYenileniyor(true)
+    const bekle = toast.loading('UPS durumları sorgulanıyor…')
+    try {
+      const r = await kargoApi.takipYokla()
+      yenile()
+      const n = r?.degisti || 0
+      toast.success(n ? `${n} gönderinin durumu güncellendi.` : 'Tüm durumlar zaten güncel.', { id: bekle })
+    } catch (e) {
+      toast.error('Durum sorgulanamadı: ' + e.message, { id: bekle })
+    } finally { setDurumYenileniyor(false) }
+  }
 
   function whatsappGonder(k) {
     if (!k.alici_telefon) { toast.error('Bu gönderide alıcı telefonu yok.'); return }
@@ -212,6 +249,11 @@ export default function Kargo() {
               🖨️ {basiliyor ? 'Basılıyor…' : `Seçili Etiketleri Bas (${secili.size})`}
             </button>
           )}
+          <button onClick={durumlariYenile} disabled={durumYenileniyor}
+            className="border border-teal-600 text-teal-700 px-4 py-2 rounded-lg text-sm hover:bg-teal-50 disabled:opacity-50"
+            title="Tüm gönderilerin UPS durumunu (Yolda / Teslim Edildi / Özel Durum) şimdi sorgular. Durumlar zaten 30 dakikada bir otomatik güncellenir.">
+            {durumYenileniyor ? '⏳ Sorgulanıyor…' : '♻️ Durumları Yenile'}
+          </button>
           <button onClick={() => setHesapAcik(a => !a)}
             className={`px-4 py-2 rounded-lg text-sm border ${hesapAcik ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
             title="2026 FLASH tarifesiyle tahmini gönderi ücreti hesapla">💰 Kargo Ücreti Hesapla</button>
@@ -409,9 +451,17 @@ export default function Kargo() {
                 <td className="px-3 py-2 text-gray-500 text-xs max-w-[180px] truncate">{[k.ilce, k.il].filter(Boolean).join(', ')}</td>
                 <td className="px-3 py-2 text-xs text-gray-600">{k.lokasyon_ad || '—'}</td>
                 <td className="px-3 py-2 whitespace-nowrap">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${DURUM_RENK[k.durum] || 'bg-gray-100 text-gray-600'}`}>
-                    {k.durum === 'iptal' ? 'İptal' : 'Oluşturuldu'}
-                  </span>
+                  {k.durum === 'iptal'
+                    ? <span className={`px-2 py-0.5 rounded-full text-xs ${DURUM_RENK.iptal}`}>İptal</span>
+                    : (() => {
+                        const d = upsDurumBilgi(k.son_durum_kodu)
+                        return (
+                          <span className={`px-2 py-0.5 rounded-full text-xs ${d.renk}`}
+                            title={k.son_durum_tarihi ? `UPS güncelleme: ${String(k.son_durum_tarihi).slice(0, 16)}${k.son_durum ? ' — ' + k.son_durum : ''}` : 'Henüz UPS ağına girmedi'}>
+                            {d.etiket}
+                          </span>
+                        )
+                      })()}
                   {k.tip === 'iade' && (
                     <span className="ml-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700" title="İade gönderisi: müşteriden mağazaya">↩ İade</span>
                   )}
