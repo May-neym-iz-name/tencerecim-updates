@@ -254,6 +254,7 @@ const handlerModules = [
   require('./db/ayar-senk'),
   require('./db/online-siparisler'),
   require('./db/bildirimler'),
+  require('./db/istek-listesi'),
   require('./db/raporlar'),
   require('./db/panel'),
   require('./db/senk-veri'),
