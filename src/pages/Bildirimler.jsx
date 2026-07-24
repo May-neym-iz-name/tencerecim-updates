@@ -30,7 +30,7 @@ export default function Bildirimler() {
     try {
       if (!b.okundu) await bildirimApi.okundu(b.id)
     } catch { /* okundu yazımı kritik değil */ }
-    if (b.ikas_siparis_id) navigate('/online-siparisler')
+    if (b.ikas_siparis_id) navigate('/online-siparisler?talep=1')
     else yukle()
   }
 

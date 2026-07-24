@@ -44,4 +44,52 @@ function bildirimUret(db, sip, ilkKurulum) {
   return _ekle(db, b)
 }
 
-module.exports = { _durumdanBildirim, bildirimUret }
+// Bekleyen talep durumları (frontend karşılığı: src/utils/talep.js).
+const BEKLEYEN_TALEP = ['REFUND_REQUESTED', 'CANCEL_REQUESTED']
+
+// TEK SEFERLİK geri-tarama: yerel online_siparisler tablosunda BEKLEYEN talepler
+// için bildirim üretir. Gerekçe: ikas çekimi updatedAt imleciyle ARTIMLIDIR —
+// bildirim özelliğinden önce talebe geçmiş ve o gün bu yana güncellenmemiş
+// siparişler yeniden çekilmez, dolayısıyla hiç bildirim üretmezler.
+// senk_durum bayrağıyla bir kez koşar (emsal: kargolar_restamp). Dedup zaten
+// mükerreri engeller, tekrar koşsa da zararsızdır.
+function mevcutTalepleriBildir(db) {
+  const BAYRAK = 'bildirim_talep_backfill'
+  try {
+    const v = db.prepare('SELECT deger FROM senk_durum WHERE anahtar = ?').get(BAYRAK)
+    if (v) return 0
+
+    const yer = BEKLEYEN_TALEP.map(() => '?').join(',')
+    const satirlar = db.prepare(`
+      SELECT ikas_siparis_id, siparis_no, durum, kargo_durumu, toplam, para_birimi, musteri_ad
+      FROM online_siparisler
+      WHERE durum IN (${yer}) OR kargo_durumu IN (${yer})
+    `).all(...BEKLEYEN_TALEP, ...BEKLEYEN_TALEP)
+
+    let eklenen = 0
+    for (const s of satirlar) {
+      // _durumdanBildirim ikas sipariş şeklini bekler → yerel satırı ona uyarla.
+      const sip = {
+        id: s.ikas_siparis_id,
+        orderNumber: s.siparis_no,
+        status: s.durum,
+        orderPackageStatus: s.kargo_durumu,
+        totalFinalPrice: s.toplam,
+        currencyCode: s.para_birimi,
+        customer: { firstName: s.musteri_ad || '', lastName: '' },
+      }
+      const b = _durumdanBildirim(sip)
+      if (b) eklenen += _ekle(db, b)
+    }
+
+    db.prepare(
+      "INSERT INTO senk_durum (anahtar, deger) VALUES (?, '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'"
+    ).run(BAYRAK)
+    return eklenen
+  } catch (e) {
+    console.error('Bildirim talep geri-tarama:', e.message)
+    return 0
+  }
+}
+
+module.exports = { _durumdanBildirim, bildirimUret, mevcutTalepleriBildir }

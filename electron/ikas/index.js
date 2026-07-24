@@ -3,7 +3,7 @@
 const { getDb } = require('../db/database')
 const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
-const { bildirimUret } = require('./bildirim-uret')
+const { bildirimUret, mevcutTalepleriBildir } = require('./bildirim-uret')
 
 const PUSH_PARTI = 50      // saveProductStockLocations parti boyutu
 const SIPARIS_LIMIT = 200  // listOrder sayfa boyutu (ikas tavanı 200 — daha az istek)
@@ -217,6 +217,10 @@ async function pullSiparisler() {
   const gecmisCekildi = String(a.gecmis_cekildi || '') === '1'
   const ilkKurulum = !gecmisCekildi
   const gtBaslangic = ilkKurulum ? 0 : sonSenk
+
+  // Özellik öncesi oluşmuş, hâlâ BEKLEYEN talepleri bir kez bildirime dönüştür
+  // (artımlı çekim onları yeniden getirmez). İlk kurulumda anlamsız — atlanır.
+  if (!ilkKurulum) mevcutTalepleriBildir(db)
 
   const varExists = db.prepare('SELECT 1 FROM online_siparisler WHERE ikas_siparis_id = ?')
   const sipEkle = db.prepare(`INSERT OR IGNORE INTO online_siparisler
