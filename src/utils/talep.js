@@ -16,9 +16,20 @@ const PAKET_YOK = ['', 'UNFULFILLED']
 // durum=REFUND_REQUESTED / kargo_durumu=REFUND_REQUEST_ACCEPTED).
 // İstisna: paket henüz oluşmamışsa paket durumu bilgi taşımaz → sipariş durumuna
 // bakılır. İptal talepleri çoğunlukla bu aşamada gelir.
-export function bekleyenTalepMi(siparis) {
+//
+// asama: yerel talep aşaması ({ asama: 'onaylandi'|'kapatildi' }) — ikas'a yazılamayan
+// bilgi. 'kapatildi' eler: ikas'ta talep REFUND_REQUESTED olarak kalacağı için eleme
+// buradan yapılmazsa her senkron talebi geri diriltir. 'onaylandi' ELEMEZ — ürün
+// beklendiği sürece görünür kalmalı.
+export function bekleyenTalepMi(siparis, asama = null) {
   if (!siparis) return false
+  if (asama?.asama === 'kapatildi') return false
   const paket = siparis.kargo_durumu || ''
   const belirleyici = PAKET_YOK.includes(paket) ? siparis.durum : paket
   return !!belirleyici && BEKLEYEN_TALEP_DURUMLARI.includes(belirleyici)
+}
+
+// Onaylanmış ama ürünü henüz gelmemiş talep → listede sarı etiketle ayrılır.
+export function urunBekleniyorMu(asama) {
+  return asama?.asama === 'onaylandi'
 }

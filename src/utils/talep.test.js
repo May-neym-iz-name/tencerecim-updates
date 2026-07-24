@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { bekleyenTalepMi, BEKLEYEN_TALEP_DURUMLARI } from './talep.js'
+import { bekleyenTalepMi, urunBekleniyorMu, BEKLEYEN_TALEP_DURUMLARI } from './talep.js'
 
 describe('bekleyenTalepMi', () => {
   test('sipariş durumunda iade talebi → true', () => {
@@ -51,5 +51,31 @@ describe('bekleyenTalepMi', () => {
 
   test('durum listesi tam olarak iki bekleyen durumdur', () => {
     expect(BEKLEYEN_TALEP_DURUMLARI).toEqual(['REFUND_REQUESTED', 'CANCEL_REQUESTED'])
+  })
+
+  // Kapatılan talep ikas'ta REFUND_REQUESTED olarak KALIR (reddetme mutation'ı yok) —
+  // eleme yerel aşamadan yapılmazsa her senkron talebi geri diriltir.
+  test('kapatılmış talep listeden düşer', () => {
+    const s = { durum: 'REFUND_REQUESTED', kargo_durumu: 'REFUND_REQUESTED' }
+    expect(bekleyenTalepMi(s)).toBe(true)
+    expect(bekleyenTalepMi(s, { asama: 'kapatildi' })).toBe(false)
+  })
+
+  test('onaylanmış talep listede KALIR (ürün bekleniyor)', () => {
+    const s = { durum: 'REFUND_REQUESTED', kargo_durumu: 'REFUND_REQUESTED' }
+    expect(bekleyenTalepMi(s, { asama: 'onaylandi' })).toBe(true)
+  })
+
+  test('aşama verilmezse eski davranış korunur', () => {
+    expect(bekleyenTalepMi({ durum: 'REFUND_REQUESTED', kargo_durumu: null })).toBe(true)
+  })
+})
+
+describe('urunBekleniyorMu', () => {
+  test('yalnız onaylandı aşamasında true', () => {
+    expect(urunBekleniyorMu({ asama: 'onaylandi' })).toBe(true)
+    expect(urunBekleniyorMu({ asama: 'kapatildi' })).toBe(false)
+    expect(urunBekleniyorMu(null)).toBe(false)
+    expect(urunBekleniyorMu(undefined)).toBe(false)
   })
 })

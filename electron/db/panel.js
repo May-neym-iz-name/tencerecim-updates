@@ -37,11 +37,15 @@ module.exports = {
     // Fiilen iptal/iade talebinde olan siparişler. Paket durumu daha güncel gerçeği
     // yansıtır → o kazanır; paket henüz oluşmamışsa (''/UNFULFILLED) sipariş durumuna
     // bakılır. Karşılığı: src/utils/talep.js bekleyenTalepMi (ESM↔CJS köprüsü yok).
+    // Yerelde KAPATILAN talepler sayılmaz: ikas'ta REFUND_REQUESTED kalacakları için
+    // eleme buradan yapılmazsa kapatma hiçbir işe yaramaz.
     const bekleyenTalepSayisi = db.prepare(`
-      SELECT COUNT(*) n FROM online_siparisler
-      WHERE (CASE WHEN COALESCE(kargo_durumu,'') IN ('','UNFULFILLED')
-                  THEN COALESCE(durum,'') ELSE kargo_durumu END)
+      SELECT COUNT(*) n FROM online_siparisler o
+      WHERE (CASE WHEN COALESCE(o.kargo_durumu,'') IN ('','UNFULFILLED')
+                  THEN COALESCE(o.durum,'') ELSE o.kargo_durumu END)
             IN ('REFUND_REQUESTED','CANCEL_REQUESTED')
+        AND NOT EXISTS (SELECT 1 FROM talep_durumlari t
+                        WHERE t.ikas_siparis_id = o.ikas_siparis_id AND t.asama = 'kapatildi')
     `).get().n
 
     const sonSatislar = db.prepare(`
