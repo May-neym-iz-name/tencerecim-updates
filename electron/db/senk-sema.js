@@ -63,6 +63,12 @@ const TABLOLAR = {
   // ve etiket zaten oluşturan mağazanın PC'sinde yerelde durur. Diğer alanlar (takip no,
   // alıcı, adres, durum, lokasyon) senkronlanır → görünürlük + takip + WhatsApp çalışır.
   kargolar: { kolonlar: ['takip_no', 'durum', 'tip', 'lokasyon_id', 'ikas_siparis_id', 'alici_ad', 'alici_telefon', 'alici_adres', 'il', 'ilce', 'il_kodu', 'ilce_kodu', 'koli_adedi', 'agirlik', 'servis_seviyesi', 'odeme_tipi', 'aciklama', 'etiket_link', 'etiket_storage_yol', 'son_durum', 'son_durum_tarihi', 'olusturma_tarihi'], fk: { musteri_id: 'musteriler', satis_id: 'satislar' }, dogal: ['takip_no'] },
+
+  // Talep aşaması: ikas'a yazılamayan "onaylandı/kapatıldı" bilgisi. Çok-PC ŞART —
+  // bir mağazada kapatılan talep diğerinde kırmızı durursa aynı iade iki kez işlenir.
+  // ikas_siparis_id tüm PC'lerde AYNI → doğal anahtar, dedup garantili.
+  talep_durumlari: { kolonlar: ['ikas_siparis_id', 'asama', 'not_metni', 'kullanici', 'tarih'],
+                     fk: {}, dogal: ['ikas_siparis_id'], sonradanEklendi: true },
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
@@ -77,6 +83,7 @@ const SIRA = [
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',
+  'talep_durumlari',
 ]
 
 function kur(db) {

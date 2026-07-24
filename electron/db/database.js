@@ -259,6 +259,21 @@ function createTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_bildirim_okundu ON bildirimler(okundu);
 
+    -- İkas'a YAZILAMAYAN talep bilgisi. API'de ne "reddet" mutation'ı var ne de
+    -- REFUND_REQUEST_ACCEPTED'ı set etme imkânı (2026-07-24 canlı introspection:
+    -- 69 mutation tarandı). Bu yüzden "onaylandı, ürün bekleniyor" ve "kapatıldı"
+    -- yerelde tutulur. Anahtar ikas_siparis_id: yerel id her PC'de farklıdır.
+    -- not_metni (not DEĞİL): "not" SQLite'ta ayrılmış sözcüktür.
+    CREATE TABLE IF NOT EXISTS talep_durumlari (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ikas_siparis_id TEXT NOT NULL UNIQUE,
+      asama TEXT NOT NULL,
+      not_metni TEXT,
+      kullanici TEXT,
+      tarih TEXT DEFAULT (datetime('now','localtime'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_talep_durum_siparis ON talep_durumlari(ikas_siparis_id);
+
     -- Her mağaza için ayrı UPS gönderici (çıkış) adresi. UPS hesap bilgileri
     -- (müşteri/kullanıcı kodu, şifre) ups_ayarlar'da ortak kalır; burada sadece
     -- gönderici adres/iletişim bilgisi mağaza bazında tutulur.
