@@ -24,6 +24,10 @@ export default function MalKabul() {
   const [sonuc, setSonuc] = useState([])
   const [mesgul, setMesgul] = useState(false)
   const [gecmis, setGecmis] = useState([])
+  // Geçmiş kaydın kalemleri: liste sorgusu yalnız kalem SAYISINI getirir (N+1 olmasın),
+  // hangi ürünler olduğu ayrı sorguyla tıklanınca çekilir.
+  const [detay, setDetay] = useState(null)          // { kayit } | null
+  const [detayYukleniyor, setDetayYukleniyor] = useState(false)
   const sr = useSiralama(gecmis)
   const aramaRef = useRef()
 
@@ -36,6 +40,18 @@ export default function MalKabul() {
     try { const r = await malKabulApi.listele({ boyut: 20 }); setGecmis(r.kayitlar) } catch {}
   }, [])
   useEffect(() => { gecmisYukle() }, [gecmisYukle])
+
+  // Geçmiş kaydın detayını aç. Hata yutulmaz: kalemleri göremeden kapanan bir modal
+  // "kayıt boş" izlenimi verir — asıl sebep söylenmeli.
+  async function detayAc(id) {
+    setDetayYukleniyor(true)
+    try {
+      const kayit = await malKabulApi.getir(id)
+      if (!kayit) { toast.error('Mal kabul kaydı bulunamadı'); return }
+      setDetay(kayit)
+    } catch (e) { toast.error('Detay açılamadı: ' + e.message) }
+    finally { setDetayYukleniyor(false) }
+  }
 
   const araFn = useCallback(async (deger) => {
     setArama(deger)
@@ -180,7 +196,10 @@ export default function MalKabul() {
 
       {/* Geçmiş */}
       <div className="bg-white rounded-2xl border p-4">
-        <h3 className="font-semibold text-gray-700 mb-3">Son Mal Kabuller</h3>
+        <h3 className="font-semibold text-gray-700 mb-3">
+          Son Mal Kabuller
+          <span className="ml-2 text-xs font-normal text-gray-400">— ürünleri görmek için satıra tıklayın</span>
+        </h3>
         {gecmis.length === 0 ? <p className="text-sm text-gray-400 py-3 text-center">Kayıt yok.</p> : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-xs">
@@ -195,12 +214,15 @@ export default function MalKabul() {
             </thead>
             <tbody>
               {sr.sirali.map(m => (
-                <tr key={m.id} className="border-t">
+                <tr key={m.id} onClick={() => detayAc(m.id)}
+                  className="border-t cursor-pointer hover:bg-blue-50" title="Ürünleri görmek için tıklayın">
                   <td className="px-3 py-1.5 text-gray-500">{TARIH(m.tarih)}</td>
                   <td className="px-3 py-1.5">{m.lokasyon_adi}</td>
                   <td className="px-3 py-1.5 text-gray-500">{m.tedarikci_adi || '—'}</td>
                   <td className="px-3 py-1.5 text-gray-500">{m.fatura_no || '—'}</td>
-                  <td className="px-3 py-1.5 text-center">{m.kalem_sayisi}</td>
+                  <td className="px-3 py-1.5 text-center">
+                    <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs">{m.kalem_sayisi}</span>
+                  </td>
                   <td className="px-3 py-1.5 text-right font-medium">{PARA(m.toplam_maliyet)}</td>
                 </tr>
               ))}
@@ -208,6 +230,82 @@ export default function MalKabul() {
           </table>
         )}
       </div>
+
+      {detayYukleniyor && !detay && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl px-6 py-4 text-sm text-gray-600">Detay yükleniyor…</div>
+        </div>
+      )}
+
+      {/* Mal kabul detayı: hangi ürünler, kaç adet, hangi maliyetle girildi. */}
+      {detay && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setDetay(null)}>
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">
+                  Mal Kabul #{detay.id}
+                  {detay.fatura_no && <span className="ml-2 text-sm font-normal text-gray-500">· {detay.fatura_no}</span>}
+                </h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  {TARIH(detay.tarih)} · {detay.lokasyon_adi}
+                  {detay.tedarikci_adi && ` · ${detay.tedarikci_adi}`}
+                  {detay.kullanici && ` · ${detay.kullanici}`}
+                </p>
+                {detay.notlar && <p className="text-xs text-gray-500 mt-1">Not: {detay.notlar}</p>}
+              </div>
+              <button onClick={() => setDetay(null)} className="text-gray-300 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+
+            <div className="p-5">
+              {!detay.kalemler?.length ? (
+                <p className="text-sm text-gray-400 py-4 text-center">Bu kayıtta ürün kalemi yok.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500 text-xs">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium">Ürün</th>
+                      <th className="text-left px-3 py-2 font-medium w-36">Barkod</th>
+                      <th className="text-center px-3 py-2 font-medium w-20">Miktar</th>
+                      <th className="text-right px-3 py-2 font-medium w-28">Birim Maliyet</th>
+                      <th className="text-right px-3 py-2 font-medium w-28">Tutar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detay.kalemler.map(k => (
+                      <tr key={k.id} className="border-t">
+                        <td className="px-3 py-1.5">{k.urun_adi}</td>
+                        <td className="px-3 py-1.5 text-gray-400 text-xs">{k.barkod || '—'}</td>
+                        <td className="px-3 py-1.5 text-center font-medium">{k.miktar}</td>
+                        <td className="px-3 py-1.5 text-right text-gray-600">{PARA(k.birim_maliyet)}</td>
+                        <td className="px-3 py-1.5 text-right font-medium">{PARA((k.miktar || 0) * (k.birim_maliyet || 0))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t bg-gray-50">
+                      <td colSpan={2} className="px-3 py-2 text-gray-500 text-xs">
+                        {detay.kalemler.length} kalem · {detay.kalemler.reduce((t, k) => t + (k.miktar || 0), 0)} adet
+                      </td>
+                      <td colSpan={2} className="px-3 py-2 text-right font-semibold text-gray-600">Toplam Maliyet</td>
+                      <td className="px-3 py-2 text-right font-bold text-gray-800">{PARA(detay.toplam_maliyet)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+
+              {/* Maliyeti 0 olan giriş: stok arttı ama maliyet kaydı yok — kâr raporu
+                  bu kalemleri sıfır maliyetli sayar. Sessiz kalmak yanıltıcı olur. */}
+              {!Number(detay.toplam_maliyet) && detay.kalemler?.length > 0 && (
+                <p className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                  Bu mal kabulde birim maliyet girilmemiş (toplam 0). Stok arttı, ancak kâr/maliyet
+                  raporlarında bu ürünler sıfır maliyetli görünür.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
