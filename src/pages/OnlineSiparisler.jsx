@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink } from '../api/ipc'
 import { useSearchParams } from 'react-router-dom'
-import { bekleyenTalepMi } from '../utils/talep'
+import { bekleyenTalepMi, urunBekleniyorMu } from '../utils/talep'
+import TalepModal from '../components/TalepModal'
 import { takipUrl } from '../lib/kargo'
 import { kargoEtiketHtml } from '../lib/kargoEtiket'
 import { barkodSvg } from '../lib/barkod'
@@ -97,6 +98,15 @@ export default function OnlineSiparisler() {
   // URL'de ?talep=1 ile gelinirse (Ana Ekran kartı / bildirim) otomatik açılır.
   const [aramaParams] = useSearchParams()
   const [talepFiltre, setTalepFiltre] = useState(aramaParams.get('talep') === '1')
+  // Yerel talep aşamaları (ikas'a yazılamayan onay/kapatma bilgisi). Sipariş başına
+  // sorgu N+1 olurdu → tek seferde alınır.
+  const [asamalar, setAsamalar] = useState({})
+  const [talepModal, setTalepModal] = useState(null)   // { siparis, detay, yukleniyor, hata }
+
+  const asamalariYukle = useCallback(() => {
+    ikasApi.talepAsamalari().then(setAsamalar).catch(() => {})
+  }, [])
+  useEffect(() => { asamalariYukle() }, [asamalariYukle])
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
 
@@ -131,12 +141,19 @@ export default function OnlineSiparisler() {
     if (odemeFiltre && s.odeme_durumu !== odemeFiltre) return false
     if (durumFiltre && s.durum !== durumFiltre) return false
     if (kargoFiltre && s.kargo_durumu !== kargoFiltre) return false
-    if (talepFiltre && !bekleyenTalepMi(s)) return false
+    if (talepFiltre && !bekleyenTalepMi(s, asamalar[s.ikas_siparis_id])) return false
     return true
-  }), [siparisler, tarihBas, tarihBit, odemeFiltre, durumFiltre, kargoFiltre, talepFiltre])
+  }), [siparisler, tarihBas, tarihBit, odemeFiltre, durumFiltre, kargoFiltre, talepFiltre, asamalar])
 
   // Bildirim butonu sayısı: TÜM yüklü siparişlerden (filtreden bağımsız) — ek sorgu yok.
-  const talepSayisi = useMemo(() => siparisler.filter(bekleyenTalepMi).length, [siparisler])
+  const talepSayisi = useMemo(
+    () => siparisler.filter(s => bekleyenTalepMi(s, asamalar[s.ikas_siparis_id])).length,
+    [siparisler, asamalar])
+  // Onaylanmış, ürünü beklenen talepler — bildirim butonunda ayrıca gösterilir.
+  const bekleyenUrunSayisi = useMemo(
+    () => siparisler.filter(s => bekleyenTalepMi(s, asamalar[s.ikas_siparis_id])
+                              && urunBekleniyorMu(asamalar[s.ikas_siparis_id])).length,
+    [siparisler, asamalar])
 
   // Mevcut siparişlerde geçen ödeme/sipariş/kargo durumlarını filtre seçeneği olarak sun.
   const odemeSecenekleri = useMemo(
@@ -281,7 +298,11 @@ export default function OnlineSiparisler() {
   }
 
   // İade ekranını açar: ikas_kalem_id + güncel fiyatlar için tazele, taze kalemleri yükle.
-  async function iadeAc(s) {
+  // talepKalemleri: talepten gelindiğinde yalnız talep edilen ikas kalem id'leri (Set).
+  // ASIL KORUMA BURASI — personel müşterinin istemediği ürünü iade etmesin diye
+  // varsayılan seçim talebe daraltılır (canlı örnek: 2.670 yerine 7.970 TL riski).
+  // Verilmezse eski davranış: hepsi tam adet seçili.
+  async function iadeAc(s, talepKalemleri = null) {
     setIslemMesgul('iade-hazirla')
     try {
       await ikasApi.siparisTazele(s.id)
@@ -289,10 +310,55 @@ export default function OnlineSiparisler() {
       const kalemler = (taze.kalemler || []).filter(k => k.ikas_kalem_id)
       if (!kalemler.length) { toast.error('İade edilebilir kalem bulunamadı (ikas kalem ID yok).'); return }
       const secimler = {}
-      kalemler.forEach(k => { secimler[k.ikas_kalem_id] = Number(k.miktar) || 0 }) // varsayılan: tam adet
+      kalemler.forEach(k => {
+        const talepte = !talepKalemleri || talepKalemleri.has(k.ikas_kalem_id)
+        secimler[k.ikas_kalem_id] = talepte ? (Number(k.miktar) || 0) : 0
+      })
       setIadeModal({ siparis: taze, kalemler, secimler, refundShipping: false, bildir: true })
     } catch (e) { toast.error('İade ekranı açılamadı: ' + e.message) }
     finally { setIslemMesgul('') }
+  }
+
+  // Talep modalını aç: detay ikas'tan gelir. Gelmezse modal AÇILIR ama onay
+  // butonları kapalı kalır — neyin iade edileceğini bilmeden onay verilmemeli.
+  async function talepAc(s) {
+    setTalepModal({ siparis: s, detay: null, yukleniyor: true, hata: null })
+    try {
+      const detay = await ikasApi.talepDetay({ id: s.id })
+      setTalepModal({ siparis: s, detay, yukleniyor: false, hata: null })
+    } catch (e) {
+      setTalepModal({ siparis: s, detay: null, yukleniyor: false, hata: e.message })
+    }
+  }
+
+  async function talepOnayla() {
+    setIslemMesgul('talep-onay')
+    try {
+      await ikasApi.talepOnayla({ id: talepModal.siparis.id })
+      toast.success('Talep onaylandı — ürün bekleniyor')
+      asamalariYukle(); setTalepModal(null)
+    } catch (e) { toast.error('Onay başarısız: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  async function talepKapatIslemi(not) {
+    setIslemMesgul('talep-kapat')
+    try {
+      await ikasApi.talepKapat({ id: talepModal.siparis.id, not })
+      toast.success('Talep kapatıldı — ikas panelinden de reddetmeyi unutmayın')
+      asamalariYukle(); setTalepModal(null)
+    } catch (e) { toast.error('Kapatma başarısız: ' + e.message) }
+    finally { setIslemMesgul('') }
+  }
+
+  // Talepten iade/iptale geçiş: talep edilen kalemler SEÇİLİ gelir — asıl koruma bu.
+  async function talepIadeTamamla() {
+    const s = talepModal.siparis
+    const iptalTalebi = talepModal.detay?.talepli?.some(p => p.durum === 'CANCEL_REQUESTED')
+    const talepKalemIdleri = new Set((talepModal.detay?.talepli || []).flatMap(p => p.kalemler.map(k => k.id)))
+    setTalepModal(null)
+    if (iptalTalebi) { ikasIptal(s); return }
+    await iadeAc(s, talepKalemIdleri)
   }
 
   async function iadeOnayla() {
@@ -419,7 +485,10 @@ export default function OnlineSiparisler() {
         >
           <span className="text-xl">🔔</span>
           <span className="flex-1">
-            <span className="font-bold">{talepSayisi} İptal/İade Talebi</span>
+            <span className="font-bold">
+              {talepSayisi} İptal/İade Talebi
+              {bekleyenUrunSayisi > 0 && ` · ${bekleyenUrunSayisi} ürün bekleniyor`}
+            </span>
             <span className={`block text-xs ${talepFiltre ? 'text-red-100' : 'text-red-600'}`}>
               {talepFiltre ? 'Yalnız talepler gösteriliyor — tümünü görmek için tıklayın' : 'Görüntülemek için tıklayın'}
             </span>
@@ -514,6 +583,13 @@ export default function OnlineSiparisler() {
                   {(() => { const g = kargoGoster(s); return g
                     ? <span className={`text-xs px-2 py-0.5 rounded-full ${g.renk}`}>{g.etiket}</span>
                     : <span className={`text-xs px-2 py-0.5 rounded-full ${s.durum === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{DURUM_ETIKET[s.durum] || s.durum}</span> })()}
+                  {/* Onaylanmış talep: ürünün gelmesi bekleniyor. İkas'ta karşılığı yok,
+                      bu bilgi yalnız yerel talep_durumlari'ndan gelir. */}
+                  {urunBekleniyorMu(asamalar[s.ikas_siparis_id]) && (
+                    <span className="block mt-0.5 text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-300 w-fit">
+                      Ürün Bekleniyor
+                    </span>
+                  )}
                   {!s.stok_dusuldu && <span className="block text-[10px] text-gray-400 mt-0.5">stok düşülmedi</span>}
                 </td>
                 <td className="px-4 py-2.5 text-right font-medium">{PARA(s.toplam, s.para_birimi)}</td>
@@ -712,6 +788,18 @@ export default function OnlineSiparisler() {
                   ✏️ Adres Düzenle
                 </button>
                 </div>
+                {/* Talep varsa giriş noktası: hangi ürünlerin talep edildiğini gösterip
+                    onay/kapatma sunar. Geri alınamaz butonların ÜSTÜNDE — doğru yol bu. */}
+                {bekleyenTalepMi(secili, asamalar[secili.ikas_siparis_id]) && (
+                  <div className="pt-2">
+                    <button onClick={() => talepAc(secili)} disabled={!!islemMesgul}
+                      className="w-full bg-red-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-red-700 disabled:opacity-50">
+                      {urunBekleniyorMu(asamalar[secili.ikas_siparis_id])
+                        ? '📦 Talep — ürün bekleniyor, incele'
+                        : '🔎 Talebi İncele'}
+                    </button>
+                  </div>
+                )}
                 {/* Alt satır: geri alınamaz işlemler — üstten ayraçla ayrı */}
                 <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-100">
                 <span className="text-[11px] text-gray-400 self-center mr-1">Geri alınamaz:</span>
@@ -750,6 +838,17 @@ export default function OnlineSiparisler() {
             </div>
           </div>
         </div>
+      )}
+
+      {talepModal && (
+        <TalepModal
+          siparis={talepModal.siparis} detay={talepModal.detay}
+          yukleniyor={talepModal.yukleniyor} hata={talepModal.hata} mesgul={islemMesgul}
+          onKapat={() => setTalepModal(null)}
+          onOnayla={talepOnayla}
+          onIadeTamamla={talepIadeTamamla}
+          onTalepKapat={talepKapatIslemi}
+        />
       )}
 
       {iadeModal && (() => {
