@@ -34,6 +34,14 @@ module.exports = {
         AND (kargo_durumu IS NULL OR kargo_durumu IN ('UNFULFILLED',''))
     `).get().n
 
+    // Bekleyen iptal/iade talebi (aksiyon bekleyen). Talep hem sipariş hem paket
+    // durumunda gelebilir — ikisine de bakılır. Kabul/red DAHİL DEĞİL.
+    const bekleyenTalepSayisi = db.prepare(`
+      SELECT COUNT(*) n FROM online_siparisler
+      WHERE durum IN ('REFUND_REQUESTED','CANCEL_REQUESTED')
+         OR kargo_durumu IN ('REFUND_REQUESTED','CANCEL_REQUESTED')
+    `).get().n
+
     const sonSatislar = db.prepare(`
       SELECT s.id, s.fis_no, s.genel_toplam, s.odeme_tipi, s.tarih,
              l.ad AS lokasyon_adi, COALESCE(m.ad || ' ' || m.soyad, '') AS musteri_adi
@@ -51,7 +59,7 @@ module.exports = {
       GROUP BY DATE(tarih) ORDER BY gun ASC
     `).all()
 
-    return { bugun, bugunGenel, kritikStokSayisi, bekleyenOnlineSayisi, sonSatislar, haftalik }
+    return { bugun, bugunGenel, kritikStokSayisi, bekleyenOnlineSayisi, bekleyenTalepSayisi, sonSatislar, haftalik }
   },
 
   // Düşük/kritik stoktaki ürünler (minimum tanımlı ve altına düşmüş).

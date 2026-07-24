@@ -52,6 +52,9 @@ export default function Panel() {
         <Kart baslik="Bekleyen Online" deger={veri.bekleyenOnlineSayisi}
           renk={veri.bekleyenOnlineSayisi > 0 ? 'text-amber-600' : 'text-gray-800'}
           alt="kargolanmamış sipariş" tikla={yetkiVar('online_siparis_goruntule') ? () => navigate('/online-siparisler') : null} />
+        <Kart baslik="İptal/İade Talebi" deger={veri.bekleyenTalepSayisi ?? 0}
+          renk={(veri.bekleyenTalepSayisi ?? 0) > 0 ? 'text-red-600' : 'text-gray-800'}
+          alt="bekleyen talep" tikla={yetkiVar('online_siparis_goruntule') ? () => navigate('/online-siparisler?talep=1') : null} />
         <Kart baslik="Mağaza Sayısı" deger={veri.bugun.length || '—'} alt="bugün satış yapan" />
       </div>
 
