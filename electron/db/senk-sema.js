@@ -69,6 +69,14 @@ const TABLOLAR = {
   // ikas_siparis_id tüm PC'lerde AYNI → doğal anahtar, dedup garantili.
   talep_durumlari: { kolonlar: ['ikas_siparis_id', 'asama', 'not_metni', 'kullanici', 'tarih'],
                      fk: {}, dogal: ['ikas_siparis_id'], sonradanEklendi: true },
+
+  // İstek listeleri: şube+tedarikçi bazlı tedarik istek listesi. urun_adi anlık kopya.
+  // lokasyon_id düz kolon (her PC aynı seed, satislar emsali).
+  istek_listeleri: { kolonlar: ['lokasyon_id', 'baslik', 'tarih', 'olusturma_tarihi'],
+                     fk: { tedarikci_id: 'tedarikciler' }, dogal: [], sonradanEklendi: true },
+  istek_listesi_kalemleri: { kolonlar: ['urun_adi', 'miktar'],
+                             fk: { istek_id: 'istek_listeleri', urun_id: 'urunler' },
+                             zorunluFk: ['istek_id'], dogal: [], sonradanEklendi: true },
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
@@ -84,6 +92,8 @@ const SIRA = [
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',
   'talep_durumlari',
+  // istek_listesi_kalemleri istek_listeleri'ne FK ile bağlı → sırası SONRA olmalı.
+  'istek_listeleri', 'istek_listesi_kalemleri',
 ]
 
 function kur(db) {
