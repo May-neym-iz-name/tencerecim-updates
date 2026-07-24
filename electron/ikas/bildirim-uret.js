@@ -70,15 +70,14 @@ function mevcutTalepleriBildir(db) {
     if (v) return 0
 
     const yer = BEKLEYEN_TALEP.map(() => '?').join(',')
-    const coz = COZULMUS.map(() => '?').join(',')
-    // Yalnız GERÇEKTEN bekleyen talepler: alanlardan biri çözümü gösteriyorsa
-    // (kabul/red/iade/iptal) geri-tarama bildirim üretmez.
+    // Yalnız FİİLEN talepte olanlar. Paket durumu kazanır; paket yoksa sipariş
+    // durumuna bakılır (karşılığı: src/utils/talep.js bekleyenTalepMi).
     const satirlar = db.prepare(`
       SELECT ikas_siparis_id, siparis_no, durum, kargo_durumu, toplam, para_birimi, musteri_ad
       FROM online_siparisler
-      WHERE (durum IN (${yer}) OR kargo_durumu IN (${yer}))
-        AND COALESCE(durum,'') NOT IN (${coz}) AND COALESCE(kargo_durumu,'') NOT IN (${coz})
-    `).all(...BEKLEYEN_TALEP, ...BEKLEYEN_TALEP, ...COZULMUS, ...COZULMUS)
+      WHERE (CASE WHEN COALESCE(kargo_durumu,'') IN ('','UNFULFILLED')
+                  THEN COALESCE(durum,'') ELSE kargo_durumu END) IN (${yer})
+    `).all(...BEKLEYEN_TALEP)
 
     let eklenen = 0
     for (const s of satirlar) {

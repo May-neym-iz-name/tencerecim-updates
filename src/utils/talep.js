@@ -6,20 +6,19 @@
 // literal olarak tekrarlar; ESM↔CJS köprüsü yok (emsal: yetki mantığı iki dilde).
 export const BEKLEYEN_TALEP_DURUMLARI = ['REFUND_REQUESTED', 'CANCEL_REQUESTED']
 
-// Talebin SONUÇLANDIĞINI gösteren durumlar. İkas'ta sipariş `status` alanı talepte
-// takılı kalırken paket durumu çözüme geçebiliyor (canlı örnek: 8971042426 —
-// durum=REFUND_REQUESTED, kargo_durumu=REFUND_REQUEST_ACCEPTED). Bu yüzden salt
-// "iki alandan biri talepte" kuralı çözülmüş talepleri de bekleyen sayıyordu.
-export const COZULMUS_TALEP_DURUMLARI = [
-  'REFUND_REQUEST_ACCEPTED', 'REFUND_REJECTED', 'CANCEL_REJECTED', 'REFUNDED', 'CANCELLED',
-]
+// Paket henüz oluşmamış demek olan kargo durumları — bilgi taşımazlar.
+const PAKET_YOK = ['', 'UNFULFILLED']
 
-// Sipariş bekleyen bir iptal/iade talebi taşıyor mu?
-// Kural: alanlardan biri talep gösterecek VE hiçbiri çözüm göstermeyecek.
-// Çözüm işareti yoksa talep — ne kadar eski olursa olsun — bekliyor sayılır.
+// Sipariş FİİLEN iptal/iade talebinde mi?
+// Kural: paket durumu (orderPackageStatus) daha güncel gerçeği yansıtır, o kazanır.
+// Talep sonuçlanınca ya da sipariş akışta ilerleyince ikas paket durumunu günceller;
+// sipariş `status` alanı ise eski değerde takılı kalabilir (canlı örnek: 8971042426
+// durum=REFUND_REQUESTED / kargo_durumu=REFUND_REQUEST_ACCEPTED).
+// İstisna: paket henüz oluşmamışsa paket durumu bilgi taşımaz → sipariş durumuna
+// bakılır. İptal talepleri çoğunlukla bu aşamada gelir.
 export function bekleyenTalepMi(siparis) {
   if (!siparis) return false
-  const durumlar = [siparis.durum, siparis.kargo_durumu].filter(Boolean)
-  if (durumlar.some(d => COZULMUS_TALEP_DURUMLARI.includes(d))) return false
-  return durumlar.some(d => BEKLEYEN_TALEP_DURUMLARI.includes(d))
+  const paket = siparis.kargo_durumu || ''
+  const belirleyici = PAKET_YOK.includes(paket) ? siparis.durum : paket
+  return !!belirleyici && BEKLEYEN_TALEP_DURUMLARI.includes(belirleyici)
 }

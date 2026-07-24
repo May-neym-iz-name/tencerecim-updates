@@ -34,17 +34,14 @@ module.exports = {
         AND (kargo_durumu IS NULL OR kargo_durumu IN ('UNFULFILLED',''))
     `).get().n
 
-    // Bekleyen iptal/iade talebi (aksiyon bekleyen). Talep hem sipariş hem paket
-    // durumunda gelebilir — ikisine de bakılır. ANCAK alanlardan biri çözümü
-    // gösteriyorsa (kabul/red/iade/iptal) talep bitmiştir: ikas'ta sipariş `status`
-    // talepte takılı kalırken paket durumu çözüme geçebiliyor.
-    // Karşılığı: src/utils/talep.js (aynı iki liste orada da tanımlı).
+    // Fiilen iptal/iade talebinde olan siparişler. Paket durumu daha güncel gerçeği
+    // yansıtır → o kazanır; paket henüz oluşmamışsa (''/UNFULFILLED) sipariş durumuna
+    // bakılır. Karşılığı: src/utils/talep.js bekleyenTalepMi (ESM↔CJS köprüsü yok).
     const bekleyenTalepSayisi = db.prepare(`
       SELECT COUNT(*) n FROM online_siparisler
-      WHERE (durum IN ('REFUND_REQUESTED','CANCEL_REQUESTED')
-          OR kargo_durumu IN ('REFUND_REQUESTED','CANCEL_REQUESTED'))
-        AND COALESCE(durum,'') NOT IN ('REFUND_REQUEST_ACCEPTED','REFUND_REJECTED','CANCEL_REJECTED','REFUNDED','CANCELLED')
-        AND COALESCE(kargo_durumu,'') NOT IN ('REFUND_REQUEST_ACCEPTED','REFUND_REJECTED','CANCEL_REJECTED','REFUNDED','CANCELLED')
+      WHERE (CASE WHEN COALESCE(kargo_durumu,'') IN ('','UNFULFILLED')
+                  THEN COALESCE(durum,'') ELSE kargo_durumu END)
+            IN ('REFUND_REQUESTED','CANCEL_REQUESTED')
     `).get().n
 
     const sonSatislar = db.prepare(`

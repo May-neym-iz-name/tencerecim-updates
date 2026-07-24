@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { bekleyenTalepMi, BEKLEYEN_TALEP_DURUMLARI, COZULMUS_TALEP_DURUMLARI } from './talep.js'
+import { bekleyenTalepMi, BEKLEYEN_TALEP_DURUMLARI } from './talep.js'
 
 describe('bekleyenTalepMi', () => {
   test('sipariş durumunda iade talebi → true', () => {
@@ -24,11 +24,20 @@ describe('bekleyenTalepMi', () => {
     expect(bekleyenTalepMi({ durum: 'REFUND_REQUESTED', kargo_durumu: 'REFUNDED' })).toBe(false)
   })
 
-  // KARAR (kullanıcı, 2026-07-24): çözüm işareti YOKSA talep bekliyor sayılır —
-  // yaşı önemli değil. Eski birikinti sessizce elenmez, kullanıcı ikas'ta kapatır.
-  test('çözüm işareti olmayan eski talep hâlâ bekliyor → true', () => {
-    expect(bekleyenTalepMi({ durum: 'REFUND_REQUESTED', kargo_durumu: 'PARTIALLY_FULFILLED' })).toBe(true)
-    expect(bekleyenTalepMi({ durum: 'REFUND_REQUESTED', kargo_durumu: 'PARTIALLY_DELIVERED' })).toBe(true)
+  // KARAR (kullanıcı, 2026-07-24 — revize): YALNIZ fiilen talepte olanlar listelenir.
+  // Paket akışta ilerlemişse (kısmen gönderilmiş/teslim) talep artık aktif değildir.
+  test('paket akışta ilerlemişse talep aktif değil → false', () => {
+    expect(bekleyenTalepMi({ durum: 'REFUND_REQUESTED', kargo_durumu: 'PARTIALLY_FULFILLED' })).toBe(false)
+    expect(bekleyenTalepMi({ durum: 'REFUND_REQUESTED', kargo_durumu: 'PARTIALLY_DELIVERED' })).toBe(false)
+    expect(bekleyenTalepMi({ durum: 'REFUND_REQUESTED', kargo_durumu: 'DELIVERED' })).toBe(false)
+  })
+
+  // Paket HENÜZ OLUŞMAMIŞSA paket durumu bilgi taşımaz → sipariş durumu tek kaynak.
+  // İptal talepleri çoğunlukla bu aşamada gelir; kaçırılırsa özellik anlamsızlaşır.
+  test('paket yokken sipariş durumu tek kaynaktır → true', () => {
+    expect(bekleyenTalepMi({ durum: 'CANCEL_REQUESTED', kargo_durumu: null })).toBe(true)
+    expect(bekleyenTalepMi({ durum: 'CANCEL_REQUESTED', kargo_durumu: 'UNFULFILLED' })).toBe(true)
+    expect(bekleyenTalepMi({ durum: 'REFUND_REQUESTED', kargo_durumu: '' })).toBe(true)
   })
 
   test('sıradan sipariş → false', () => {
@@ -42,10 +51,5 @@ describe('bekleyenTalepMi', () => {
 
   test('durum listesi tam olarak iki bekleyen durumdur', () => {
     expect(BEKLEYEN_TALEP_DURUMLARI).toEqual(['REFUND_REQUESTED', 'CANCEL_REQUESTED'])
-  })
-
-  test('çözülmüş durum listesi bekleyenlerle kesişmez', () => {
-    expect(COZULMUS_TALEP_DURUMLARI).toContain('REFUND_REQUEST_ACCEPTED')
-    expect(COZULMUS_TALEP_DURUMLARI.some(d => BEKLEYEN_TALEP_DURUMLARI.includes(d))).toBe(false)
   })
 })
