@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink } from '../api/ipc'
+import { useSearchParams } from 'react-router-dom'
+import { bekleyenTalepMi } from '../utils/talep'
 import { takipUrl } from '../lib/kargo'
 import { kargoEtiketHtml } from '../lib/kargoEtiket'
 import { barkodSvg } from '../lib/barkod'
@@ -91,6 +93,10 @@ export default function OnlineSiparisler() {
   const [odemeFiltre, setOdemeFiltre] = useState('')
   const [durumFiltre, setDurumFiltre] = useState('')
   const [kargoFiltre, setKargoFiltre] = useState('')
+  // İptal/iade talebi bildirim butonu: açıkken yalnız bekleyen talepli siparişler.
+  // URL'de ?talep=1 ile gelinirse (Ana Ekran kartı / bildirim) otomatik açılır.
+  const [aramaParams] = useSearchParams()
+  const [talepFiltre, setTalepFiltre] = useState(aramaParams.get('talep') === '1')
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
 
@@ -125,8 +131,12 @@ export default function OnlineSiparisler() {
     if (odemeFiltre && s.odeme_durumu !== odemeFiltre) return false
     if (durumFiltre && s.durum !== durumFiltre) return false
     if (kargoFiltre && s.kargo_durumu !== kargoFiltre) return false
+    if (talepFiltre && !bekleyenTalepMi(s)) return false
     return true
-  }), [siparisler, tarihBas, tarihBit, odemeFiltre, durumFiltre, kargoFiltre])
+  }), [siparisler, tarihBas, tarihBit, odemeFiltre, durumFiltre, kargoFiltre, talepFiltre])
+
+  // Bildirim butonu sayısı: TÜM yüklü siparişlerden (filtreden bağımsız) — ek sorgu yok.
+  const talepSayisi = useMemo(() => siparisler.filter(bekleyenTalepMi).length, [siparisler])
 
   // Mevcut siparişlerde geçen ödeme/sipariş/kargo durumlarını filtre seçeneği olarak sun.
   const odemeSecenekleri = useMemo(
@@ -396,6 +406,27 @@ export default function OnlineSiparisler() {
         </div>
       </div>
 
+      {/* İptal/iade talebi bildirimi: YALNIZ talep varsa görünür — varlığı tek başına
+          uyarıdır. Sürekli duran bir buton gürültüye döner ve fark edilmez. */}
+      {talepSayisi > 0 && (
+        <button
+          onClick={() => setTalepFiltre(v => !v)}
+          className={`w-full flex items-center gap-3 rounded-xl border-2 px-4 py-3 mb-4 text-left transition-colors ${
+            talepFiltre
+              ? 'bg-red-600 border-red-700 text-white'
+              : 'bg-red-50 border-red-300 text-red-800 hover:bg-red-100 animate-pulse'
+          }`}
+        >
+          <span className="text-xl">🔔</span>
+          <span className="flex-1">
+            <span className="font-bold">{talepSayisi} İptal/İade Talebi</span>
+            <span className={`block text-xs ${talepFiltre ? 'text-red-100' : 'text-red-600'}`}>
+              {talepFiltre ? 'Yalnız talepler gösteriliyor — tümünü görmek için tıklayın' : 'Görüntülemek için tıklayın'}
+            </span>
+          </span>
+        </button>
+      )}
+
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <input value={arama} onChange={e => setArama(e.target.value)}
           placeholder="Sipariş no, müşteri adı veya telefon ara…"
@@ -436,8 +467,8 @@ export default function OnlineSiparisler() {
               ))}
             </select>
           </label>
-          {(tarihBas || tarihBit || odemeFiltre || durumFiltre || kargoFiltre) && (
-            <button onClick={() => { setTarihBas(''); setTarihBit(''); setOdemeFiltre(''); setDurumFiltre(''); setKargoFiltre('') }}
+          {(tarihBas || tarihBit || odemeFiltre || durumFiltre || kargoFiltre || talepFiltre) && (
+            <button onClick={() => { setTarihBas(''); setTarihBit(''); setOdemeFiltre(''); setDurumFiltre(''); setKargoFiltre(''); setTalepFiltre(false) }}
               className="text-xs text-gray-500 border rounded-lg px-2 py-1.5 hover:bg-gray-50">Temizle</button>
           )}
         </div>
