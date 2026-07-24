@@ -72,11 +72,16 @@ function mevcutTalepleriBildir(db) {
     const yer = BEKLEYEN_TALEP.map(() => '?').join(',')
     // Yalnız FİİLEN talepte olanlar. Paket durumu kazanır; paket yoksa sipariş
     // durumuna bakılır (karşılığı: src/utils/talep.js bekleyenTalepMi).
+    // Yerelde KAPATILAN talepler atlanır: ikas'ta REFUND_REQUESTED kalacakları için
+    // atlanmazsa kapatma anlamsızlaşır, taramada yeniden bildirim doğar.
     const satirlar = db.prepare(`
-      SELECT ikas_siparis_id, siparis_no, durum, kargo_durumu, toplam, para_birimi, musteri_ad
-      FROM online_siparisler
-      WHERE (CASE WHEN COALESCE(kargo_durumu,'') IN ('','UNFULFILLED')
-                  THEN COALESCE(durum,'') ELSE kargo_durumu END) IN (${yer})
+      SELECT o.ikas_siparis_id, o.siparis_no, o.durum, o.kargo_durumu, o.toplam,
+             o.para_birimi, o.musteri_ad
+      FROM online_siparisler o
+      WHERE (CASE WHEN COALESCE(o.kargo_durumu,'') IN ('','UNFULFILLED')
+                  THEN COALESCE(o.durum,'') ELSE o.kargo_durumu END) IN (${yer})
+        AND NOT EXISTS (SELECT 1 FROM talep_durumlari t
+                        WHERE t.ikas_siparis_id = o.ikas_siparis_id AND t.asama = 'kapatildi')
     `).all(...BEKLEYEN_TALEP)
 
     let eklenen = 0

@@ -305,6 +305,21 @@ input CancelOrderLineItemInput {    # NOTE: no `price` field
 - `cancelFulfillment` — reverse a fulfillment
 - `updateOrderAddresses` — modify billing/shipping addresses
 
+**⚠️ TALEP AKIŞI SINIRLARI (canlı introspection, 2026-07-24):**
+- **Talebi reddetme mutation'ı YOKTUR.** 69 mutation tarandı; `reject` içeren tek bir
+  uç yok. `REFUND_REJECTED` / `CANCEL_REJECTED` durumları OKUNUR ama API'den SET EDİLEMEZ.
+  Red yalnız ikas panelinden yapılabilir.
+- **`REFUND_REQUEST_ACCEPTED` de set edilemez** — "onayladım, ürün bekliyorum" ara durumu
+  API'ye yazılamaz, yerelde tutulmalıdır (uygulamada `talep_durumlari` tablosu).
+- **Talep PAKET bazlıdır.** Hangi kalemlerin talep edildiği
+  `Order.orderPackages[].orderLineItemIds` ile okunur; `orderPackageFulfillStatus`
+  `REFUND_REQUESTED`/`CANCEL_REQUESTED` olan paket(ler) taleplidir. Sipariş bazlı bakmak
+  yanlış tutarda iade yapılmasına yol açar (canlı örnek 1141437359: 3 üründen yalnız
+  biri talepte — 2.670 TL, sipariş toplamı 7.970 TL).
+- `OrderPackage.refundReasonId` bir ID'dir ve **metne çeviren sorgu yoktur** (63 query
+  tarandı). `note` ve `returnShippingMethod` çoğu talepte `null` gelir — varlıklarına
+  güvenen UI yazma.
+
 **⚠️ DOC PAGES WERE WRONG — corrected by LIVE API error (2026-06):**
 - The type-definition pages claimed `OrderRefundInput.paymentGatewayId` is required and that the line inputs have no `price`. **The live GraphQL API says the opposite:**
   - `CancelOrderLineItemInput.price: Float!` is **REQUIRED**.
