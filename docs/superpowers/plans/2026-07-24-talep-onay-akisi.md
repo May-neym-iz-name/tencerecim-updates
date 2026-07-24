@@ -18,6 +18,7 @@ Tasarım: `docs/superpowers/specs/2026-07-24-talep-onay-akisi-design.md`
 - **Ana süreç dosyaları CommonJS** (`require`/`module.exports`), **renderer dosyaları ESM** (`import`/`export`). İkisi arasında modül paylaşımı yoktur; mantık tekrarı bilinçlidir ve testle eşlenir.
 - **Türkçe UI metinleri**, kod/commit mesajları ASCII.
 - Testler `npx vitest run` ile çalışır. Mevcut 171 test kırılmamalıdır.
+- **Gerçek DB testi YAZILAMAZ.** `better-sqlite3` Electron için derlenmiştir; vitest Node ile koşar ve modülü yükleyemez ("compiled against a different Node.js version"). Bu yüzden projedeki testlerin tamamı saf karar fonksiyonlarını hedefler. DB'ye dokunan her yeni mantıkta doğrulama/dönüşüm saf fonksiyona ayrılmalı ve test ona yazılmalıdır.
 - Commit tipi `feat:` / `fix:` / `test:` (conventional commits), gövde Türkçe olabilir ama ASCII karakterlerle.
 
 ---
