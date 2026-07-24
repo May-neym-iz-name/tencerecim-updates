@@ -4,6 +4,8 @@ const { getDb } = require('../db/database')
 const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
 const { bildirimUret, mevcutTalepleriBildir } = require('./bildirim-uret')
+const { asamalar, asamaYaz } = require('../db/talep-durumlari')
+const { TALEP_SORGUSU, _talepPaketleri } = require('./talep-detay')
 
 const PUSH_PARTI = 50      // saveProductStockLocations parti boyutu
 const SIPARIS_LIMIT = 200  // listOrder sayfa boyutu (ikas tavanı 200 — daha az istek)
@@ -865,6 +867,46 @@ module.exports = {
     })
     geriEkle()
     return { ok: true, tamIade, iadeKalemSayisi: iade.length }
+  },
+
+  // Talebin İÇERİĞİ: müşteri hangi ürünleri talep etti. Paket bazlı — bkz. talep-detay.js.
+  'ikas:talep-detay': async ({ id }) => {
+    const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
+    const db = getDb()
+    const sip = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
+    if (!sip) throw new Error('Sipariş bulunamadı')
+    if (!sip.ikas_siparis_id) throw new Error('ikas sipariş kimliği yok')
+    const veri = await graphql(TALEP_SORGUSU, { f: { eq: sip.ikas_siparis_id } })
+    const o = veri?.listOrder?.data?.[0]
+    if (!o) throw new Error('Sipariş ikas\'ta bulunamadı')
+    const detay = _talepPaketleri(o)
+    return { ...detay, asama: asamalar(db)[sip.ikas_siparis_id] || null }
+  },
+
+  // Onay: ikas'a HİÇBİR ŞEY yazılmaz (API'de karşılığı yok), para/stok değişmez.
+  // Yalnız "onaylandı, ürün bekleniyor" işareti — çok-PC senkronla paylaşılır.
+  'ikas:talep-onayla': async ({ id, kullanici = null }) => {
+    const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
+    const db = getDb()
+    const sip = db.prepare('SELECT ikas_siparis_id FROM online_siparisler WHERE id = ?').get(id)
+    if (!sip?.ikas_siparis_id) throw new Error('ikas sipariş kimliği yok')
+    return asamaYaz(db, { ikasSiparisId: sip.ikas_siparis_id, asama: 'onaylandi', kullanici })
+  },
+
+  // Kapatma: ikas'ta talep REFUND_REQUESTED olarak KALIR (reddetme mutation'ı yok).
+  // Bu yüzden eleme yerelden yapılır; aksi halde her senkron talebi geri diriltirdi.
+  'ikas:talep-kapat': async ({ id, not, kullanici = null }) => {
+    const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
+    const db = getDb()
+    const sip = db.prepare('SELECT ikas_siparis_id FROM online_siparisler WHERE id = ?').get(id)
+    if (!sip?.ikas_siparis_id) throw new Error('ikas sipariş kimliği yok')
+    return asamaYaz(db, { ikasSiparisId: sip.ikas_siparis_id, asama: 'kapatildi', notMetni: not, kullanici })
+  },
+
+  // Liste ekranı için toplu okuma: sipariş başına sorgu N+1 olurdu.
+  'ikas:talep-asamalari': async () => {
+    const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
+    return asamalar(getDb())
   },
 
   // Düzenleme için siparişin güncel adreslerini ikas'tan çeker (geo ID'leriyle birlikte).
