@@ -39,6 +39,24 @@ describe('_durumdanBildirim: talep durumlarını yakalar', () => {
     expect(b).toMatchObject({ tip: 'iade_red', onem: 'normal' })
   })
 
+  // GERÇEK VERİ: 8971042426 → status talepte takılı, paket kabul edilmiş.
+  // Öncelik status'e verilirse "İade talebi" (yüksek önem) bildirimi düşer ve
+  // kullanıcı çözülmüş bir talep için uyarılır. Çözüm durumu status'ü yenmeli.
+  test('status talepte ama paket çözülmüş → çözüm kazanır', () => {
+    const b = karar(sip({ status: 'REFUND_REQUESTED', orderPackageStatus: 'REFUND_REQUEST_ACCEPTED' }))
+    expect(b).toMatchObject({ tip: 'iade_kabul', onem: 'normal' })
+  })
+
+  test('status talepte ama paket reddedilmiş → çözüm kazanır', () => {
+    const b = karar(sip({ status: 'CANCEL_REQUESTED', orderPackageStatus: 'CANCEL_REJECTED' }))
+    expect(b).toMatchObject({ tip: 'iade_red', onem: 'normal' })
+  })
+
+  test('çözüm işareti yoksa talep bildirimi düşer', () => {
+    const b = karar(sip({ status: 'REFUND_REQUESTED', orderPackageStatus: 'PARTIALLY_FULFILLED' }))
+    expect(b).toMatchObject({ tip: 'iade_talebi', onem: 'yuksek' })
+  })
+
   test('sıradan durum (CREATED) → null (bildirim yok)', () => {
     expect(karar(sip())).toBeNull()
   })

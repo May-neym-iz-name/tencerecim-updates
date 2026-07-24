@@ -35,11 +35,16 @@ module.exports = {
     `).get().n
 
     // Bekleyen iptal/iade talebi (aksiyon bekleyen). Talep hem sipariş hem paket
-    // durumunda gelebilir — ikisine de bakılır. Kabul/red DAHİL DEĞİL.
+    // durumunda gelebilir — ikisine de bakılır. ANCAK alanlardan biri çözümü
+    // gösteriyorsa (kabul/red/iade/iptal) talep bitmiştir: ikas'ta sipariş `status`
+    // talepte takılı kalırken paket durumu çözüme geçebiliyor.
+    // Karşılığı: src/utils/talep.js (aynı iki liste orada da tanımlı).
     const bekleyenTalepSayisi = db.prepare(`
       SELECT COUNT(*) n FROM online_siparisler
-      WHERE durum IN ('REFUND_REQUESTED','CANCEL_REQUESTED')
-         OR kargo_durumu IN ('REFUND_REQUESTED','CANCEL_REQUESTED')
+      WHERE (durum IN ('REFUND_REQUESTED','CANCEL_REQUESTED')
+          OR kargo_durumu IN ('REFUND_REQUESTED','CANCEL_REQUESTED'))
+        AND COALESCE(durum,'') NOT IN ('REFUND_REQUEST_ACCEPTED','REFUND_REJECTED','CANCEL_REJECTED','REFUNDED','CANCELLED')
+        AND COALESCE(kargo_durumu,'') NOT IN ('REFUND_REQUEST_ACCEPTED','REFUND_REJECTED','CANCEL_REJECTED','REFUNDED','CANCELLED')
     `).get().n
 
     const sonSatislar = db.prepare(`

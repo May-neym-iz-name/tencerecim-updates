@@ -12,10 +12,20 @@ const DURUM_HARITASI = {
   CANCEL_REJECTED: { tip: 'iade_red', onem: 'normal', etiket: 'İade/iptal talebi reddedildi' },
 }
 
+// Talebin sonuçlandığını gösteren durumlar (karşılığı: src/utils/talep.js).
+// REFUNDED/CANCELLED bildirim üretmez (DURUM_HARITASI'nda yok) ama geri-tarama
+// sorgusunda elemek için gerekli — liste src/utils/talep.js ile birebir aynı.
+const COZULMUS = [
+  'REFUND_REQUEST_ACCEPTED', 'REFUND_REJECTED', 'CANCEL_REJECTED', 'REFUNDED', 'CANCELLED',
+]
+
 // Döner: bildirim nesnesi ya da null (yakalanacak durum yoksa).
 function _durumdanBildirim(sip) {
-  // Öncelik sırası sabit: eşleşen ilk durumu al (status → orderPackageStatus).
-  const durum = [sip.status, sip.orderPackageStatus].find(d => d && DURUM_HARITASI[d])
+  const durumlar = [sip.status, sip.orderPackageStatus].filter(d => d && DURUM_HARITASI[d])
+  // ÖNCELİK: çözüm > talep. İkas'ta sipariş `status` talepte takılı kalırken paket
+  // durumu çözüme geçebiliyor; salt sıra takip edilirse çözülmüş bir talep için
+  // "yüksek önem" uyarısı düşer. Çözüm işareti varsa o kazanır.
+  const durum = durumlar.find(d => COZULMUS.includes(d)) || durumlar[0]
   if (!durum) return null
   const { tip, onem, etiket } = DURUM_HARITASI[durum]
 
@@ -60,11 +70,15 @@ function mevcutTalepleriBildir(db) {
     if (v) return 0
 
     const yer = BEKLEYEN_TALEP.map(() => '?').join(',')
+    const coz = COZULMUS.map(() => '?').join(',')
+    // Yalnız GERÇEKTEN bekleyen talepler: alanlardan biri çözümü gösteriyorsa
+    // (kabul/red/iade/iptal) geri-tarama bildirim üretmez.
     const satirlar = db.prepare(`
       SELECT ikas_siparis_id, siparis_no, durum, kargo_durumu, toplam, para_birimi, musteri_ad
       FROM online_siparisler
-      WHERE durum IN (${yer}) OR kargo_durumu IN (${yer})
-    `).all(...BEKLEYEN_TALEP, ...BEKLEYEN_TALEP)
+      WHERE (durum IN (${yer}) OR kargo_durumu IN (${yer}))
+        AND COALESCE(durum,'') NOT IN (${coz}) AND COALESCE(kargo_durumu,'') NOT IN (${coz})
+    `).all(...BEKLEYEN_TALEP, ...BEKLEYEN_TALEP, ...COZULMUS, ...COZULMUS)
 
     let eklenen = 0
     for (const s of satirlar) {
