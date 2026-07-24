@@ -39,7 +39,9 @@ Son iki satır tasarımı belirler: bu iki bilgi **yerelde** tutulmak zorunda.
 3. **Yerel "Talebi Kapat" + zorunlu not.** Reddetme API'den yapılamadığı için,
    kapatma yereldir ve "ikas panelinden de reddetmeniz gerekir" uyarısı gösterilir.
 4. **Çok-PC paylaşımı: Supabase.** Bir mağazada kapatılan talep diğerinde de düşer;
-   iki kişinin aynı iadeyi işlemesi engellenir.
+   iki kişinin aynı iadeyi işlemesi engellenir. (Karar sırasında "Supabase SQL
+   çalıştırmanız gerekir" denmişti — **yanlıştı**, mevcut genel senkron aynası
+   yeterli, kullanıcıdan hiçbir işlem istenmiyor.)
 5. Onay aşamasında ikas'a hiçbir şey yazılmaz, müşteriye bildirim gitmez.
 6. Talep dışı kalemler modalda soluk gösterilir (yanlış ürün iadesini önleyen bağlam).
 
@@ -55,7 +57,11 @@ Son iki satır tasarımı belirler: bu iki bilgi **yerelde** tutulmak zorunda.
 | `kullanici` | TEXT | Kim |
 | `tarih` | TEXT | Ne zaman |
 
-Supabase'e senkronlanır: `supabase/10_talep_durumlari.sql` (kullanıcı çalıştırır).
+Supabase'e senkronlanır. **Yeni SQL dosyası GEREKMEZ:** çok-PC senkronu tablo başına
+Supabase tablosu istemiyor — `senk_kayitlar (tablo, senk_id, veri jsonb)` genel aynası
+var. Senkrona sokmak = `senk-sema.js` içindeki `TABLOLAR` + `SIRA` listelerine birer
+satır eklemek; `senk_id`/`senk_guncelleme` kolonlarını ve tetikleyicileri `kur()`
+otomatik ekler. Doğal anahtar `ikas_siparis_id` → PC'ler arası dedup garantili.
 
 **Neden eleme yerelden yapılır:** kapatılan talep ikas'ta `REFUND_REQUESTED` olarak
 kalır. Eleme ikas durumuna dayansaydı sonraki senkron talebi geri diriltirdi.
@@ -96,7 +102,8 @@ talep edilen paket no, kalemler (ad/adet/tutar), talep toplamı; altında soluk
 | `electron/ikas/index.js` | `talep:detay`, `talep:onayla`, `talep:kapat`. Yetki: mevcut `ikas_yonet` |
 | `src/utils/talep.js` | Yerel aşamayı hesaba katar |
 | `src/pages/OnlineSiparisler.jsx` | Talep modalı + "Ürün Bekleniyor" etiketi |
-| `supabase/10_talep_durumlari.sql` *(yeni)* | Tablo + senkron kaydı |
+| `electron/db/database.js` | `talep_durumlari` tablosu (CREATE TABLE) |
+| `electron/db/senk-sema.js` | `TABLOLAR` + `SIRA` kaydı → çok-PC senkronu |
 | `electron/db/panel.js` | KPI kapatılanları saymaz |
 
 **Yeni yetki kodu eklenmez.** Mevcut `ikas_yonet` kullanılır — yenisi Supabase
