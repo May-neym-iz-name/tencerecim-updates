@@ -18,3 +18,15 @@ UPS GÖNDERİ HESAPLAMA/
 # Muhasebe/urun calisma verileri (fiyat, dara, urun listeleri) — ticari gizli, repoya girmez
 bizimhesap-ugyulama-ikas-ürünler/
 /ikas-urunler*.xlsx
+
+# Urun eslestirme ciktilari (SKU/fiyat/barkod calisma dosyalari) — ticari gizli.
+# REPO PUBLIC: buraya giren her sey internete acilir, gecmisten silmek de zordur.
+URUN-ESLESTIRME/
+
+# Tedarikci kataloglari (fiyat listesi icerir)
+KATALOG*.pdf
+*KATALOG*.pdf
+
+# Yerel calisma/gecici dosyalar
+_*.js
+*.output
