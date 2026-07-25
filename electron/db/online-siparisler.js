@@ -1,5 +1,6 @@
 // Online (ikas web sitesi) siparişlerinin yerel listelenmesi ve detayı.
 const { getDb } = require('./database')
+const { kelimeKosulu } = require('./tr-arama')
 
 module.exports = {
   // Filtreler SQL'de uygulanır (eskiden boyut:0 ile TÜM siparişler çekilip istemcide
@@ -14,8 +15,13 @@ module.exports = {
     let where = 'WHERE 1=1'
     const params = []
     if (arama) {
-      where += ' AND (s.siparis_no LIKE ? OR s.musteri_ad LIKE ? OR s.musteri_telefon LIKE ?)'
-      params.push(`%${arama}%`, `%${arama}%`, `%${arama}%`)
+      // KELİME BAZLI + Türkçe duyarsız (ürün/müşteri aramasıyla aynı ortak modül).
+      // Eskiden düz LIKE'tı: SQLite LIKE yalnız ASCII'de büyük/küçük duyarsızdır,
+      // "ayşe şeker" yazınca "Ayşe Şeker" bulunmuyordu (Ş/ş eşleşmez); ayrıca
+      // "şeker ayşe" gibi sırası farklı yazımlar da hiç eşleşmiyordu.
+      const k = kelimeKosulu("COALESCE(s.siparis_no,'') || ' ' || COALESCE(s.musteri_ad,'') || ' ' || COALESCE(s.musteri_telefon,'')", arama)
+      where += k.sql
+      params.push(...k.params)
     }
     if (tarihBas) { where += ' AND date(s.siparis_tarihi) >= ?'; params.push(tarihBas) }
     if (tarihBit) { where += ' AND date(s.siparis_tarihi) <= ?'; params.push(tarihBit) }
