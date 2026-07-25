@@ -31,10 +31,18 @@ function init() {
 // Her aktif ürün × lokasyon için eksik stok satırlarını 0 ile tamamlar.
 // Böylece stok satırı olmayan (ör. yeni eklenmiş) ürünler Stok ve Stok Sayım
 // ekranlarında 0 olarak görünür ve stok girilebilir.
+//
+// senk_id + BAZ damga ('2000-01-01') ELLE yazılır, tetikleyiciye bırakılmaz. Neden:
+// bu satırlar ölçülmüş bir stok değil, "0 varsay" DOLGUSUDUR. Tetikleyici (senk-sema.js,
+// AFTER INSERT ... WHEN new.senk_id IS NULL) onlara NOW damgalayıp push kuyruğuna sokuyordu;
+// karşı PC'de dogalCift (urun_id, lokasyon_id) eşleşmesi + son-yazan-kazanır ile bu 0'lar
+// DİĞER PC'NİN GERÇEK STOĞUNU EZEBİLİYORDU. Baz damga ile: push imlecinin gerisinde kalır
+// (hiç gönderilmez) ve buluttan gelen her gerçek satır bunu yener. Personel gerçekten
+// sayım/stok girdiğinde AFTER UPDATE tetikleyicisi NOW damgalar ve normal şekilde push edilir.
 function backfillStok() {
   db.exec(`
-    INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok)
-    SELECT u.id, l.id, 0, 0
+    INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok, senk_id, senk_guncelleme)
+    SELECT u.id, l.id, 0, 0, lower(hex(randomblob(16))), '2000-01-01T00:00:00.000Z'
     FROM urunler u CROSS JOIN lokasyonlar l
     WHERE u.aktif = 1
       AND NOT EXISTS (

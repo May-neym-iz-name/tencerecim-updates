@@ -33,6 +33,36 @@ async function siraAl() {
 }
 const SAYFA = 1000
 
+// Bir pull sayfasını değerlendirir: hangi satırlar bu turda alınır, imleç nereye gider,
+// döngü biter mi. Saf fonksiyon — ağ yok, test edilebilir (veriSenk.test.js).
+//
+// Sözleşme: imleç "bu değerden ÖNCESİ tamamen işlendi, bu değerin KENDİSİ yeniden
+// çekilir" demektir → sorgu .gte kullanır. Örtüşme zararsızdır ('uygula' idempotent).
+export function sayfaIsle(data, sayfaBoyu) {
+  const ilkTs = data[0].yuklenme
+  const sonTs = data[data.length - 1].yuklenme
+
+  // Sayfa dolmadı → sunucuda başka satır yok, hepsini al.
+  if (data.length < sayfaBoyu) return { alinacak: data, cursor: sonTs, bitti: true }
+
+  // Sayfa dolu → son damgalı grup yarım kalmış OLABİLİR (push aynı damgayı 500 satıra
+  // birden basar). O grubu bu turda ALMA; imleci ona kur, sonraki sorgu grubu bütün
+  // hâlde yeniden çeksin. Eski kod burada .gt ile ilerleyip kalanı kalıcı kaybediyordu.
+  if (ilkTs !== sonTs) {
+    return { alinacak: data.filter(r => r.yuklenme !== sonTs), cursor: sonTs, bitti: false }
+  }
+
+  // Tüm sayfa TEK damgadan ibaret: grup sayfa boyundan büyük, imleci ona kursak sonsuz
+  // döngü olurdu. Grubu alıp damgayı geçiyoruz — kayıp riski YALNIZ bu durumda sürer.
+  // (Ölçüm 2026-07: en büyük grup 500, sayfa 1000 → bugün erişilebilir değil.)
+  return {
+    alinacak: data,
+    cursor: sonTs + '0', // string olarak bir tık ileri: aynı damga tekrar çekilmesin
+    bitti: false,
+    uyari: `Veri senkron: ${sonTs} damgasında ${sayfaBoyu}+ kayıt var — sayfalama bu grubu bölebilir.`,
+  }
+}
+
 let calisiyor = false
 let tekrarIstendi = false
 
@@ -71,26 +101,62 @@ export async function veriSenk() {
       await invoke('veri-senk:imlec-yaz', { anahtar: 'kargolar_reset', deger: '1' })
     }
 
+    // Bir kerelik: eski .gt sayfalaması aynı yuklenme damgasını paylaşan grupların
+    // ortasında bölünüp kalan satırları KALICI olarak atlıyordu (aşağıdaki PULL notuna
+    // bak). Bu PC'de hangi satırların düştüğü bilinemez — tek güvenli telafi, imleci bir
+    // defa sıfırlayıp tüm geçmişi yeniden çekmek. Güvenli: 'uygula' idempotent ve
+    // son-yazan-kazanır, yereldeki TAZE veri bayat bulut sürümüyle EZİLMEZ.
+    // Maliyet: tek seferlik ~28 sayfa (27.7 bin kayıt), sonraki turlar normal.
+    const { deger: sayfalamaReset } = await invoke('veri-senk:imlec-al', { anahtar: 'sayfalama_onarim_2026_07' })
+    if (!sayfalamaReset) {
+      await invoke('veri-senk:imlec-yaz', { anahtar: 'pull', deger: '' })
+      await invoke('veri-senk:imlec-yaz', { anahtar: 'sayfalama_onarim_2026_07', deger: '1' })
+    }
+
     // --- PULL: yuklenme imlecinden (sunucu saati) beri tüm uzak değişiklikler ---
+    //
+    // İMLEÇ ANLAMI: "bu değerden ÖNCESİ tamamen işlendi; bu değerin KENDİSİ yeniden
+    // çekilir" → .gte kullanılır, .gt DEĞİL. Nedeni sessiz kalıcı veri kaybıydı:
+    // push 500'lük dilimler hâlinde upsert ettiği için bir dilimin TÜM satırları AYNI
+    // yuklenme damgasını alır (ölçüm: 152 grup aynı damgayı paylaşıyor, en büyüğü 500).
+    // Eski kod sayfa sonunda cursor'ı son satırın damgasına set edip .gt ile devam
+    // ediyordu → sayfa bir grubun ORTASINDA bittiyse o gruptaki kalan satırlar BİR DAHA
+    // HİÇ ÇEKİLMİYORDU. (Vaka: 46 ürünlük 09:21:43 batch'inden 2 ürün Gölcük'e hiç
+    // ulaşmadı.) Üstelik tek kolonlu order aynı damgalı satırlarda sıra garantisi
+    // vermez — hangi satırın düşeceği PC'den PC'ye değişirdi. senk_id ikincil sıralama
+    // sırayı deterministik yapar. 'uygula' idempotent olduğu için örtüşme zararsızdır.
     const { deger: pullImlec } = await invoke('veri-senk:imlec-al', { anahtar: 'pull' })
     let cursor = pullImlec || '1970-01-01T00:00:00.000Z'
     const tum = []
     for (;;) {
       const { data, error } = await supabase.from('senk_kayitlar')
         .select('tablo, senk_id, veri, guncelleme, yuklenme')
-        .gt('yuklenme', cursor).order('yuklenme', { ascending: true }).limit(SAYFA)
+        .gte('yuklenme', cursor)
+        .order('yuklenme', { ascending: true }).order('senk_id', { ascending: true })
+        .limit(SAYFA)
       if (error) throw new Error(error.message)
       if (!data?.length) break
-      tum.push(...data)
-      cursor = data[data.length - 1].yuklenme
-      if (data.length < SAYFA) break
+      const adim = sayfaIsle(data, SAYFA)
+      tum.push(...adim.alinacak)
+      cursor = adim.cursor
+      if (adim.uyari) console.warn(adim.uyari)
+      if (adim.bitti) break
     }
 
+    // Tüm delta'yı tabloya göre grupla; FK sırasında uygula (parent önce).
+    const grup = {}
+    for (const r of tum) (grup[r.tablo] ||= []).push(r)
+
+    // Önceki turlarda FK'sı çözülemediği için bekleyen kayıtlar: uzak delta boş olsa da
+    // yeniden denenmeli. İmleç ilerlemiş olduğu için bu satırlar Supabase'den BİR DAHA
+    // ÇEKİLMEZ; tek şansları yerel kuyruk. Ebeveyn bu turda gelmiş ya da yerelde başka
+    // yoldan oluşmuş olabilir. (bekleyen-tablolar eski sürümde yok → boş kabul et.)
+    let bekleyenTablolar = []
+    try { bekleyenTablolar = await invoke('veri-senk:bekleyen-tablolar') } catch { /* eski backend */ }
+    const denenecek = new Set([...Object.keys(grup), ...bekleyenTablolar.map(b => b.tablo)])
+
     let alinan = 0
-    if (tum.length) {
-      // Tüm delta'yı tabloya göre grupla; FK sırasında uygula (parent önce).
-      const grup = {}
-      for (const r of tum) (grup[r.tablo] ||= []).push(r)
+    if (denenecek.size) {
       const SIRA = await siraAl()
       // Tek tablonun hatası TÜM pull'u kilitlemesin: her tablo ayrı denenir, hata
       // toplanır. İmleç yalnız hepsi başarılıysa ilerler — başarısız tablo varsa
@@ -98,20 +164,25 @@ export async function veriSenk() {
       // (17 Temmuz vakası: sosyal_otomasyon_sablonlar "no such column: id" hatası
       // fiyat/kargo dahil her şeyin çekimini 5 gün durdurdu.)
       const hatalar = []
+      let bekleyenKalan = 0
       for (const tablo of SIRA) {
-        if (grup[tablo]?.length) {
-          try {
-            const sonuc = await invoke('veri-senk:uygula', { tablo, kayitlar: grup[tablo] })
-            alinan += sonuc.uygulanan
-          } catch (err) {
-            hatalar.push(`${tablo}: ${err.message}`)
-            console.error(`Veri senkron uygula (${tablo}):`, err.message)
-          }
+        if (!denenecek.has(tablo)) continue
+        try {
+          const sonuc = await invoke('veri-senk:uygula', { tablo, kayitlar: grup[tablo] || [] })
+          alinan += sonuc.uygulanan
+          bekleyenKalan += sonuc.bekleyen || 0
+        } catch (err) {
+          hatalar.push(`${tablo}: ${err.message}`)
+          console.error(`Veri senkron uygula (${tablo}):`, err.message)
         }
       }
-      if (hatalar.length === 0) {
+      // İmleç yalnız gerçek delta çekildiyse ve hata yoksa ilerler. Bekleyen kayıtlar
+      // imleci GERİ ÇEKMEZ: onlar artık yerel kuyrukta güvende, imleci geri almak tüm
+      // geçmişi her turda yeniden indirmek olurdu.
+      if (hatalar.length === 0 && tum.length) {
         await invoke('veri-senk:imlec-yaz', { anahtar: 'pull', deger: cursor })
       }
+      if (bekleyenKalan) console.warn(`Veri senkron: ${bekleyenKalan} kayıt ebeveyni gelmediği için bekliyor.`)
     }
 
     // Bu PC'de oluşan yeni etiketleri Storage'a yükle (PC'ler arası basım). Sync'i

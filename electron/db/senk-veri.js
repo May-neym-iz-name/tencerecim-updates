@@ -6,6 +6,25 @@
 const { getDb } = require('./database')
 const { TABLOLAR, SIRA } = require('./senk-sema')
 
+// FK'sı çözülemediği için uygulanamayan uzak satırların KALICI kuyruğu.
+//
+// Kök sorun: pull imleci (yuklenme) ilerledikçe bir kayıt bir daha çekilmez. Zorunlu FK'sı
+// yerelde yoksa satır "ertelenir" ama imleç yine de ilerler → satır BİR DAHA HİÇ GELMEZ.
+// Gerçek vaka: urun_stoklar satırları buluta 6 Tem'de, bağlı oldukları urunler kaydı 9 Tem'de
+// yüklendi (Supabase'de 2.316 satır bu sırada). Aradaki turda çeken PC stok satırlarını
+// kalıcı olarak kaybediyordu. Kuyruk bunu telafi eder: atlanan satır diske yazılır ve
+// ebeveyni gelene kadar HER turda yeniden denenir.
+function bekleyenKur(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS senk_bekleyen (
+    tablo TEXT NOT NULL,
+    senk_id TEXT NOT NULL,
+    guncelleme TEXT NOT NULL,
+    veri TEXT NOT NULL,
+    ilk_deneme TEXT DEFAULT (datetime('now','localtime')),
+    PRIMARY KEY (tablo, senk_id)
+  )`)
+}
+
 function imlecAl(db, anahtar) {
   return db.prepare('SELECT deger FROM senk_durum WHERE anahtar = ?').get(anahtar)?.deger || ''
 }
@@ -46,23 +65,48 @@ module.exports = {
   },
 
   // Uzak kayıtları yerele uygula (tek tablo). kayitlar: [{senk_id, guncelleme, veri}].
-  'veri-senk:uygula': ({ tablo, kayitlar }) => {
-    const db = getDb()
+  'veri-senk:uygula': ({ tablo, kayitlar }) => module.exports._uygula(getDb(), { tablo, kayitlar }),
+
+  // db ENJEKTE EDİLİR (getDb() içeriden çağrılmaz): vitest'in vi.mock'u CJS require'ı
+  // yakalayamıyor, bu yüzden './database' mock'lanamıyor. db'yi parametre yapmak
+  // mantığı bellek-içi bir DB ile test edilebilir kılar. Bkz. senk-bekleyen.test.js.
+  _uygula: (db, { tablo, kayitlar }) => {
     const cfg = TABLOLAR[tablo]
-    if (!cfg || !Array.isArray(kayitlar)) return { uygulanan: 0, atlanan: 0 }
+    if (!cfg || !Array.isArray(kayitlar)) return { uygulanan: 0, atlanan: 0, bekleyen: 0 }
+    bekleyenKur(db)
     // rowid kullanılır, id DEĞİL: sosyal_otomasyon_sablonlar gibi bileşik anahtarlı
     // tablolarda id kolonu yoktur ("no such column: id" pull'u komple kilitliyordu);
     // id INTEGER PRIMARY KEY olan tablolarda rowid zaten id'nin takma adıdır.
     const bulSenk = db.prepare(`SELECT rowid AS id, senk_guncelleme FROM ${tablo} WHERE senk_id = ?`)
+    const bekleyenYaz = db.prepare(`INSERT INTO senk_bekleyen (tablo, senk_id, guncelleme, veri) VALUES (?, ?, ?, ?)
+      ON CONFLICT(tablo, senk_id) DO UPDATE SET guncelleme = excluded.guncelleme, veri = excluded.veri`)
+    const bekleyenSil = db.prepare('DELETE FROM senk_bekleyen WHERE tablo = ? AND senk_id = ?')
     let uygulanan = 0, atlanan = 0
 
+    // Bu turun uzak deltası + önceki turlardan bekleyenler birlikte denenir. Aynı senk_id
+    // her ikisinde de varsa taze olan (daha büyük guncelleme) kazanır.
+    const birlesik = new Map()
+    for (const b of db.prepare('SELECT senk_id, guncelleme, veri FROM senk_bekleyen WHERE tablo = ?').all(tablo)) {
+      try { birlesik.set(b.senk_id, { senk_id: b.senk_id, guncelleme: b.guncelleme, veri: JSON.parse(b.veri) }) }
+      catch { bekleyenSil.run(tablo, b.senk_id) } // bozuk JSON → kuyruğu tıkamasın
+    }
+    for (const k of kayitlar) {
+      const v = birlesik.get(k.senk_id)
+      if (!v || k.guncelleme >= v.guncelleme) birlesik.set(k.senk_id, k)
+    }
+
     const tx = db.transaction(() => {
-      for (const k of kayitlar) {
+      for (const k of birlesik.values()) {
+        // Kuyruk kaydı ÖNCE silinir, yalnız FK yine çözülemezse geri yazılır. Böylece
+        // "çözüldü" sayılan her yol (uygulandı / yerel daha yeni / çakışma) kuyruğu
+        // kendiliğinden temizler — her çıkışa ayrı silme koymaya gerek kalmaz.
+        bekleyenSil.run(tablo, k.senk_id)
+
         const mevcut = bulSenk.get(k.senk_id)
         if (mevcut && mevcut.senk_guncelleme >= k.guncelleme) { atlanan++; continue } // yerel daha yeni/eşit
 
-        // FK'ları yerel id'ye çöz. Zorunlu FK çözülemezse satırı ertele (sonraki tur);
-        // zorunlu olmayan çözülemezse null bırak.
+        // FK'ları yerel id'ye çöz. Zorunlu FK çözülemezse satırı KUYRUĞA al (imleç ilerlese
+        // de kaybolmasın, ebeveyni gelince uygulansın); zorunlu olmayan çözülemezse null bırak.
         const zorunlu = new Set(cfg.zorunluFk || [])
         const fkLocal = {}
         let eksikFk = false
@@ -76,7 +120,10 @@ module.exports = {
           }
           fkLocal[kolon] = refRow.id
         }
-        if (eksikFk) { atlanan++; continue }
+        if (eksikFk) {
+          bekleyenYaz.run(tablo, k.senk_id, k.guncelleme, JSON.stringify(k.veri))
+          atlanan++; continue
+        }
 
         // Kolon değerleri (veri kolonları + çözülmüş FK'lar).
         const cols = {}
@@ -129,7 +176,17 @@ module.exports = {
       }
     })
     tx()
-    return { uygulanan, atlanan }
+    const bekleyen = db.prepare('SELECT COUNT(*) AS n FROM senk_bekleyen WHERE tablo = ?').get(tablo).n
+    return { uygulanan, atlanan, bekleyen }
+  },
+
+  // FK'sı hâlâ çözülemeyen bekleyen kayıtların tabloları. Renderer bunları, uzak delta
+  // boş olsa bile her turda yeniden dener (ebeveyn yerelde başka yoldan oluşmuş olabilir).
+  'veri-senk:bekleyen-tablolar': () => module.exports._bekleyenTablolar(getDb()),
+
+  _bekleyenTablolar: (db) => {
+    bekleyenKur(db)
+    return db.prepare('SELECT tablo, COUNT(*) AS adet FROM senk_bekleyen GROUP BY tablo').all()
   },
 
   // Tablo uygulama sırası (tek kaynak: senk-sema.js). Renderer bunu kullanır ki
