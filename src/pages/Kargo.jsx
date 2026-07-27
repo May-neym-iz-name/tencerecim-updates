@@ -229,10 +229,27 @@ export default function Kargo() {
     setBasiliyor(true)
     const bekle = toast.loading(`${idler.length} kargonun etiketi hazırlanıyor…`)
     try {
-      const { pngler, kargoSayisi, etiketSayisi } = await kargoApi.etiketToplu(idler)
-      if (!pngler.length) { toast.error('Seçili kargoların kayıtlı etiketi yok', { id: bekle }); return }
+      // Tekli basımla aynı mantık: önce yerel PNG, yoksa Supabase Storage'dan indir
+      // (başka PC'de oluşturulan kargoların etiketi yerelde bulunmaz).
+      let pngler = []
+      let kargoSayisi = 0
+      let eksikSayisi = 0
+      for (const id of idler) {
+        const k = listelenen.find(x => x.id === id)
+        let arr = await kargoApi.etiket(id).catch(() => [])
+        if (!arr.length && k?.etiket_storage_yol) {
+          try { arr = await etiketIndir(k.etiket_storage_yol) } catch { arr = [] }
+        }
+        if (arr.length) { pngler = pngler.concat(arr); kargoSayisi++ }
+        else eksikSayisi++
+      }
+      if (!pngler.length) {
+        toast.error('Seçili kargoların etiketi bu bilgisayarda yok ve Storage\'a henüz yüklenmemiş. Etiketi oluşturan bilgisayar senkronladıktan sonra tekrar deneyin.', { id: bekle })
+        return
+      }
       await kargoApi.etiketOnizle(pngler, Number(sayfaBasina) || 1)
-      toast.success(`${kargoSayisi} kargo · ${etiketSayisi} etiket önizlemede açıldı`, { id: bekle })
+      const eksikNot = eksikSayisi ? ` (${eksikSayisi} kargonun etiketi bulunamadı, atlandı)` : ''
+      toast.success(`${kargoSayisi} kargo · ${pngler.length} etiket önizlemede açıldı${eksikNot}`, { id: bekle })
       setSecili(new Set())
     } catch (e) { toast.error('Toplu etiket yazdırılamadı: ' + e.message, { id: bekle }) }
     finally { setBasiliyor(false) }
