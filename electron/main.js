@@ -147,8 +147,9 @@ function ikasSiparisSenkBaslat() {
 
 // UPS takip yoklayıcısı: gönderi ağa okutulunca "Gönderildi", teslim edilince "Teslim Edildi"
 // bilgisini UPS'ten öğrenip yerele yazar (ikas'ın kendi UPS entegrasyonunun yaptığının aynısı,
-// ama kontrol bizde). 30 dk: kargo durumu günde birkaç kez değişir, sık yoklamak boşuna yük.
-const UPS_TAKIP_ARALIGI_MS = 30 * 60 * 1000
+// ama kontrol bizde). 10 dk: bildirim merkezi kargo olaylarını taşıdığından tazelik önemli
+// (2026-07-28 kararı, eskiden 30 dk); UPS yükü artarsa tek satırla geri alınır.
+const UPS_TAKIP_ARALIGI_MS = 10 * 60 * 1000
 function upsTakipBaslat() {
   const { _takipleriYokla } = require('./ups/takip')
   let calisiyor = false // tur uzun sürerse üst üste binmesin

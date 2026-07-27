@@ -14,6 +14,7 @@ const { getDb } = require('../db/database')
 const { _ayarlariGetir } = require('../db/ups-ayarlar')
 const soap = require('./soap')
 const { _ikasaBildir: ikasaBildir } = require('../ikas/kargo-durum')
+const { _ekle: bildirimEkle } = require('../db/bildirimler')
 
 // docs/ups-api-reference.md §1. Metne ASLA bakma — StatusCode tek doğru kaynak
 // ("HD" metninde 'teslim' geçer ama teslim değil; "S7"de geçmez ama teslim de değil).
@@ -46,6 +47,44 @@ function durumCevir(kod) {
   return { durum: 'gonderildi', gonderildi: true }
 }
 
+/**
+ * Bildirim merkezi kaydını kurar. Yalnız teslim ve özel durum bildirim üretir —
+ * "gönderildi"/ara durumlar üretmez (kalabalık olur, kullanıcı kararı 2026-07-28).
+ * Dedup anahtarı takip_no+durum: elle "Durumları Yenile" dahil aynı olay bir kez eklenir.
+ * @param {{takip_no: string, alici_ad?: string, tip?: string}} k
+ * @param {'teslim'|'ozel'|'gonderildi'|'yok'} durum
+ * @param {string} [metin] - UPS'in serbest durum açıklaması
+ * @returns {object|null} bildirimEkle'ye verilecek kayıt ya da null (bildirim yok)
+ */
+function bildirimKur(k, durum, metin) {
+  if (durum !== 'teslim' && durum !== 'ozel') return null
+  const sorun = durum === 'ozel'
+  const iade = k.tip === 'iade'
+  return {
+    tip: sorun ? 'kargo_sorun' : 'kargo_teslim',
+    baslik: sorun ? '🚨 Kargoda özel durum'
+      : (iade ? '↩️ İade kargosu bize ulaştı' : '📦 Kargo teslim edildi'),
+    mesaj: [k.alici_ad, k.takip_no, metin].filter(Boolean).join(' — '),
+    onem: sorun ? 'yuksek' : 'normal',
+    dedup_anahtar: `kargo:${k.takip_no}:${durum}`,
+  }
+}
+
+// Yoklama turu yeni bildirim eklediyse açık pencerelere anında duyurur (köşe kutusu +
+// rozet + ses renderer'da). Electron dışı ortamda (vitest) sessizce atlanır.
+function pencerelereDuyur(sonuc) {
+  if (!sonuc.bildirimEklenen) return
+  try {
+    const { BrowserWindow } = require('electron')
+    const veri = {
+      adet: sonuc.bildirimEklenen,
+      yuksek: sonuc.yeniBildirimler.filter(b => b.onem === 'yuksek').length,
+      ornekler: sonuc.yeniBildirimler.slice(0, 3).map(b => ({ baslik: b.baslik, mesaj: b.mesaj, onem: b.onem })),
+    }
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send('bildirim:yeni', veri)
+  } catch { /* test/başsız ortam: duyuru atlanır, 30 sn'lik sayaç yoklaması yakalar */ }
+}
+
 // Yoklanacak takipler. İKİ kaynak var ve ikisi de şart:
 //  1) kargolar — bizim programdan oluşturduğumuz gönderiler
 //  2) online_siparisler.kargo_takip_no — ikas'ın kendi UPS entegrasyonunun oluşturduğu,
@@ -54,7 +93,7 @@ function durumCevir(kod) {
 // dışarıda kalıyordu (2026-07-17 kuru çalıştırma).
 function _bekleyenKargolar(db) {
   return db.prepare(`
-    SELECT k.id AS kargo_id, k.takip_no, k.son_durum_kodu,
+    SELECT k.id AS kargo_id, k.takip_no, k.son_durum_kodu, k.alici_ad,
            -- tip NULL olabilir (eski kayıtlar): COALESCE şart, yoksa 'gonderi' filtresi
            -- bu kayıtları sessizce eler ve ikas'a hiç bildirim gitmez.
            COALESCE(k.tip, 'gonderi') AS tip,
@@ -71,7 +110,7 @@ function _bekleyenKargolar(db) {
 
     UNION ALL
 
-    SELECT NULL AS kargo_id, s.kargo_takip_no AS takip_no, NULL AS son_durum_kodu,
+    SELECT NULL AS kargo_id, s.kargo_takip_no AS takip_no, NULL AS son_durum_kodu, s.musteri_ad AS alici_ad,
            'gonderi' AS tip, s.id AS siparis_id
     FROM online_siparisler s
     WHERE s.kargo_takip_no IS NOT NULL AND s.kargo_takip_no != ''
@@ -121,6 +160,7 @@ async function takipleriYokla() {
   const sonuc = {
     sorgulanan: 0, gonderildi: 0, teslim: 0, agdaDegil: 0, hatalar: [], degisti: 0,
     ikasBildirilen: 0, ikasTelafi: 0, ikasHatalari: [],
+    bildirimEklenen: 0, yeniBildirimler: [],
   }
   const db = getDb()
 
@@ -189,6 +229,14 @@ async function takipleriYokla() {
       kargoYaz.run(metin || d.aciklama || '', Number(d.durumKodu), k.kargo_id)
     }
 
+    // Bildirim merkezi: teslim + özel durum bildirimi. Dedup INSERT OR IGNORE'da —
+    // eklenmediyse (0) zaten bildirilmişti, sayaca ve duyuruya girmez.
+    const bildirim = bildirimKur(k, durum, d.aciklama)
+    if (bildirim && bildirimEkle(db, bildirim)) {
+      sonuc.bildirimEklenen++
+      sonuc.yeniBildirimler.push(bildirim)
+    }
+
     if (k.siparis_id) {
       if (gonderildi) sonuc.degisti += gonderildiYaz.run(k.siparis_id).changes
       if (durum === 'teslim') sonuc.degisti += teslimYaz.run(k.siparis_id).changes
@@ -216,6 +264,7 @@ async function takipleriYokla() {
     await bekle(CAGRI_ARASI_MS)
   }
 
+  pencerelereDuyur(sonuc)
   return sonuc
 }
 
@@ -223,6 +272,7 @@ module.exports = {
   // main.js '_' önekli anahtarları IPC kanalı saymaz.
   _takipleriYokla: takipleriYokla,
   _durumCevir: durumCevir,
+  _bildirimKur: bildirimKur,
   _bekleyenKargolar,
   _ikasBekleyenTeslimler,
 

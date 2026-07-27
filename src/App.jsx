@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
+import toast, { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { uygulamaApi, sosyalApi, bildirimApi } from './api/ipc'
 import { buluttanAl } from './lib/ayarSenk'
@@ -66,21 +66,42 @@ function Uygulama() {
     return () => clearInterval(i)
   }, [yetkiVar])
 
-  // Bildirim okunmamış rozeti: yetki varsa 30 sn'de bir okunmamış sayısını çeker.
-  // Sayaç ARTARSA (yeni talep geldi) sesli bildirim çalar; ilk yüklemede çalmaz.
+  // Bildirim okunmamış rozeti: 30 sn'de bir sayaç (emniyet ağı) + yoklayıcıdan gelen
+  // 'bildirim:yeni' olayıyla ANINDA tazeleme ve köşe kutusu. Ses YALNIZ yüksek önemli
+  // okunmamış sayısı artınca çalar (iptal/iade talebi, kargo sorunu); rutin teslimler
+  // sessiz rozet. İlk yüklemede çalmaz.
   const [bildirimRozet, setBildirimRozet] = useState(0)
   const oncekiBildirimSayac = useRef(null)
   useEffect(() => {
     if (!yetkiVar('bildirim_goruntule')) return
-    const yukle = () => bildirimApi.sayac().then(sayi => {
-      setBildirimRozet(sayi)
+    const yukle = () => bildirimApi.sayac().then(s => {
+      setBildirimRozet(s?.toplam || 0)
+      const yuksek = s?.yuksek || 0
       const onceki = oncekiBildirimSayac.current
-      if (onceki !== null && sayi > onceki) bildirimSesiCal()
-      oncekiBildirimSayac.current = sayi
+      if (onceki !== null && yuksek > onceki) bildirimSesiCal()
+      oncekiBildirimSayac.current = yuksek
     }).catch(() => {})
     yukle()
     const i = setInterval(yukle, 30 * 1000)
-    return () => clearInterval(i)
+    // Yoklayıcı yeni bildirim yazdığı anda: rozet/ses tazele + köşede kutu göster.
+    window.api.on('bildirim:yeni', (veri) => {
+      yukle()
+      const ilk = veri?.ornekler?.[0]
+      if (!ilk) return
+      toast.custom((t) => (
+        <div
+          onClick={() => { window.location.hash = '#/bildirimler'; toast.dismiss(t.id) }}
+          className={`cursor-pointer bg-white border shadow-lg rounded-xl px-4 py-3 max-w-sm
+            ${ilk.onem === 'yuksek' ? 'border-red-300' : 'border-gray-200'}
+            ${t.visible ? 'animate-in fade-in' : 'opacity-0'}`}
+        >
+          <p className="text-sm font-semibold text-gray-900">{ilk.baslik}</p>
+          {ilk.mesaj && <p className="text-xs text-gray-500 mt-0.5 truncate">{ilk.mesaj}</p>}
+          {veri.adet > 1 && <p className="text-[11px] text-gray-400 mt-1">+{veri.adet - 1} bildirim daha — görmek için tıkla</p>}
+        </div>
+      ), { duration: 8000, position: 'top-right' })
+    })
+    return () => { clearInterval(i); window.api.removeAllListeners('bildirim:yeni') }
   }, [yetkiVar])
   // Girişten sonra ayarları buluttan çek (PC'ler arası senkron) ve state'i tazele
   // ki senkronlanan ayarlar (ödeme oranı, kasa zorunlu vb.) anında etkili olsun.

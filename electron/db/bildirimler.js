@@ -38,9 +38,13 @@ module.exports = {
     ).all()
   },
 
+  // Okunmamış sayıları: toplam rozette, yuksek ise ses kararında kullanılır
+  // (ses YALNIZ yüksek önemli bildirim artınca çalar — kullanıcı kararı 2026-07-28).
   'bildirim:sayac': () => {
     const db = getDb()
-    return db.prepare('SELECT COUNT(*) n FROM bildirimler WHERE okundu = 0').get().n
+    return db.prepare(`SELECT COUNT(*) AS toplam,
+      SUM(CASE WHEN onem = 'yuksek' THEN 1 ELSE 0 END) AS yuksek
+      FROM bildirimler WHERE okundu = 0`).get()
   },
 
   'bildirim:okundu': (id) => {

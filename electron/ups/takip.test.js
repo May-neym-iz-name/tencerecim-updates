@@ -138,3 +138,36 @@ describe('_ikasBekleyenTeslimler (telafi turu)', () => {
     expect(takip._ikasBekleyenTeslimler(db)).toHaveLength(0)
   })
 })
+
+// 2026-07-28: kargo durum bildirimleri — teslim + ozel durum bildirim uretir,
+// digerleri uretmez; dedup anahtari elle yenilemede tekrar eklemeyi engeller.
+describe('_bildirimKur (kargo bildirimi)', () => {
+  const { _bildirimKur: bildirimKur } = takip
+  const k = { takip_no: '1Z999', alici_ad: 'Ali Veli', tip: 'gonderi' }
+
+  test('teslim -> normal onem, kargo_teslim tipi', () => {
+    const b = bildirimKur(k, 'teslim', 'ISTANBUL')
+    expect(b).toMatchObject({ tip: 'kargo_teslim', onem: 'normal', dedup_anahtar: 'kargo:1Z999:teslim' })
+    expect(b.mesaj).toBe('Ali Veli — 1Z999 — ISTANBUL')
+  })
+
+  test('ozel durum -> YUKSEK onem (ses calar), kargo_sorun tipi', () => {
+    const b = bildirimKur(k, 'ozel', 'ADRESTE BULUNAMADI')
+    expect(b).toMatchObject({ tip: 'kargo_sorun', onem: 'yuksek', dedup_anahtar: 'kargo:1Z999:ozel' })
+  })
+
+  test('gonderildi / yok bildirim URETMEZ (kalabalik olmasin karari)', () => {
+    expect(bildirimKur(k, 'gonderildi', '')).toBeNull()
+    expect(bildirimKur(k, 'yok', '')).toBeNull()
+  })
+
+  test('iade kargosunun teslimi ayri baslikla anlatilir', () => {
+    const b = bildirimKur({ ...k, tip: 'iade' }, 'teslim', '')
+    expect(b.baslik).toContain('ade')
+  })
+
+  test('alici adi / metin yoksa mesaj bos parcasiz kurulur', () => {
+    const b = bildirimKur({ takip_no: '1Z1' }, 'teslim')
+    expect(b.mesaj).toBe('1Z1')
+  })
+})

@@ -68,6 +68,12 @@ module.exports = {
     const db = getDb()
     let where = durum === 'pasif' ? 'WHERE u.aktif = 0' : 'WHERE u.aktif = 1'
     const params = []
+    // ALAKA SIRASI: aramanın tüm kelimeleri ÜRÜN ADINDA geçenler öne. Sayı içeren
+    // aramalarda ("24 cm") sayı barkod/SKU rakamlarıyla da eşleşir (tüm Sofram
+    // barkodları "...24..." içerir); alfabetik sırada 12-22 cm ürünler 8'lik sayfayı
+    // doldurup asıl ürünü dışarı itiyordu.
+    let sira = 'u.ad'
+    const siraParams = []
     if (arama) {
       // KELİME BAZLI + Türkçe duyarsız. Eskiden tek parça LIKE'tı: "çelik tencere kulp"
       // ancak bu sıra ve boşluklarla BİREBİR geçiyorsa eşleşiyordu, ayrıca "ÇELİK"
@@ -76,6 +82,11 @@ module.exports = {
       const k = kelimeKosulu("u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE(m.ad,'')", arama)
       where += k.sql
       params.push(...k.params)
+      const kAd = kelimeKosulu('u.ad', arama)
+      if (kAd.sql) {
+        sira = `(CASE WHEN 1=1${kAd.sql} THEN 0 ELSE 1 END), u.ad`
+        siraParams.push(...kAd.params)
+      }
     }
     if (kategori_id) {
       // Seçilen kategori + tüm alt kategorilerindeki ürünleri kapsa (tam_yol prefix eşleşmesi).
@@ -96,12 +107,11 @@ module.exports = {
     ).get(...params).n
     // boyut <= 0 => sınırsız (tüm ürünler). Aksi halde sayfalama uygulanır.
     if (!boyut || boyut <= 0) {
-      const sorgu = `${URUN_SELECT} ${where} ORDER BY u.ad`
-      return { toplam, urunler: db.prepare(sorgu).all(...params) }
+      const sorgu = `${URUN_SELECT} ${where} ORDER BY ${sira}`
+      return { toplam, urunler: db.prepare(sorgu).all(...params, ...siraParams) }
     }
-    const sorgu = `${URUN_SELECT} ${where} ORDER BY u.ad LIMIT ? OFFSET ?`
-    params.push(boyut, (sayfa - 1) * boyut)
-    return { toplam, urunler: db.prepare(sorgu).all(...params) }
+    const sorgu = `${URUN_SELECT} ${where} ORDER BY ${sira} LIMIT ? OFFSET ?`
+    return { toplam, urunler: db.prepare(sorgu).all(...params, ...siraParams, boyut, (sayfa - 1) * boyut) }
   },
 
   'urunler:getir': (id) => {
