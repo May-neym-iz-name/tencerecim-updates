@@ -204,6 +204,9 @@ export default function SosyalMedya() {
     try {
       await metaApi.mesajCevapla({ id: songelen.id, metin: taslak, kullanici })
       toast.success('Mesaj gönderildi'); setTaslak(''); konuSec(seciliKonu)
+      // Yanıt konuşmanın okunmamışlarını kapattı → rozet ve sol liste ANINDA tazelensin
+      // (eskiden konuyu açmak okundu yapıp tazeliyordu; artık yanıt anı tetikler).
+      sayaclariYukle(); listeYukle()
     } catch (e) { toast.error('Gönderilemedi: ' + e.message) }
     finally { setMesgul(false) }
   }
@@ -214,6 +217,7 @@ export default function SosyalMedya() {
     try {
       await metaApi.yorumCevapla({ id: yorumId, metin: taslak, kullanici })
       toast.success('Yoruma yanıt verildi'); setTaslak(''); konuSec(seciliKonu)
+      sayaclariYukle(); listeYukle()
     } catch (e) { toast.error('Gönderilemedi: ' + e.message) }
     finally { setMesgul(false) }
   }
@@ -230,6 +234,7 @@ export default function SosyalMedya() {
         : 'Özel mesaj gönderildi (konuşma birazdan Instagram sekmesine düşecek)')
       setOzelMesaj(null); setOzelTaslak('')
       konuSec(seciliKonu) // "Mesaj gönderildi" işareti hemen görünsün
+      sayaclariYukle(); listeYukle()
     } catch (e) { toast.error('Gönderilemedi: ' + e.message) }
     finally { setMesgul(false) }
   }
