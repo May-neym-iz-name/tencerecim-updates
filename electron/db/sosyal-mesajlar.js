@@ -98,6 +98,26 @@ function _silinenGonderileriIsaretle(platform, gorulenIdler, enEskiTarih) {
   }
 }
 
+// Yanıtlanmış ama 'yeni' kalmış gelenleri kapatır. Uygulama İÇİNDEN yanıt zaten kapatıyor;
+// bu süpürücü uygulama DIŞINDAN (telefon, Business Suite) verilen yanıtları yakalar:
+// - DM: gelen mesajdan SONRA bizim giden mesaj varsa o gelen yanıtlanmıştır.
+// - Yorum: altına bizim (giden) yanıt yazılmış yorum yanıtlanmıştır.
+// Her çekim turunun sonunda + migrate'te çalışır; idempotent.
+function _yanitlananlariKapat() {
+  const db = getDb()
+  db.prepare(`
+    UPDATE sosyal_mesajlar SET durum = 'cevaplandi'
+    WHERE tur = 'dm' AND yon = 'gelen' AND durum = 'yeni'
+      AND EXISTS (SELECT 1 FROM sosyal_mesajlar g
+        WHERE g.konu_id = sosyal_mesajlar.konu_id AND g.tur = 'dm' AND g.yon = 'giden'
+          AND COALESCE(g.mesaj_tarihi, g.cekilme_tarihi) >= COALESCE(sosyal_mesajlar.mesaj_tarihi, sosyal_mesajlar.cekilme_tarihi))`).run()
+  db.prepare(`
+    UPDATE sosyal_mesajlar SET durum = 'cevaplandi'
+    WHERE tur = 'yorum' AND yon = 'gelen' AND durum = 'yeni'
+      AND EXISTS (SELECT 1 FROM sosyal_mesajlar g
+        WHERE g.tur = 'yorum' AND g.yon = 'giden' AND g.ust_id = sosyal_mesajlar.harici_id)`).run()
+}
+
 const SAYFA_BOYUT = 50
 
 // Filtreli + sayfalı liste. Konu bazlı en son mesajı temsilen düz liste döner.
@@ -248,6 +268,7 @@ function konusmalar({ platform, arama, baslangic, bitis } = {}) {
 module.exports = {
   _upsertMesaj,
   _silinenGonderileriIsaretle,
+  _yanitlananlariKapat,
   'sosyal:liste': (arg) => liste(arg),
   'sosyal:konu': (konu_id) => konu(konu_id),
   'sosyal:durumGuncelle': (arg) => durumGuncelle(arg),

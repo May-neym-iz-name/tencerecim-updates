@@ -3,7 +3,7 @@
 // Polling main.js'ten çağrılır (ikas sipariş polling deseni; public webhook gerekmez).
 const client = require('./client')
 const { getDb } = require('../db/database')
-const { _upsertMesaj, _silinenGonderileriIsaretle } = require('../db/sosyal-mesajlar')
+const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat } = require('../db/sosyal-mesajlar')
 
 // Son çekme turunun özeti (arka plan polling + manuel). UI "sessiz hata göstergesi"
 // bunu okur: arka planda 120 sn'de bir çalışan senkron hataları console'a yutuyordu;
@@ -50,17 +50,21 @@ async function cekFacebookYorumlar() {
         yon: 'giden', metin: gonderi.message || '', mesaj_tarihi: gonderi.created_time, ...ktx,
       })
       for (const y of gonderi.comments?.data || []) {
+        // BİZİM yorumlarımız (sayfanın kendi yanıtları) 'giden'dir — 'gelen' yazılırsa
+        // okunmamış sayılıp rozeti şişirir (2026-07-28'de 5000+ kendi yorumumuz öyleydi).
+        const bizdenY = y.from?.id === sayfaId
         _upsertMesaj({
           platform: 'facebook', tur: 'yorum', harici_id: y.id, konu_id: gonderi.id,
           gonderen_id: y.from?.id, gonderen_ad: y.from?.name || 'Facebook kullanıcısı',
-          metin: y.message, yon: 'gelen', mesaj_tarihi: y.created_time, ...ktx,
+          metin: y.message, yon: bizdenY ? 'giden' : 'gelen', mesaj_tarihi: y.created_time, ...ktx,
         })
         n++
         for (const r of y.comments?.data || []) {
+          const bizdenR = r.from?.id === sayfaId
           _upsertMesaj({
             platform: 'facebook', tur: 'yorum', harici_id: r.id, konu_id: gonderi.id, ust_id: y.id,
             gonderen_id: r.from?.id, gonderen_ad: r.from?.name || 'Facebook kullanıcısı',
-            metin: r.message, yon: 'gelen', mesaj_tarihi: r.created_time, ...ktx,
+            metin: r.message, yon: bizdenR ? 'giden' : 'gelen', mesaj_tarihi: r.created_time, ...ktx,
           })
           n++
         }
@@ -76,6 +80,11 @@ async function cekFacebookYorumlar() {
 async function cekInstagramYorumlar() {
   const igId = client._igId()
   if (!igId) return 0
+  // IG yorumlarında 'from' istenemez (izin tuzağı) → kendi yorumlarımızı username ile tanırız.
+  const { _ayarlariGetir } = require('../db/meta-ayarlar')
+  const bizimAdlar = new Set(
+    [(_ayarlariGetir().sayfa_ad || ''), 'tenceremtava'].map(a => a.toLowerCase()).filter(Boolean)
+  )
   let n = 0
   const gorulen = new Set()
   let enEski = null
@@ -101,17 +110,20 @@ async function cekInstagramYorumlar() {
         yon: 'giden', metin: medya.caption || '', mesaj_tarihi: medya.timestamp, ...ktx,
       })
       for (const y of medya.comments?.data || []) {
+        // Kendi yorumlarımız 'giden' — 'gelen' yazılırsa okunmamış sayılıp rozeti şişirir.
+        const bizdenY = bizimAdlar.has((y.username || '').toLowerCase())
         _upsertMesaj({
           platform: 'instagram', tur: 'yorum', harici_id: y.id, konu_id: medya.id,
           gonderen_ad: y.username || 'Instagram kullanıcısı',
-          metin: y.text, yon: 'gelen', mesaj_tarihi: y.timestamp, ...ktx,
+          metin: y.text, yon: bizdenY ? 'giden' : 'gelen', mesaj_tarihi: y.timestamp, ...ktx,
         })
         n++
         for (const r of y.replies?.data || []) {
+          const bizdenR = bizimAdlar.has((r.username || '').toLowerCase())
           _upsertMesaj({
             platform: 'instagram', tur: 'yorum', harici_id: r.id, konu_id: medya.id, ust_id: y.id,
             gonderen_ad: r.username || 'Instagram kullanıcısı',
-            metin: r.text, yon: 'gelen', mesaj_tarihi: r.timestamp, ...ktx,
+            metin: r.text, yon: bizdenR ? 'giden' : 'gelen', mesaj_tarihi: r.timestamp, ...ktx,
           })
           n++
         }
@@ -284,6 +296,8 @@ async function tumunuCek() {
   for (const [ad, fn] of gorevler) {
     try { sonuc[ad] = await fn() } catch (e) { sonuc.hatalar.push(`${ad}: ${e.message}`) }
   }
+  // Uygulama DIŞINDAN (telefon/Business Suite) yanıtlananların "okunmadı"sını kapat.
+  try { _yanitlananlariKapat() } catch (e) { sonuc.hatalar.push(`yanitKapat: ${e.message}`) }
   // Otomasyon: yorumlar çekildikten SONRA çalışır (yeni yorumlar bu turda yakalansın).
   // Hata turu bozmaz — çekme işi otomasyondan bağımsız sürmeli.
   try {

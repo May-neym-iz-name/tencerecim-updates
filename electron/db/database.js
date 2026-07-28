@@ -642,6 +642,31 @@ function migrate() {
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_link TEXT") } catch {}
   // Gönderi Meta'da silinmişse işaretlenir (listeden gizlenir) — bkz. _silinenGonderileriIsaretle.
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN silindi INTEGER DEFAULT 0") } catch {}
+  // KENDİ yorumlarımız 'gelen' yazılmıştı → okunmamış sayılıp rozeti şişiriyordu (5000+ satır).
+  // Geriye dönük onarım: sayfa adı/kimliğiyle eşleşenler 'giden' yapılır. İdempotent.
+  try {
+    const ayar = {}
+    for (const r of db.prepare('SELECT anahtar, deger FROM meta_ayarlar').all()) ayar[r.anahtar] = r.deger
+    const adlar = [...new Set([ayar.sayfa_ad, 'tenceremtava'].filter(Boolean).map(a => a.toLowerCase()))]
+    db.prepare(`
+      UPDATE sosyal_mesajlar SET yon = 'giden', durum = 'cevaplandi'
+      WHERE tur = 'yorum' AND yon = 'gelen'
+        AND (lower(COALESCE(gonderen_ad,'')) IN (${adlar.map(() => '?').join(',')})
+             OR (gonderen_id IS NOT NULL AND gonderen_id = ?))`).run(...adlar, ayar.sayfa_id || '')
+    // Uygulama dışından yanıtlanmışları da kapat (sosyal-mesajlar._yanitlananlariKapat ile
+    // aynı SQL — oradan require etmek döngüsel bağımlılık olurdu).
+    db.prepare(`
+      UPDATE sosyal_mesajlar SET durum = 'cevaplandi'
+      WHERE tur = 'dm' AND yon = 'gelen' AND durum = 'yeni'
+        AND EXISTS (SELECT 1 FROM sosyal_mesajlar g
+          WHERE g.konu_id = sosyal_mesajlar.konu_id AND g.tur = 'dm' AND g.yon = 'giden'
+            AND COALESCE(g.mesaj_tarihi, g.cekilme_tarihi) >= COALESCE(sosyal_mesajlar.mesaj_tarihi, sosyal_mesajlar.cekilme_tarihi))`).run()
+    db.prepare(`
+      UPDATE sosyal_mesajlar SET durum = 'cevaplandi'
+      WHERE tur = 'yorum' AND yon = 'gelen' AND durum = 'yeni'
+        AND EXISTS (SELECT 1 FROM sosyal_mesajlar g
+          WHERE g.tur = 'yorum' AND g.yon = 'giden' AND g.ust_id = sosyal_mesajlar.harici_id)`).run()
+  } catch {}
   // Başarısız gönderim takibi. Eskiden hata durumunda da ozel_mesaj_tarihi damgalanıyordu
   // ("her turda aynı hatayı tekrarlama" için) → damga başarıyı da başarısızlığı da aynı
   // gösteriyordu, başarısızlar SESSİZCE kayboluyordu. Artık ayrı: hata metni + deneme sayacı.
