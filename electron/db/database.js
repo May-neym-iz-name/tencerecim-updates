@@ -642,6 +642,10 @@ function migrate() {
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_link TEXT") } catch {}
   // Gönderi Meta'da silinmişse işaretlenir (listeden gizlenir) — bkz. _silinenGonderileriIsaretle.
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN silindi INTEGER DEFAULT 0") } catch {}
+  // ust_id indeksi ŞART: aşağıdaki yorum süpürücüsü ve çekim turu süpürücüsü ust_id ile
+  // arama yapar. İndekssiz 66k okunmamış × 90k satır = saatlerce süren tam tarama →
+  // v1.2.140 açılışta ASILI KALIYORDU (2026-07-28). Onarımlardan ÖNCE oluşturulmalı.
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_sosyal_ust ON sosyal_mesajlar(ust_id)") } catch {}
   // KENDİ yorumlarımız 'gelen' yazılmıştı → okunmamış sayılıp rozeti şişiriyordu (5000+ satır).
   // Geriye dönük onarım: sayfa adı/kimliğiyle eşleşenler 'giden' yapılır. İdempotent.
   try {
