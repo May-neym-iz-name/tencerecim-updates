@@ -218,7 +218,16 @@ async function cekMesajlar(platform) {
       } catch { continue }
     }
     // Müşteri = mesajlarda bizim taraf DIŞINDAKİ ilk gönderen.
-    const musteri = (mesajlar.data || []).map(m => m.from).find(f => f && !bizIdler.has(f.id)) || {}
+    let musteri = (mesajlar.data || []).map(m => m.from).find(f => f && !bizIdler.has(f.id)) || {}
+    // Çekilen pencerede hiç gelen mesaj yoksa (ör. otomasyonun başlattığı DM) gönderenlerden
+    // müşteri bulunamaz ve ad "Müşteri" kalırdı → konuşma katılımcılarından bizim taraf
+    // olmayanı al. Yalnız bu durumda ek istek atılır (küçük ve hızlı bir çağrı).
+    if (!musteri.id) {
+      try {
+        const kat = await client.get(konusmaId, { fields: 'participants' })
+        musteri = (kat.participants?.data || []).find(p => p && !bizIdler.has(p.id)) || {}
+      } catch { /* ad 'Müşteri' olarak kalır, akış bozulmaz */ }
+    }
     for (const m of mesajlar.data || []) {
       const bizden = bizIdler.has(m.from?.id)
       _upsertMesaj({

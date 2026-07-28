@@ -83,6 +83,22 @@ module.exports = {
     WHERE s.aktif = 1 ORDER BY s.ad
   `).all(),
 
+  // Tek şablonun mesaj metnini üretir (mesajlaşmada elle kullanmak için).
+  // Otomasyonla AYNI üretici (mesajOlustur) + canlı fiyat çözümü → iki yol asla ayrışmaz.
+  // Yetki istemez: personel metni yanıt kutusuna ekleyip kendisi gönderir (toplu DM değil).
+  'sosyal:sablonMetin': (id) => {
+    const s = getDb().prepare(`
+      SELECT s.urun_adi, s.aciklama, s.link, s.whatsapp, s.tur, s.serbest_metin,
+             COALESCE(s.fiyat, u.satis_fiyati, st.fiyat) AS fiyat
+      FROM sosyal_sablonlar s
+      LEFT JOIN urunler u ON u.id = s.urun_id
+      LEFT JOIN setler st ON st.id = s.set_id
+      WHERE s.id = ?`).get(id)
+    if (!s) throw new Error('Şablon bulunamadı.')
+    const { mesajOlustur } = require('../meta/sablon-mesaj')
+    return mesajOlustur({ sablonlar: [s] })
+  },
+
   // Şablonlar YALNIZ otomasyon için var → otomasyon yetkisi ister ('sosyal_medya_yonet' DEĞİL).
   // Sosyal medyayı kullanan personel yorumları elle cevaplar; toplu DM'in içeriğini değiştiremez.
   'sosyal:sablonKaydet': ({ id, ad, tur, serbest_metin, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp }) => {

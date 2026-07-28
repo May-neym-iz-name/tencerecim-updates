@@ -195,6 +195,7 @@ export const sosyalApi = {
   konusmalar: (params) => invoke('sosyal:konusmalar', params),
   // Gönderi bazlı otomatik yorum cevabı
   sablonlar: () => invoke('sosyal:sablonlar'),
+  sablonMetin: (id) => invoke('sosyal:sablonMetin', id),
   sablonKaydet: (v) => invoke('sosyal:sablonKaydet', v),
   sablonSil: (id) => invoke('sosyal:sablonSil', id),
   // Otomasyonu hangi PC yürütüyor (çift DM kilidi — bkz. electron/meta/yurutucu.js)

@@ -379,6 +379,50 @@ function AtamaButonu({ konu, banaAta, kullanici }) {
   )
 }
 
+// Şablon seçici: otomasyon şablon kütüphanesini mesajlaşmada da kullanılır kılar.
+// Tıklanınca metin OTOMASYONLA AYNI üreticiden (canlı fiyatla) gelir ve yanıt kutusuna eklenir.
+function SablonSecici({ onSec }) {
+  const [acik, setAcik] = useState(false)
+  const [sablonlar, setSablonlar] = useState(null) // null = henüz yüklenmedi
+  const ac = () => {
+    setAcik(a => !a)
+    if (sablonlar === null) sosyalApi.sablonlar().then(setSablonlar).catch(() => setSablonlar([]))
+  }
+  const sec = async (s) => {
+    try {
+      const r = await sosyalApi.sablonMetin(s.id)
+      if (r?.metin) onSec(r.metin)
+      if (r?.asildi) toast('Dikkat: mesaj 1000 karakteri aşıyor, göndermeden kısaltın.', { icon: '⚠️' })
+      setAcik(false)
+    } catch (e) { toast.error(e.message) }
+  }
+  return (
+    <div className="relative inline-block">
+      <button type="button" onClick={ac} className="text-xs text-violet-600 hover:underline ml-3">
+        📦 Şablonlar
+      </button>
+      {acik && (
+        <div className="absolute bottom-full mb-1 left-0 z-10 w-80 bg-white border rounded-lg shadow-lg p-1 max-h-72 overflow-y-auto">
+          <div className="px-1.5 py-1 text-[11px] font-semibold text-gray-500">Otomasyon şablonları</div>
+          {sablonlar === null && <p className="text-[11px] text-gray-400 px-2 py-1.5">Yükleniyor…</p>}
+          {sablonlar?.length === 0 && (
+            <p className="text-[11px] text-gray-400 px-2 py-1.5">Şablon yok. Otomasyon panelinden ekleyebilirsiniz.</p>
+          )}
+          {(sablonlar || []).map(s => (
+            <button key={s.id} type="button" onClick={() => sec(s)}
+              className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-violet-50 text-gray-700">
+              <span className="font-medium">{s.ad}</span>
+              {s.tur === 'genel'
+                ? <span className="text-gray-400"> · genel</span>
+                : <span className="text-gray-400"> · {s.urun_adi}{(s.fiyat ?? s.kaynak_fiyati) ? ` · ${Number(s.fiyat ?? s.kaynak_fiyati).toLocaleString('tr-TR')} TL` : ''}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Hazır yanıt seçici: tıklanınca metni yanıt kutusuna ekler. Düzenle modunda
 // satır silme (×) ve alttaki kutudan yeni yanıt ekleme yapılabilir.
 function HizliYanitlar({ onSec, yanitlar = [], onKaydet }) {
@@ -498,12 +542,23 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
         })}
       </div>
       <div className="p-3 border-t">
-        <HizliYanitlar onSec={ekle} yanitlar={hizliYanitlar} onKaydet={hizliKaydet} />
+        <div className="flex items-center">
+          <HizliYanitlar onSec={ekle} yanitlar={hizliYanitlar} onKaydet={hizliKaydet} />
+          <div className="mb-2"><SablonSecici onSec={ekle} /></div>
+        </div>
         <div className="flex items-end gap-2 bg-gray-100 rounded-2xl px-3 py-2">
           <textarea value={taslak} onChange={e => setTaslak(e.target.value)} rows={1}
+            // İçerik uzadıkça kutu kendiliğinden büyür (maks ~14 satır, sonrası kaydırma) —
+            // sabit yükseklikte üstteki satırlar görünmez kalıyordu.
+            ref={el => {
+              if (!el) return
+              el.style.height = 'auto'
+              el.style.height = `${Math.min(el.scrollHeight, 320)}px`
+            }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); gonder() } }}
             placeholder={`${konu.platform === 'instagram' ? 'Instagram' : 'Messenger'}'da yanıtla…`}
-            className="flex-1 bg-transparent resize-none text-sm focus:outline-none max-h-24" />
+            className="flex-1 bg-transparent resize-none text-sm focus:outline-none overflow-y-auto"
+            style={{ maxHeight: 320 }} />
           <button onClick={gonder} disabled={mesgul || !taslak.trim()}
             className="bg-violet-600 text-white text-sm px-4 py-1.5 rounded-full hover:bg-violet-700 disabled:opacity-40">Gönder</button>
         </div>
@@ -593,7 +648,10 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                   {/* Yoruma yanıt kutusu — yalnızca "Yanıtla" ile açılır */}
                   {cevapId === y.id && (
                     <div className="mt-2">
-                      <HizliYanitlar onSec={ekle} yanitlar={hizliYanitlar} onKaydet={hizliKaydet} />
+                      <div className="flex items-center">
+                        <HizliYanitlar onSec={ekle} yanitlar={hizliYanitlar} onKaydet={hizliKaydet} />
+                        <div className="mb-2"><SablonSecici onSec={ekle} /></div>
+                      </div>
                       <div className="flex items-center gap-2">
                         <input value={taslak} onChange={e => setTaslak(e.target.value)} autoFocus
                           onKeyDown={e => { if (e.key === 'Enter') cevapla(y.id) }}
@@ -607,6 +665,7 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                   {ozelMesaj === y.id && (
                     <div className="mt-2 p-2 bg-blue-50 rounded-lg">
                       <p className="text-[11px] text-blue-700 mb-1">💬 {y.gonderen_ad} kullanıcısına özel mesaj:</p>
+                      <SablonSecici onSec={t => setOzelTaslak(v => v && v.trim() ? `${v.trim()} ${t}` : t)} />
                       <div className="flex items-center gap-2">
                         <input value={ozelTaslak} onChange={e => setOzelTaslak(e.target.value)} autoFocus
                           onKeyDown={e => { if (e.key === 'Enter') ozelGonder() }}

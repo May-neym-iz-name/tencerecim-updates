@@ -9,6 +9,14 @@ function _upsertMesaj(m) {
   const db = getDb()
   const mevcut = db.prepare('SELECT id FROM sosyal_mesajlar WHERE harici_id = ?').get(m.harici_id)
   if (mevcut) {
+    // Gerçek ad öğrenildiyse yer tutucu 'Müşteri' adını düzelt (geriye dönük onarım).
+    if (m.gonderen_ad && m.gonderen_ad !== 'Müşteri') {
+      db.prepare(`UPDATE sosyal_mesajlar SET
+        gonderen_ad = @gonderen_ad, gonderen_id = COALESCE(gonderen_id, @gonderen_id)
+        WHERE id = @id AND (gonderen_ad IS NULL OR gonderen_ad = 'Müşteri')`).run({
+        id: mevcut.id, gonderen_ad: m.gonderen_ad, gonderen_id: m.gonderen_id || null,
+      })
+    }
     // Mevcut satırda gönderi bağlamı / mesaj eki eksikse doldur (eski kayıtlar için geriye dönük).
     if (m.konu_baslik || m.konu_gorsel || m.konu_link || m.ek_tur) {
       db.prepare(`UPDATE sosyal_mesajlar SET
