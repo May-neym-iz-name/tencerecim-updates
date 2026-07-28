@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { barkodApi } from '../api/ipc'
-import { barkodSvg, barkodYazdirHtml, ETIKET_GENISLIK_MM, ETIKET_YUKSEKLIK_MM } from '../lib/barkod'
+import { barkodSvg, barkodYazdirHtml, ETIKET_BOYUTLARI, VARSAYILAN_BOYUT, boyutBul } from '../lib/barkod'
 
 const MAGAZA_ADI = 'TENCERECİM'
 const YAZICI_KEY = 'barkod_yazici'
 const FIYAT_KEY = 'barkod_fiyat_goster'
+const BOYUT_KEY = 'barkod_etiket_boyut' // cihaza özel: her PC'nin yazıcısı/etiketi farklı
 
 // Tek bir ürün için barkod etiketi önizleyip yazdıran modal.
 // 45mm x 20mm OS-214 plus etiketi içindir.
@@ -15,6 +16,7 @@ export default function BarkodModal({ urun, onKapat }) {
   const [fiyatGoster, setFiyatGoster] = useState(() => localStorage.getItem(FIYAT_KEY) !== '0')
   const [yazicilar, setYazicilar] = useState([])
   const [secilenYazici, setSecilenYazici] = useState(() => localStorage.getItem(YAZICI_KEY) || '')
+  const [boyut, setBoyut] = useState(() => localStorage.getItem(BOYUT_KEY) || VARSAYILAN_BOYUT)
   const [yazdiriliyor, setYazdiriliyor] = useState(false)
 
   useEffect(() => {
@@ -42,6 +44,11 @@ export default function BarkodModal({ urun, onKapat }) {
     localStorage.setItem(FIYAT_KEY, v ? '1' : '0')
   }
 
+  function handleBoyutSec(e) {
+    setBoyut(e.target.value)
+    localStorage.setItem(BOYUT_KEY, e.target.value)
+  }
+
   function handleYaziciSec(e) {
     setSecilenYazici(e.target.value)
     localStorage.setItem(YAZICI_KEY, e.target.value)
@@ -58,8 +65,10 @@ export default function BarkodModal({ urun, onKapat }) {
         fiyat: urun.satis_fiyati,
         adet: parseInt(adet) || 1,
         fiyatGoster,
+        boyut,
       })
-      await barkodApi.yazdir(html, secilenYazici || undefined)
+      const olcu = boyutBul(boyut)
+      await barkodApi.yazdir(html, secilenYazici || undefined, { genislikMm: olcu.genislik, yukseklikMm: olcu.yukseklik })
       toast.success(secilenYazici ? 'Barkod yazıcıya gönderildi' : 'Yazdırma penceresi açıldı')
       onKapat()
     } catch (e) {
@@ -80,19 +89,21 @@ export default function BarkodModal({ urun, onKapat }) {
           </div>
         ) : (
           <>
-            {/* Etiket önizleme — gerçek oran 45x20mm */}
+            {/* Etiket önizleme — seçilen boyutun gerçek oranı */}
             <div className="flex justify-center mb-4">
               <div className="border-2 border-dashed border-gray-300 rounded bg-white flex flex-col items-center justify-center text-center overflow-hidden"
-                style={{ width: `${ETIKET_GENISLIK_MM * 4}px`, height: `${ETIKET_YUKSEKLIK_MM * 4}px`, padding: '4px' }}>
-                <div className="font-bold leading-none" style={{ fontSize: '8px', letterSpacing: '0.5px' }}>{MAGAZA_ADI}</div>
-                <div className="leading-tight overflow-hidden" style={{ fontSize: '9px', maxHeight: '2.1em' }}>{urun.ad}</div>
+                style={{ width: `${boyutBul(boyut).genislik * 4}px`, height: `${boyutBul(boyut).yukseklik * 4}px`, padding: '4px' }}>
+                {/* Fiyatlıyken yazdırma düzeniyle AYNI sıkıştırma: barkod kısalır, ad 2 TAM satır
+                    (flexShrink 0 — yoksa flex adı ezip tek satıra indiriyordu). */}
+                <div className="font-bold leading-none flex-shrink-0" style={{ fontSize: fiyatGoster ? '7px' : '8px', letterSpacing: '0.5px' }}>{MAGAZA_ADI}</div>
+                <div className="leading-tight overflow-hidden flex-shrink-0" style={{ fontSize: fiyatGoster ? '8px' : '9px', maxHeight: '2.15em' }}>{urun.ad}</div>
                 {onizlemeSvg && (
-                  <div className="w-full leading-none my-0.5" style={{ maxHeight: '36px' }}
+                  <div className="w-full leading-none my-0.5 overflow-hidden [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-h-full" style={{ maxHeight: fiyatGoster ? '20px' : '36px' }}
                     dangerouslySetInnerHTML={{ __html: onizlemeSvg }} />
                 )}
-                <div className="leading-none" style={{ fontSize: '9px', letterSpacing: '1.5px' }}>{deger}</div>
+                <div className="leading-none flex-shrink-0" style={{ fontSize: fiyatGoster ? '8px' : '9px', letterSpacing: '1.5px' }}>{deger}</div>
                 {fiyatGoster && (
-                  <div className="font-bold leading-none" style={{ fontSize: '11px' }}>
+                  <div className="font-bold leading-none flex-shrink-0" style={{ fontSize: '11px' }}>
                     {(urun.satis_fiyati || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺
                   </div>
                 )}
@@ -100,6 +111,15 @@ export default function BarkodModal({ urun, onKapat }) {
             </div>
 
             <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Etiket boyutu</label>
+                <select value={boyut} onChange={handleBoyutSec}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white">
+                  {ETIKET_BOYUTLARI.map(b => (
+                    <option key={b.kod} value={b.kod}>{b.ad}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Yazıcı</label>
                 <select value={secilenYazici} onChange={handleYaziciSec}

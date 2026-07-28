@@ -4,8 +4,9 @@
 const { BrowserWindow } = require('electron')
 const { htmlYukle } = require('./html-yukle')
 
-const ETIKET_GENISLIK_MIKRON = 45000 // 45mm
-const ETIKET_YUKSEKLIK_MIKRON = 20000 // 20mm
+// Varsayılan etiket ölçüsü (renderer boyut gönderirse o kullanılır — 40x20 XP-470B vb.)
+const VARSAYILAN_GENISLIK_MM = 45
+const VARSAYILAN_YUKSEKLIK_MM = 20
 
 // Geçici gizli pencere oluşturup verilen iş ile çalıştırır, sonra kapatır.
 async function gizliPencereyle(is) {
@@ -31,8 +32,12 @@ async function yazicilariGetir() {
 
 // Verilen HTML etiketlerini yazdırır.
 // yazici verilirse o yazıcıya sessizce basar; verilmezse sistem yazdırma diyaloğu açılır.
-async function barkodYazdir({ html, yazici }) {
+async function barkodYazdir({ html, yazici, genislikMm, yukseklikMm }) {
   if (!html) throw new Error('Yazdırılacak etiket içeriği boş')
+  // Sayfa boyutu etiketle AYNI olmalı — 40mm etikete 45mm sayfa gönderilirse
+  // bazı sürücüler (XP-470B) işi sessizce reddediyor/kaydırıyor.
+  const gen = Math.round((Number(genislikMm) || VARSAYILAN_GENISLIK_MM) * 1000)
+  const yuk = Math.round((Number(yukseklikMm) || VARSAYILAN_YUKSEKLIK_MM) * 1000)
   return gizliPencereyle(async (win) => {
     await htmlYukle(win, html)
     await new Promise((resolve, reject) => {
@@ -40,7 +45,7 @@ async function barkodYazdir({ html, yazici }) {
         silent: !!yazici,
         printBackground: true,
         margins: { marginType: 'none' },
-        pageSize: { width: ETIKET_GENISLIK_MIKRON, height: ETIKET_YUKSEKLIK_MIKRON },
+        pageSize: { width: gen, height: yuk },
       }
       if (yazici) secenekler.deviceName = yazici
       win.webContents.print(secenekler, (success, failureReason) => {
@@ -69,6 +74,6 @@ async function onizlemeAc({ html, baslik }) {
 
 module.exports = {
   'barkod:yazicilar': () => yazicilariGetir(),
-  'barkod:yazdir': ({ html, yazici }) => barkodYazdir({ html, yazici }),
+  'barkod:yazdir': ({ html, yazici, genislikMm, yukseklikMm }) => barkodYazdir({ html, yazici, genislikMm, yukseklikMm }),
   'kargo-etiket:onizle': ({ html, baslik }) => onizlemeAc({ html, baslik }),
 }

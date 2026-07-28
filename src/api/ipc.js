@@ -104,7 +104,7 @@ export const fisApi = {
 
 export const barkodApi = {
   yazicilar: () => invoke('barkod:yazicilar'),
-  yazdir: (html, yazici) => invoke('barkod:yazdir', { html, yazici }),
+  yazdir: (html, yazici, boyut) => invoke('barkod:yazdir', { html, yazici, ...boyut }),
 }
 
 export const upsApi = {
