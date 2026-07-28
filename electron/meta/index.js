@@ -3,7 +3,7 @@
 // Polling main.js'ten çağrılır (ikas sipariş polling deseni; public webhook gerekmez).
 const client = require('./client')
 const { getDb } = require('../db/database')
-const { _upsertMesaj } = require('../db/sosyal-mesajlar')
+const { _upsertMesaj, _silinenGonderileriIsaretle } = require('../db/sosyal-mesajlar')
 
 // Son çekme turunun özeti (arka plan polling + manuel). UI "sessiz hata göstergesi"
 // bunu okur: arka planda 120 sn'de bir çalışan senkron hataları console'a yutuyordu;
@@ -25,6 +25,8 @@ async function cekFacebookYorumlar() {
   const sayfaId = client._sayfaId()
   if (!sayfaId) return 0
   let n = 0
+  const gorulen = new Set()
+  let enEski = null
   // comments.order(reverse_chronological): en YENİ yorumlar önce gelsin. Varsayılan
   // kronolojik sırada (en eski önce) sürekli yorum alan gönderilerde yeni yorumlar hep
   // pencerenin dışında kalıp polling'e hiç düşmüyordu.
@@ -36,6 +38,8 @@ async function cekFacebookYorumlar() {
     limit: POLL_GONDERI_LIMIT,
   }, (data) => {
     for (const gonderi of data) {
+      gorulen.add(gonderi.id)
+      if (gonderi.created_time) enEski = gonderi.created_time // liste yeni→eski: sonuncusu en eski
       // Gönderinin kendisini kaydet (yorumu olmasa bile listede görünsün).
       const ktx = {
         konu_baslik: gonderi.message || '(görsel gönderi)',
@@ -63,6 +67,8 @@ async function cekFacebookYorumlar() {
       }
     }
   }, POLL_MAKS_SAYFA)
+  // Silinen gönderileri işaretle (Meta listesinde artık görünmeyenler) — liste gizler.
+  _silinenGonderileriIsaretle('facebook', gorulen, enEski)
   return n
 }
 
@@ -71,6 +77,8 @@ async function cekInstagramYorumlar() {
   const igId = client._igId()
   if (!igId) return 0
   let n = 0
+  const gorulen = new Set()
+  let enEski = null
   // 'from' alanı KASITLI istenmez: IG yorumlarında 'from' izni yoksa alanı istemek isteğin
   // tamamını hataya düşürüp gömülü olduğu /media çağrısını kırıyor → hiç IG yorumu düşmüyordu.
   // Yorumcu adı 'username'den, metin 'text'ten gelir.
@@ -82,6 +90,8 @@ async function cekInstagramYorumlar() {
     limit: POLL_GONDERI_LIMIT,
   }, (data) => {
     for (const medya of data) {
+      gorulen.add(medya.id)
+      if (medya.timestamp) enEski = medya.timestamp // liste yeni→eski: sonuncusu en eski
       const ktx = {
         konu_baslik: medya.caption || '(görsel gönderi)',
         konu_gorsel: medya.thumbnail_url || medya.media_url, konu_link: medya.permalink,
@@ -108,6 +118,8 @@ async function cekInstagramYorumlar() {
       }
     }
   }, POLL_MAKS_SAYFA)
+  // Silinen gönderileri işaretle (Meta listesinde artık görünmeyenler) — liste gizler.
+  _silinenGonderileriIsaretle('instagram', gorulen, enEski)
   return n
 }
 
@@ -398,6 +410,11 @@ async function mesajCevapla({ id, metin, kullanici }) {
   getDb().prepare(
     "UPDATE sosyal_mesajlar SET durum = 'cevaplandi', cevaplayan_kullanici = ? WHERE id = ?"
   ).run(kullanici || null, id)
+  // DM yanıtı TÜM konuşmayı yanıtlar → konuşmadaki diğer okunmamışlar da kapansın.
+  // (Konuşma açmak artık okundu YAPMAZ; rozet ancak yanıtla veya elle işaretle söner.)
+  getDb().prepare(
+    "UPDATE sosyal_mesajlar SET durum = 'cevaplandi' WHERE konu_id = ? AND yon = 'gelen' AND durum = 'yeni'"
+  ).run(row.konu_id)
   _upsertMesaj({
     platform: row.platform, tur: 'dm', harici_id: `giden_${Date.now()}_${id}`, konu_id: row.konu_id,
     gonderen_id: row.gonderen_id, gonderen_ad: `${kullanici || 'Mağaza'} (yanıt)`, metin: metin.trim(),

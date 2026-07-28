@@ -36,6 +36,22 @@ function _upsertMesaj(m) {
     }
     return mevcut.id
   }
+  // ÇİFT GÖRÜNME ÖNLEMİ: bizim gönderdiğimiz DM önce yerel "eko" satırı (harici_id 'giden_…')
+  // olarak yazılır; sonra Meta'dan GERÇEK kimliğiyle geri çekilir (Send API kimliği çekim
+  // kimliğiyle eşleşmez). Yeni satır açmak yerine aynı konuşmadaki aynı metinli ekoyu
+  // benimseriz: eko gerçek kimliği alır, "kim yanıtladı" bilgisi korunur, kopya oluşmaz.
+  if (m.tur === 'dm' && m.yon === 'giden' && m.konu_id) {
+    const eko = db.prepare(`
+      SELECT id FROM sosyal_mesajlar
+      WHERE konu_id = ? AND tur = 'dm' AND yon = 'giden' AND metin = ?
+        AND harici_id LIKE 'giden\\_%' ESCAPE '\\'
+      ORDER BY id ASC LIMIT 1`).get(m.konu_id, m.metin || '')
+    if (eko) {
+      db.prepare('UPDATE sosyal_mesajlar SET harici_id = ?, mesaj_tarihi = COALESCE(?, mesaj_tarihi) WHERE id = ?')
+        .run(m.harici_id, m.mesaj_tarihi || null, eko.id)
+      return eko.id
+    }
+  }
   const bilgi = db.prepare(`
     INSERT INTO sosyal_mesajlar
       (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, konu_baslik, konu_gorsel, konu_link, ek_tur, ek_baslik, ek_gorsel, ek_link)
@@ -61,6 +77,25 @@ function _upsertMesaj(m) {
     ek_link: m.ek_link || null,
   })
   return bilgi.lastInsertRowid
+}
+
+// Silinen gönderi tespiti: çekim turu Meta'dan gelen gönderi id'lerini verir. Turun kapsadığı
+// tarih penceresi (en eski görülen gönderiden bugüne) İÇİNDE olup listede GÖRÜNMEYEN yerel
+// gönderi = Meta'da silinmiş → işaretle (listeden gizlenir). Pencereden eski gönderilere
+// dokunulmaz (listede olmamaları silindikleri anlamına gelmez — sayfalama kapsamı dışılar).
+// Görünen gönderilerin işareti kaldırılır (yanlış pozitif kendini onarır).
+function _silinenGonderileriIsaretle(platform, gorulenIdler, enEskiTarih) {
+  if (!gorulenIdler || !gorulenIdler.size || !enEskiTarih) return
+  const db = getDb()
+  const adaylar = db.prepare(`
+    SELECT id, konu_id, COALESCE(silindi, 0) silindi FROM sosyal_mesajlar
+    WHERE platform = ? AND tur = 'gonderi' AND mesaj_tarihi >= ?`).all(platform, enEskiTarih)
+  const guncelle = db.prepare('UPDATE sosyal_mesajlar SET silindi = ? WHERE id = ?')
+  for (const a of adaylar) {
+    const gorunuyor = gorulenIdler.has(a.konu_id)
+    if (!gorunuyor && !a.silindi) guncelle.run(1, a.id)
+    else if (gorunuyor && a.silindi) guncelle.run(0, a.id)
+  }
 }
 
 const SAYFA_BOYUT = 50
@@ -162,6 +197,8 @@ function gonderiler({ platform, arama, baslangic, bitis } = {}) {
          ORDER BY COALESCE(s2.mesaj_tarihi, s2.cekilme_tarihi) DESC LIMIT 1) son_yorumcu
     FROM sosyal_mesajlar s
     WHERE ${kosul.join(' AND ')} AND konu_id IS NOT NULL
+      -- Meta'da silinmiş gönderiler listelenmez (yorumları da anlamını yitirir).
+      AND konu_id NOT IN (SELECT konu_id FROM sosyal_mesajlar WHERE tur = 'gonderi' AND silindi = 1)
     GROUP BY konu_id, platform
     ${having.length ? 'HAVING ' + having.join(' AND ') : ''}
     ORDER BY COALESCE(gonderi_tarihi, son_zaman) DESC
@@ -210,6 +247,7 @@ function konusmalar({ platform, arama, baslangic, bitis } = {}) {
 
 module.exports = {
   _upsertMesaj,
+  _silinenGonderileriIsaretle,
   'sosyal:liste': (arg) => liste(arg),
   'sosyal:konu': (konu_id) => konu(konu_id),
   'sosyal:durumGuncelle': (arg) => durumGuncelle(arg),

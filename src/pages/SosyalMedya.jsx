@@ -152,10 +152,19 @@ export default function SosyalMedya() {
     try {
       const m = await sosyalApi.konu(satir.konu_id)
       setMesajlar(m)
-      // Yeni gelenleri okundu yap.
+      // BİLEREK okundu YAPMIYORUZ: mesaj yanıtlanana (veya elle işaretlenene) kadar
+      // "okunmadı" kalmalı — sadece açıp bakmak rozeti söndürmesin (istek 2026-07-28).
+    } catch (e) { toast.error(e.message) }
+  }
+
+  // Elle "okundu" işaretleme: yanıt gerektirmeyen konuşmalar için (yoksa rozet hiç sönmez).
+  async function okunduIsaretle() {
+    try {
+      const m = await sosyalApi.konu(seciliKonu.konu_id)
       const yeniler = m.filter(x => x.durum === 'yeni' && x.yon === 'gelen')
       for (const y of yeniler) await sosyalApi.durumGuncelle({ id: y.id, durum: 'okundu' }).catch(() => {})
-      if (yeniler.length) { sayaclariYukle(); listeYukle() }
+      toast.success('Okundu işaretlendi')
+      sayaclariYukle(); listeYukle(); konuSec(seciliKonu)
     } catch (e) { toast.error(e.message) }
   }
 
@@ -343,13 +352,13 @@ export default function SosyalMedya() {
         ) : seciliKonu.kind === 'dm' ? (
           <DmGorunum konu={seciliKonu} mesajlar={mesajlar} taslak={taslak} setTaslak={setTaslak}
             gonder={dmGonder} mesgul={mesgul} kaydirmaRef={kaydirmaRef}
-            banaAta={banaAta} kullanici={kullanici}
+            banaAta={banaAta} kullanici={kullanici} okunduIsaretle={okunduIsaretle}
             hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
         ) : (
           <YorumGorunum konu={seciliKonu} yorumlar={mesajlar} taslak={taslak} setTaslak={setTaslak}
             cevapla={yorumCevapla} mesgul={mesgul}
             ozelMesaj={ozelMesaj} setOzelMesaj={setOzelMesaj} ozelTaslak={ozelTaslak} setOzelTaslak={setOzelTaslak}
-            ozelGonder={ozelMesajGonder} banaAta={banaAta} kullanici={kullanici}
+            ozelGonder={ozelMesajGonder} banaAta={banaAta} kullanici={kullanici} okunduIsaretle={okunduIsaretle}
             hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
         )}
       </div>
@@ -516,7 +525,7 @@ function MesajEki({ m, bizden }) {
 }
 
 // --- DM görünümü: sohbet balonları ---
-function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirmaRef, banaAta, kullanici, hizliYanitlar, hizliKaydet }) {
+function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirmaRef, banaAta, kullanici, okunduIsaretle, hizliYanitlar, hizliKaydet }) {
   const kisi = [...mesajlar].reverse().find(m => m.yon === 'gelen')?.gonderen_ad || konu.kisi || 'Müşteri'
   const ekle = (t) => setTaslak(v => v && v.trim() ? `${v.trim()} ${t}` : t)
   return (
@@ -525,6 +534,12 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
         <Avatar ad={kisi} platform={konu.platform} boyut={38} />
         <div className="font-semibold text-gray-800 truncate">{kisi}</div>
         <AtamaButonu konu={konu} banaAta={banaAta} kullanici={kullanici} />
+        {okunduIsaretle && (
+          <button type="button" onClick={okunduIsaretle} title="Yanıt vermeden okunmadı rozetini kapat"
+            className="ml-auto text-xs text-gray-500 hover:text-gray-700 hover:underline flex-shrink-0">
+            ✓ Okundu işaretle
+          </button>
+        )}
       </div>
       <div ref={kaydirmaRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-2 bg-gray-50/50">
         {mesajlar.map(m => {
@@ -568,7 +583,7 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
 }
 
 // --- Yorum görünümü: orta yorum listesi + sağ gönderi önizleme ---
-function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozelMesaj, setOzelMesaj, ozelTaslak, setOzelTaslak, ozelGonder, banaAta, kullanici, hizliYanitlar, hizliKaydet }) {
+function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozelMesaj, setOzelMesaj, ozelTaslak, setOzelTaslak, ozelGonder, banaAta, kullanici, okunduIsaretle, hizliYanitlar, hizliKaydet }) {
   // Üst (kök) yorumlar = gelen ve bir üst yoruma bağlı OLMAYANLAR. Yanıtlar (ust_id dolu)
   // burada değil, ait oldukları yorumun altında iç içe gösterilir. Üstü yüklü değilse
   // (nadir) yorum yine kök olarak görünsün diye hariciSet kontrolü yapılır.
@@ -588,6 +603,10 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
           </div>
           <div className="ml-auto flex items-center gap-3 flex-shrink-0">
             <AtamaButonu konu={konu} banaAta={banaAta} kullanici={kullanici} />
+            {okunduIsaretle && (
+              <button type="button" onClick={okunduIsaretle} title="Yanıt vermeden okunmadı rozetini kapat"
+                className="text-xs text-gray-500 hover:text-gray-700 hover:underline">✓ Okundu işaretle</button>
+            )}
             {konu.konu_link && <a href={konu.konu_link} target="_blank" rel="noopener noreferrer"
               className="text-xs text-blue-600 hover:underline">Gönderiyi aç ↗</a>}
           </div>

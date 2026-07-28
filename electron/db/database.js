@@ -614,10 +614,34 @@ function migrate() {
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_tarihi TEXT") } catch {}
   // DM eki: hikaye yanıtı/bahsi, paylaşılan gönderi, görsel/video. Metin boş gelebilir —
   // içerik bu alanlardadır. ek_tur: 'hikaye_yanit'|'hikaye_bahsi'|'paylasim'|'gorsel'|'video'|'dosya'.
+  // Çift görünen giden DM onarımı (2026-07-28): yerel eko (giden_…) + Meta'dan çekilen aynı
+  // mesaj iki satır oluşturuyordu. Meta kopyası silinir, gerçek kimlik ekoya taşınır
+  // ("kim yanıtladı" ekoda). İdempotent: eko gerçek kimliği alınca desen artık eşleşmez.
+  try {
+    const ciftler = db.prepare(`
+      SELECT e.id eko_id, MIN(g.id) meta_id
+      FROM sosyal_mesajlar e JOIN sosyal_mesajlar g
+        ON g.konu_id = e.konu_id AND g.yon = 'giden' AND g.tur = 'dm'
+       AND g.metin = e.metin AND g.id != e.id AND g.harici_id NOT LIKE 'giden\\_%' ESCAPE '\\'
+      WHERE e.tur = 'dm' AND e.yon = 'giden' AND e.harici_id LIKE 'giden\\_%' ESCAPE '\\'
+      GROUP BY e.id`).all()
+    const kullanilan = new Set()
+    for (const c of ciftler) {
+      if (kullanilan.has(c.meta_id)) continue
+      kullanilan.add(c.meta_id)
+      const meta = db.prepare('SELECT harici_id, mesaj_tarihi FROM sosyal_mesajlar WHERE id = ?').get(c.meta_id)
+      if (!meta) continue
+      db.prepare('DELETE FROM sosyal_mesajlar WHERE id = ?').run(c.meta_id)
+      db.prepare('UPDATE sosyal_mesajlar SET harici_id = ?, mesaj_tarihi = COALESCE(?, mesaj_tarihi) WHERE id = ?')
+        .run(meta.harici_id, meta.mesaj_tarihi, c.eko_id)
+    }
+  } catch {}
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_tur TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_baslik TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_gorsel TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_link TEXT") } catch {}
+  // Gönderi Meta'da silinmişse işaretlenir (listeden gizlenir) — bkz. _silinenGonderileriIsaretle.
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN silindi INTEGER DEFAULT 0") } catch {}
   // Başarısız gönderim takibi. Eskiden hata durumunda da ozel_mesaj_tarihi damgalanıyordu
   // ("her turda aynı hatayı tekrarlama" için) → damga başarıyı da başarısızlığı da aynı
   // gösteriyordu, başarısızlar SESSİZCE kayboluyordu. Artık ayrı: hata metni + deneme sayacı.
