@@ -441,6 +441,36 @@ function HizliYanitlar({ onSec, yanitlar = [], onKaydet }) {
   )
 }
 
+// Mesaj eki (hikaye yanıtı / paylaşılan gönderi / görsel-video) balon içinde gösterilir.
+// Hikaye CDN linki hikaye silinince (24 saat) ölür → görsel yüklenmezse etiket yine kalır.
+const EK_ETIKET = {
+  hikaye_yanit: '📖 Hikayeye yanıt verdi',
+  hikaye_bahsi: '📖 Hikayede bahsetti',
+  paylasim: '🔗 Gönderi paylaştı',
+  gorsel: '📷 Görsel',
+  video: '🎬 Video',
+  dosya: '📎 Dosya',
+}
+function MesajEki({ m, bizden }) {
+  if (!m.ek_tur) return null
+  const etiket = EK_ETIKET[m.ek_tur] || '📎 Ek'
+  const ic = (
+    <div className={`rounded-xl overflow-hidden mb-1 ${bizden ? 'bg-violet-700/60' : 'bg-white border border-gray-300'}`}>
+      {m.ek_gorsel && (
+        <img src={m.ek_gorsel} alt="" loading="lazy"
+          className="max-h-52 w-full object-cover"
+          onError={e => { e.currentTarget.style.display = 'none' }} />
+      )}
+      <div className={`px-2.5 py-1.5 text-xs ${bizden ? 'text-violet-100' : 'text-gray-600'}`}>
+        {etiket}{m.ek_baslik && !etiket.includes(m.ek_baslik) ? ` — ${m.ek_baslik}` : ''}
+      </div>
+    </div>
+  )
+  return m.ek_link
+    ? <a href={m.ek_link} target="_blank" rel="noopener noreferrer" className="block hover:opacity-90">{ic}</a>
+    : ic
+}
+
 // --- DM görünümü: sohbet balonları ---
 function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirmaRef, banaAta, kullanici, hizliYanitlar, hizliKaydet }) {
   const kisi = [...mesajlar].reverse().find(m => m.yon === 'gelen')?.gonderen_ad || konu.kisi || 'Müşteri'
@@ -459,6 +489,7 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
             <div key={m.id} className={`flex ${bizden ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[70%] px-4 py-2 rounded-2xl text-sm whitespace-pre-wrap
                 ${bizden ? 'bg-violet-600 text-white rounded-br-md' : 'bg-gray-200 text-gray-800 rounded-bl-md'}`}>
+                <MesajEki m={m} bizden={bizden} />
                 {m.metin}
                 <div className={`text-[10px] mt-1 ${bizden ? 'text-violet-200' : 'text-gray-400'}`}>{zaman(m.mesaj_tarihi)}{m.cevaplayan_kullanici ? ` · ${m.cevaplayan_kullanici}` : ''}</div>
               </div>

@@ -612,6 +612,12 @@ function migrate() {
   // verir → arayüz bunu gösterip ikinci denemeyi engeller. NULL = gönderilmedi.
   // SADECE BAŞARIDA yazılır — başarısızlık ozel_mesaj_hata/deneme'ye gider (aşağı bak).
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_tarihi TEXT") } catch {}
+  // DM eki: hikaye yanıtı/bahsi, paylaşılan gönderi, görsel/video. Metin boş gelebilir —
+  // içerik bu alanlardadır. ek_tur: 'hikaye_yanit'|'hikaye_bahsi'|'paylasim'|'gorsel'|'video'|'dosya'.
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_tur TEXT") } catch {}
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_baslik TEXT") } catch {}
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_gorsel TEXT") } catch {}
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_link TEXT") } catch {}
   // Başarısız gönderim takibi. Eskiden hata durumunda da ozel_mesaj_tarihi damgalanıyordu
   // ("her turda aynı hatayı tekrarlama" için) → damga başarıyı da başarısızlığı da aynı
   // gösteriyordu, başarısızlar SESSİZCE kayboluyordu. Artık ayrı: hata metni + deneme sayacı.

@@ -143,6 +143,46 @@ async function igKonusmaIdleri(sayfaId) {
   return idler
 }
 
+// DM mesaj alanları: metin dışı içerik (hikaye yanıtı, paylaşılan gönderi, görsel/video)
+// attachments/shares/story alanlarında gelir — istenmezse mesaj BOŞ görünür.
+// 'story' yalnız IG'de geçerli; FB isteğine eklenirse alan hatası verir.
+const DM_ALANLAR = 'id,message,from,created_time,' +
+  'attachments{id,mime_type,name,image_data,video_data,file_url},shares{link,name,description}'
+const DM_ALANLAR_IG = DM_ALANLAR + ',story'
+
+// Mesajın metin dışı ekini ayrıştırır → sosyal_mesajlar.ek_* alanları (yoksa null).
+// Öncelik: hikaye (IG'ye özgü, en ayırt edici) → paylaşım → medya eki.
+// NOT: Hikaye CDN linki hikaye 24 saat sonra silinince ölür; UI bunu bilerek gösterir.
+function mesajEki(m) {
+  const hikaye = m.story?.reply_to?.link || m.story?.mention?.link
+  if (hikaye) {
+    const bahis = !m.story?.reply_to?.link
+    return {
+      ek_tur: bahis ? 'hikaye_bahsi' : 'hikaye_yanit',
+      ek_baslik: bahis ? 'Hikayede bahsetti' : 'Hikayeye yanıt',
+      ek_gorsel: hikaye, ek_link: hikaye,
+    }
+  }
+  const p = m.shares?.data?.[0]
+  if (p && (p.link || p.name || p.description)) {
+    return {
+      ek_tur: 'paylasim', ek_baslik: p.name || p.description || 'Gönderi paylaşımı',
+      ek_gorsel: null, ek_link: p.link || null,
+    }
+  }
+  const a = m.attachments?.data?.[0]
+  if (a) {
+    const gorsel = a.image_data?.url || a.image_data?.preview_url || a.video_data?.preview_url || null
+    return {
+      ek_tur: a.video_data ? 'video' : (a.image_data ? 'gorsel' : 'dosya'),
+      ek_baslik: a.name || null,
+      ek_gorsel: gorsel,
+      ek_link: a.video_data?.url || a.file_url || gorsel,
+    }
+  }
+  return null
+}
+
 // Konuşmalardan (DM) mesajları çeker. platform: undefined=Facebook, 'instagram'=IG.
 async function cekMesajlar(platform) {
   const sayfaId = client._sayfaId()
@@ -166,9 +206,17 @@ async function cekMesajlar(platform) {
     let mesajlar
     try {
       mesajlar = await client.get(`${konusmaId}/messages`, {
-        fields: 'id,message,from,created_time', limit: 10,
+        fields: igMi ? DM_ALANLAR_IG : DM_ALANLAR, limit: 10,
       })
-    } catch { continue }
+    } catch {
+      // Zengin alanlar reddedilirse (alan adı/izin) TEMEL alanlarla devam et —
+      // ek içerik kaybolur ama DM akışı asla durmaz.
+      try {
+        mesajlar = await client.get(`${konusmaId}/messages`, {
+          fields: 'id,message,from,created_time', limit: 10,
+        })
+      } catch { continue }
+    }
     // Müşteri = mesajlarda bizim taraf DIŞINDAKİ ilk gönderen.
     const musteri = (mesajlar.data || []).map(m => m.from).find(f => f && !bizIdler.has(f.id)) || {}
     for (const m of mesajlar.data || []) {
@@ -179,6 +227,7 @@ async function cekMesajlar(platform) {
         gonderen_id: bizden ? musteri.id : (m.from?.id || musteri.id),
         gonderen_ad: bizden ? (musteri.name || musteri.username || 'Müşteri') : (m.from?.name || m.from?.username || musteri.name || 'Müşteri'),
         metin: m.message, yon: bizden ? 'giden' : 'gelen', mesaj_tarihi: m.created_time,
+        ...(mesajEki(m) || {}),
       })
       n++
     }

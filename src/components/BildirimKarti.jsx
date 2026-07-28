@@ -13,11 +13,15 @@ export default function BildirimKarti({ bildirim, onTikla }) {
   return (
     <button
       type="button"
-      onClick={() => onTikla(b)}
+      onClick={() => {
+        // Metin seçiliyorsa (kopyalamak için) tıklama sayma — okundu işaretleyip sayfa değiştirmesin.
+        if (String(window.getSelection?.() || '').trim()) return
+        onTikla(b)
+      }}
       className={`w-full text-left border rounded-xl px-4 py-3 transition-colors hover:brightness-95 ${vurgu} ${okunmadi ? 'ring-1 ring-inset ring-red-200' : 'opacity-70'}`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 select-text cursor-text">
           <p className={`text-sm ${okunmadi ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'}`}>
             {b.onem === 'yuksek' && <span className="mr-1">⚠️</span>}
             {b.baslik}

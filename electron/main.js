@@ -97,6 +97,26 @@ function createWindow() {
     },
   })
 
+  // Sağ tık bağlam menüsü — Electron varsayılan olarak sunmaz. Girdi alanlarında
+  // kes/yapıştır, seçili metinde kopyala; hiçbir koşul yoksa menü açılmaz.
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const { isEditable, selectionText, editFlags } = params
+    const seciliVar = Boolean(selectionText && selectionText.trim())
+    const ogeler = []
+    if (isEditable) {
+      ogeler.push(
+        { label: 'Kes', role: 'cut', enabled: editFlags.canCut },
+        { label: 'Kopyala', role: 'copy', enabled: editFlags.canCopy },
+        { label: 'Yapıştır', role: 'paste', enabled: editFlags.canPaste },
+        { type: 'separator' },
+        { label: 'Tümünü Seç', role: 'selectAll', enabled: editFlags.canSelectAll },
+      )
+    } else if (seciliVar) {
+      ogeler.push({ label: 'Kopyala', role: 'copy' })
+    }
+    if (ogeler.length) Menu.buildFromTemplate(ogeler).popup({ window: mainWindow })
+  })
+
   // Menü kapatılsa da kısayol DevTools'u açabilir → F12 ve Ctrl/Cmd+Shift+I engellenir.
   mainWindow.webContents.on('before-input-event', (event, input) => {
     if (isDev) return

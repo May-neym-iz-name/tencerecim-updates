@@ -9,23 +9,29 @@ function _upsertMesaj(m) {
   const db = getDb()
   const mevcut = db.prepare('SELECT id FROM sosyal_mesajlar WHERE harici_id = ?').get(m.harici_id)
   if (mevcut) {
-    // Mevcut satırda gönderi bağlamı eksikse doldur (eski kayıtlar için geriye dönük).
-    if (m.konu_baslik || m.konu_gorsel || m.konu_link) {
+    // Mevcut satırda gönderi bağlamı / mesaj eki eksikse doldur (eski kayıtlar için geriye dönük).
+    if (m.konu_baslik || m.konu_gorsel || m.konu_link || m.ek_tur) {
       db.prepare(`UPDATE sosyal_mesajlar SET
         konu_baslik = COALESCE(konu_baslik, @konu_baslik),
         konu_gorsel = COALESCE(konu_gorsel, @konu_gorsel),
-        konu_link   = COALESCE(konu_link, @konu_link)
+        konu_link   = COALESCE(konu_link, @konu_link),
+        ek_tur      = COALESCE(ek_tur, @ek_tur),
+        ek_baslik   = COALESCE(ek_baslik, @ek_baslik),
+        ek_gorsel   = COALESCE(ek_gorsel, @ek_gorsel),
+        ek_link     = COALESCE(ek_link, @ek_link)
         WHERE id = @id`).run({
         id: mevcut.id, konu_baslik: m.konu_baslik || null,
         konu_gorsel: m.konu_gorsel || null, konu_link: m.konu_link || null,
+        ek_tur: m.ek_tur || null, ek_baslik: m.ek_baslik || null,
+        ek_gorsel: m.ek_gorsel || null, ek_link: m.ek_link || null,
       })
     }
     return mevcut.id
   }
   const bilgi = db.prepare(`
     INSERT INTO sosyal_mesajlar
-      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, konu_baslik, konu_gorsel, konu_link)
-    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @konu_baslik, @konu_gorsel, @konu_link)
+      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, konu_baslik, konu_gorsel, konu_link, ek_tur, ek_baslik, ek_gorsel, ek_link)
+    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @konu_baslik, @konu_gorsel, @konu_link, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link)
   `).run({
     platform: m.platform,
     tur: m.tur,
@@ -41,6 +47,10 @@ function _upsertMesaj(m) {
     konu_baslik: m.konu_baslik || null,
     konu_gorsel: m.konu_gorsel || null,
     konu_link: m.konu_link || null,
+    ek_tur: m.ek_tur || null,
+    ek_baslik: m.ek_baslik || null,
+    ek_gorsel: m.ek_gorsel || null,
+    ek_link: m.ek_link || null,
   })
   return bilgi.lastInsertRowid
 }
@@ -175,7 +185,11 @@ function konusmalar({ platform, arama, baslangic, bitis } = {}) {
         (SELECT gonderen_ad FROM sosyal_mesajlar s2b WHERE s2b.konu_id = s.konu_id
            ORDER BY COALESCE(s2b.mesaj_tarihi, s2b.cekilme_tarihi) DESC LIMIT 1)
       ) kisi,
-      (SELECT metin FROM sosyal_mesajlar s3 WHERE s3.konu_id = s.konu_id
+      -- Son mesajın metni; metin boşsa (hikaye yanıtı / paylaşım / medya) ek başlığını göster.
+      (SELECT CASE WHEN COALESCE(metin,'') != '' THEN metin
+                   WHEN ek_tur IS NOT NULL THEN '📎 ' || COALESCE(ek_baslik, 'Ek içerik')
+                   ELSE metin END
+         FROM sosyal_mesajlar s3 WHERE s3.konu_id = s.konu_id
          ORDER BY COALESCE(s3.mesaj_tarihi, s3.cekilme_tarihi) DESC LIMIT 1) son_metin
     FROM sosyal_mesajlar s
     WHERE ${kosul.join(' AND ')} AND konu_id IS NOT NULL

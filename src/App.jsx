@@ -90,8 +90,12 @@ function Uygulama() {
       if (!ilk) return
       toast.custom((t) => (
         <div
-          onClick={() => { window.location.hash = '#/bildirimler'; toast.dismiss(t.id) }}
-          className={`cursor-pointer bg-white border shadow-lg rounded-xl px-4 py-3 max-w-sm
+          onClick={() => {
+            // Metin seçiliyorsa (kopyalamak için) tıklama sayma — kutu kapanıp sayfa değişmesin.
+            if (String(window.getSelection?.() || '').trim()) return
+            window.location.hash = '#/bildirimler'; toast.dismiss(t.id)
+          }}
+          className={`cursor-pointer select-text bg-white border shadow-lg rounded-xl px-4 py-3 max-w-sm
             ${ilk.onem === 'yuksek' ? 'border-red-300' : 'border-gray-200'}
             ${t.visible ? 'animate-in fade-in' : 'opacity-0'}`}
         >
