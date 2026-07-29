@@ -227,7 +227,21 @@ async function createShipment(session, veri) {
   }
 }
 
+// "Gönderi zaten iptal edilmiş" yanıtını tanır. UPS bunu HATA olarak döndürür
+// (kod 4) ama gerçek dünyada iptal OLMUŞTUR — yani istediğimiz sonuç zaten sağlanmış.
+// Bunu hata saymak yerel kaydı sonsuza dek "iptal" olamaz halde bırakıyordu.
+// Yalnız KODA bakmak yetmez: ErrorCode tablosu belgelenmemiş (docs/ups-api-reference.md
+// §"ErrorCode has no documented lookup table"), aynı kod başka hataları da taşıyabilir.
+// Bu yüzden karar METİNden verilir; UPS'in kendi yazım hatası ("shiptment") dahil.
+function _zatenIptalMi(hataKod, aciklama) {
+  if (hataKod === '0') return false
+  const m = String(aciklama || '').toLowerCase()
+  if (!m) return false
+  return /shipt?ment .*already been cancell?ed/.test(m) || /zaten iptal/.test(m)
+}
+
 // Gönderi iptali. customerCode = UPS müşteri kodu, waybill = takip no.
+// Idempotent: zaten iptal edilmiş gönderi için de başarı döner (zatenIptal: true).
 async function cancelShipment(session, customerCode, waybill) {
   // DİKKAT: Cancel metodu WSDL'de küçük harf parametre adları kullanır
   // (sessionId/customerCode/waybillNumber). Dokümandaki PascalCase yazım yanlış;
@@ -239,9 +253,11 @@ async function cancelShipment(session, customerCode, waybill) {
   const yanit = await soapCagir(SHIPMENT_URL, SHIPMENT_NS, 'Cancel_Shipment_V1', govde)
   const hataKod = tagOku(yanit, 'ErrorCode')
   if (hataKod !== '0') {
-    throw new Error(`İptal başarısız (kod ${hataKod}): ${xmlCoz(tagOku(yanit, 'ErrorDefinition')) || 'Bilinmeyen hata'}`)
+    const aciklama = xmlCoz(tagOku(yanit, 'ErrorDefinition')) || ''
+    if (_zatenIptalMi(hataKod, aciklama)) return { iptal: true, zatenIptal: true }
+    throw new Error(`İptal başarısız (kod ${hataKod}): ${aciklama || 'Bilinmeyen hata'}`)
   }
-  return { iptal: true }
+  return { iptal: true, zatenIptal: false }
 }
 
 // Kurye çağırma (on-demand pickup). LabelSource=1 → etiket UPS'te basılır.
@@ -324,4 +340,5 @@ async function trackingLogin({ musteriKodu, kullaniciKodu, sifre }) {
 
 module.exports = {
   login, createShipment, cancelShipment, pickupRequest, trackLast, trackingLogin, shipmentPackages,
+  _zatenIptalMi, // test için (saf karar, ağsız)
 }
