@@ -35,6 +35,23 @@ uygulama ──GET /kargo/durumlar?since=…──► yerel yazım + ikas bildir
 | `POST /kargo/izle` | Bearer | `{"takipler":["1Z…","1Z…"]}` — izleme listesini birleştirir |
 | `GET /kargo/durumlar?since=ISO` | Bearer | son okumadan beri **durumu değişenler** |
 | `POST /kargo/yokla` | Bearer | bir turu elle tetikler (test için) |
+| `POST /ikas/webhook/<gizli-yol>` | **yok** | ikas webhook alıcısı — olay kuyruğuna yazar |
+| `GET /ikas/olaylar?since=ISO` | Bearer | son okumadan beri gelen ikas olayları |
+
+### ikas webhook ucu neden kimliksiz?
+
+ikas bizim bearer'ımızı göndermez ve imza başlığı belgelemez
+(`docs/ikas-api-reference.md:154`). Uç zorunlu olarak açıktır. Koruma üç katman:
+tahmin edilemez gizli yol (`IKAS_WEBHOOK_YOLU` secret'ı), gövdeye güvenmemek
+(yalnız sipariş id'si alınır, kaydı uygulama ikas'tan çeker) ve dakikada 60 olay
+tavanı.
+
+**Bu uç her durumda 200 döner** — geçersiz id'de bile. ikas 200 dışında bir cevapta
+3 denemeden sonra o teslimattan tamamen vazgeçer; düşen olayı uygulamanın 5 dk'lık
+mutabakat turu yakalar.
+
+`/ikas/olaylar` imleci `>` kullanır (kargo tarafındaki `>=`'den farklı): aynı siparişin
+birden çok olayı olabildiği için tüketilen satırın tekrar gelmesine gerek yok.
 
 `since` imleci: yanıttaki `imlec` alanını saklayıp bir sonraki isteğe verin.
 Sınır `>=` olduğu için aynı kayıt tekrar gelebilir — zararsızdır, uygulamadaki
@@ -78,13 +95,20 @@ npx wrangler secret put UPS_MUSTERI_KODU
 npx wrangler secret put UPS_KULLANICI_KODU
 npx wrangler secret put UPS_SIFRE
 npx wrangler secret put PAYLASILAN_ANAHTAR   # uygulama ile Worker arasındaki bearer
+npx wrangler secret put IKAS_WEBHOOK_YOLU    # ikas webhook URL'indeki gizli yol segmenti
 
 # 4) Yayına al ve doğrula
 npx wrangler deploy
 curl https://tencerecim-kargo.<subdomain>.workers.dev/saglik
 ```
 
-`PAYLASILAN_ANAHTAR` için rastgele değer üretmek:
+`IKAS_WEBHOOK_YOLU`, `PAYLASILAN_ANAHTAR`'dan **farklı** bir değer olmalı — biri
+sızarsa diğeri sağlam kalsın.
+
+Değeri komut geçmişine düşürmeden yüklemek için dosyadan boruyla verin
+(`wrangler secret put ... < dosya`); komut satırına yazarsanız kabuk günlüğünde kalır.
+
+Rastgele değer üretmek:
 
 ```powershell
 [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))

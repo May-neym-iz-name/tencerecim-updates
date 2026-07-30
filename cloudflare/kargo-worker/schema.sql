@@ -44,3 +44,19 @@ CREATE TABLE IF NOT EXISTS durumlar (
 );
 
 CREATE INDEX IF NOT EXISTS durumlar_degisim ON durumlar (degisim_zaman);
+
+-- ikas webhook olay kuyruğu.
+--
+-- Bu tablo OTORİTE DEĞİLDİR: yalnız "şu sipariş değişti" tetikleyicisi tutar.
+-- Siparişin kendisi ikas'tan uygulama tarafından çekilir (webhook imzası
+-- belgelenmemiş — docs/ikas-api-reference.md:154). Kaybolursa 5 dk'lık
+-- mutabakat turu aynı işi yapar.
+CREATE TABLE IF NOT EXISTS ikas_olaylar (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  siparis_id   TEXT NOT NULL,
+  konu         TEXT NOT NULL,
+  alinma_zaman TEXT NOT NULL
+);
+
+-- Uygulama imleci bu sütun üzerinden okur.
+CREATE INDEX IF NOT EXISTS ikas_olaylar_zaman ON ikas_olaylar (alinma_zaman);

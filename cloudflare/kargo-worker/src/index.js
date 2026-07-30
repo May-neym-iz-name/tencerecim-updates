@@ -57,6 +57,27 @@ function json(veri, durum = 200) {
   })
 }
 
+// ikas sipariş id'si UUID benzeri bir dizgedir. Açık uçtan gelen gövdeye
+// güvenmiyoruz; yalnız biçimi tutan bir id kabul edilir ve o bile yetkili
+// veri sayılmaz — kaydı uygulama ikas'tan kendi çeker.
+const ID_DESENI = /^[A-Za-z0-9-]{8,64}$/
+
+// Dakikada en fazla bu kadar olay kuyruğa girer. Gerçek trafiğin çok üstünde
+// (yoğun günde bile saatte birkaç sipariş), yani meşru olay sınıra takılmaz.
+// Amaç: gizli yolu ele geçiren birinin uygulamayı sonsuz ikas çekimine
+// zorlamasını engellemek.
+const OLAY_DAKIKA_TAVANI = 60
+
+// Son dakikada kaç olay yazıldı? D1'den sayarız — Worker örnekleri arasında
+// paylaşılan tek durum orası (bellekteki sayaç her izolatta ayrı olurdu).
+async function olayTavaniAsildiMi(env) {
+  const sinir = new Date(Date.now() - 60 * 1000).toISOString()
+  const r = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM ikas_olaylar WHERE alinma_zaman > ?1'
+  ).bind(sinir).first()
+  return (r?.n || 0) >= OLAY_DAKIKA_TAVANI
+}
+
 /**
  * Bir yoklama turu. UPS'e sorar, sonucu D1'e yazar.
  * Uygulamanın yerel DB'sine DOKUNMAZ, ikas'a bildirim GÖNDERMEZ — o işler uygulamanın.
@@ -141,13 +162,43 @@ async function temizle(env) {
     env.DB.prepare('DELETE FROM izlenen WHERE son_gorulme < ?').bind(sinir),
     env.DB.prepare('DELETE FROM durumlar WHERE takip_no NOT IN (SELECT takip_no FROM izlenen)'),
   ])
-  return { silinenIzlenen: sonuc[0].meta.changes, silinenDurum: sonuc[1].meta.changes }
+  // Olaylar tüketildikten sonra değersizdir; 7 gün fazlasıyla yeterli
+  // (en uzun mutabakat penceresi 5 dk). Tablo sınırsız büyümesin.
+  const olay = await env.DB.prepare(
+    'DELETE FROM ikas_olaylar WHERE alinma_zaman < ?1'
+  ).bind(new Date(Date.now() - 7 * 86400_000).toISOString()).run()
+  return {
+    silinenIzlenen: sonuc[0].meta.changes,
+    silinenDurum: sonuc[1].meta.changes,
+    silinenOlay: olay.meta.changes,
+  }
 }
 
 export default {
   async fetch(istek, env) {
     const url = new URL(istek.url)
     const yetkili = tokenGecerli(istek.headers.get('authorization'), env.PAYLASILAN_ANAHTAR)
+
+    // ikas → Worker. KİMLİKSİZ olmak ZORUNDA: ikas bizim bearer'ımızı göndermez ve
+    // imza başlığı belgelemez (docs/ikas-api-reference.md:154). Koruma üç katman:
+    //   1) tahmin edilemez gizli yol (IKAS_WEBHOOK_YOLU secret'ı)
+    //   2) gövdeye güvenilmez — yalnız id alınır, kayıt ikas'tan uygulama çeker
+    //   3) dakika tavanı
+    // HER DURUMDA 200 DÖNER: ikas 200 dışında bir cevapta 3 denemeden sonra o
+    // teslimattan tamamen vazgeçer. Düşen olayı 5 dk'lık mutabakat turu yakalar.
+    if (istek.method === 'POST' && env.IKAS_WEBHOOK_YOLU &&
+        url.pathname === `/ikas/webhook/${env.IKAS_WEBHOOK_YOLU}`) {
+      let govde = null
+      try { govde = await istek.json() } catch {}
+      const siparisId = String(govde?.data?.id || govde?.id || '').trim()
+      const konu = String(govde?.scope || govde?.topic || 'bilinmeyen').slice(0, 64)
+      if (!ID_DESENI.test(siparisId)) return json({ ok: true, atlandi: 'gecersiz-id' })
+      if (await olayTavaniAsildiMi(env)) return json({ ok: true, atlandi: 'tavan' })
+      await env.DB.prepare(
+        'INSERT INTO ikas_olaylar (siparis_id, konu, alinma_zaman) VALUES (?1, ?2, ?3)'
+      ).bind(siparisId, konu, simdi()).run()
+      return json({ ok: true })
+    }
 
     // Sağlık ucu: token'sız yalnız "ayaktayım" der. Ayrıntı (kaç kayıt, son tur)
     // yetki ister — açık uçtan iş hacmi sızdırmanın anlamı yok.
@@ -197,6 +248,23 @@ export default {
         FROM durumlar WHERE degisim_zaman >= ?1 ORDER BY degisim_zaman ASC LIMIT ?2`)
         .bind(since, limit).all()
       return json({ kayitlar: results, imlec: results.length ? results[results.length - 1].degisim_zaman : since })
+    }
+
+    // Worker → uygulama. '>=' değil '>' kullanılır: imleç son okunan satırın
+    // alinma_zaman'ı, aynı satırı tekrar vermek gereksiz. Aynı milisaniyede iki
+    // olay yazılırsa id sırası ayırır (kargo/durumlar'dan farklı: orada satır
+    // başına tek kayıt var, burada aynı siparişin birden çok olayı olabilir).
+    if (url.pathname === '/ikas/olaylar' && istek.method === 'GET') {
+      const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z'
+      const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit')) || 200))
+      const { results } = await env.DB.prepare(`
+        SELECT id, siparis_id, konu, alinma_zaman FROM ikas_olaylar
+        WHERE alinma_zaman > ?1 ORDER BY alinma_zaman ASC, id ASC LIMIT ?2`)
+        .bind(since, limit).all()
+      return json({
+        kayitlar: results,
+        imlec: results.length ? results[results.length - 1].alinma_zaman : since,
+      })
     }
 
     // Elle tetikleme — canlı doğrulama ve "şimdi bak" düğmesi için.
