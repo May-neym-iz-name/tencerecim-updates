@@ -136,12 +136,18 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
-// ikas online siparişlerini periyodik çek (açılışta + her 90 saniyede bir).
-// Webhook yerine sık polling: masaüstü uygulama public endpoint alamadığı için
-// gecikmeyi ~1 dakikaya indirir. pullSiparisler updatedAt imleci ile artımlıdır
-// (yalnızca değişen siparişleri çeker), bu yüzden sık çağrı ucuzdur.
-// Otomatik senkron kapalıysa atlanır.
-const IKAS_SENK_ARALIGI_MS = 90 * 1000
+// ikas online siparişlerini periyodik çek — MUTABAKAT turu.
+//
+// Eskiden burası 90 saniyeydi ve tek yoldu: "masaüstü uygulama public endpoint
+// alamadığı için" webhook kurulamıyordu. O kısıt artık YOK — ikas webhook'u
+// Cloudflare Worker'a düşüyor ve sipariş ~5 saniyede geliyor
+// (ikasOlayYoklayiciBaslat, aşağıda).
+//
+// Bu tur yine de KALDIRILMADI: webhook sessizce bozulursa ya da ikas 3 denemede
+// vazgeçtiyse (docs/ikas-api-reference.md:150) kaçan siparişi yakalayan tek şey bu.
+// Bulut köprüsü kapalıyken de tek çalışan yol budur.
+// pullSiparisler updatedAt imleci ile artımlıdır, bu yüzden tur ucuzdur.
+const IKAS_SENK_ARALIGI_MS = 5 * 60 * 1000
 function ikasSiparisSenkBaslat() {
   const { _pullSiparisler } = require('./ikas')
   const { _ayarlariGetir } = require('./db/ikas-ayarlar')
@@ -163,6 +169,51 @@ function ikasSiparisSenkBaslat() {
   }
   setTimeout(calistir, 10 * 1000) // açılıştan 10 sn sonra ilk çekim
   setInterval(calistir, IKAS_SENK_ARALIGI_MS)
+}
+
+// ikas olay yoklayıcısı: Worker'daki webhook kuyruğunu 5 saniyede bir kontrol eder.
+//
+// Neden 5 saniye ucuz: ikas'a değil KENDİ Worker'ımıza gidiyoruz. Olay yoksa cevap
+// birkaç bayt ve D1'den tek indeksli okuma. ikas'ı 5 sn'de bir yoklamak hız sınırına
+// takılırdı — asıl kazanç bu ayrımda.
+//
+// İMLEÇ EN SONDA İLERLER: tur ortasında hata olursa aynı olaylar tekrar okunur.
+// _pullSiparisler idempotent olduğu için tekrar zararsız; kaçırmak telafi edilemez.
+const IKAS_OLAY_ARALIGI_MS = 5 * 1000
+const IKAS_OLAY_IMLECI = 'ikas_bulut_imlec'
+function ikasOlayYoklayiciBaslat() {
+  const { _pullSiparisler } = require('./ikas')
+  const { _ayarlariGetir } = require('./db/ikas-ayarlar')
+  const { _olaylariCek, _yeniImlec } = require('./ikas/bulut')
+  const upsBulut = require('./ups/bulut')
+  const yerelAyar = require('./db/yerel-ayarlar')
+  let calisiyor = false
+  let susturmaBitis = 0 // hata günlüğünü 5 dk sustur (5 sn'de bir konsolu doldurmasın)
+  const calistir = async () => {
+    if (calisiyor) return
+    try {
+      if (!upsBulut._ayar().acik) return          // köprü kapalı → eski davranış
+      if (!_ayarlariGetir().otomatik_senk) return
+      calisiyor = true
+      const imlec = yerelAyar._getir(IKAS_OLAY_IMLECI, '1970-01-01T00:00:00.000Z')
+      const { kayitlar } = await _olaylariCek(imlec)
+      if (!kayitlar.length) return
+      const r = await _pullSiparisler()
+      if (r?.kaydedilen || r?.guncellenen) siparisDegisti(r)
+      yerelAyar._yaz(IKAS_OLAY_IMLECI, _yeniImlec(kayitlar, imlec))
+    } catch (err) {
+      // Sessiz kalmıyoruz ama boğmuyoruz da: Worker erişilemezse 5 dk'lık mutabakat
+      // turu zaten yakalar, her 5 saniyede bir aynı satırı basmanın anlamı yok.
+      if (Date.now() > susturmaBitis) {
+        console.error('[ikas] olay yoklama hatası:', err.message)
+        susturmaBitis = Date.now() + 5 * 60 * 1000
+      }
+    } finally {
+      calisiyor = false
+    }
+  }
+  setTimeout(calistir, 15 * 1000)
+  setInterval(calistir, IKAS_OLAY_ARALIGI_MS)
 }
 
 // UPS takip yoklayıcısı: gönderi ağa okutulunca "Gönderildi", teslim edilince "Teslim Edildi"
@@ -236,6 +287,7 @@ if (tekOrnekKilidi) {
     require('./db/database').init()
     createWindow()
     ikasSiparisSenkBaslat()
+    ikasOlayYoklayiciBaslat()
     upsTakipBaslat()
     metaSosyalSenkBaslat()
     // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
