@@ -454,11 +454,12 @@ export default function Ayarlar() {
             UPS etiketi 100×150mm boyutundadır; ürün barkodu yazıcısından (45×20mm) farklı bir kargo etiketi yazıcısı/rulosu gerektirir.
           </p>
 
-          <p className="text-sm font-medium text-gray-600 mb-2">☁️ Bulut Takip Köprüsü</p>
+          <p className="text-sm font-medium text-gray-600 mb-2">☁️ Bulut Köprüsü</p>
           <p className="text-xs text-gray-400 mb-2">
             Doldurulursa kargo durumları UPS'ten <b>Cloudflare üzerinden 7/24</b> yoklanır — program kapalıyken
-            teslim olan kargolar da işlenir. Boş bırakılırsa eski yöntem (program açıkken doğrudan UPS'e sorma)
-            kullanılır. Her iki alan da dolu olmalı.
+            teslim olan kargolar da işlenir. Ayrıca <b>ikas siparişleri ~5 saniyede</b> düşer (webhook), 90 saniye
+            beklenmez. Boş bırakılırsa her ikisi de eski yönteme (program açıkken doğrudan sorma) döner.
+            Her iki alan da dolu olmalı.
           </p>
           <div className="grid grid-cols-2 gap-2 mb-2">
             <input value={ups.bulut_url || ''} onChange={e => upsAlan('bulut_url', e.target.value)}
