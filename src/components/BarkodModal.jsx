@@ -3,7 +3,6 @@ import toast from 'react-hot-toast'
 import { barkodApi } from '../api/ipc'
 import { barkodSvg, barkodYazdirHtml, ETIKET_BOYUTLARI, VARSAYILAN_BOYUT, boyutBul } from '../lib/barkod'
 
-const MAGAZA_ADI = 'TENCERECİM'
 const YAZICI_KEY = 'barkod_yazici'
 const FIYAT_KEY = 'barkod_fiyat_goster'
 const BOYUT_KEY = 'barkod_etiket_boyut' // cihaza özel: her PC'nin yazıcısı/etiketi farklı
@@ -58,8 +57,9 @@ export default function BarkodModal({ urun, onKapat }) {
     if (!deger) return
     setYazdiriliyor(true)
     try {
+      // magaza GEÇİLMİYOR: etikette mağaza adı istenmiyor. barkodYazdirHtml alanı
+      // opsiyonel tutuyor (boşsa satırı hiç basmıyor), geri istenirse tek satır.
       const html = barkodYazdirHtml({
-        magaza: MAGAZA_ADI,
         ad: urun.ad,
         deger,
         fiyat: urun.satis_fiyati,
@@ -95,7 +95,6 @@ export default function BarkodModal({ urun, onKapat }) {
                 style={{ width: `${boyutBul(boyut).genislik * 4}px`, height: `${boyutBul(boyut).yukseklik * 4}px`, padding: '4px' }}>
                 {/* Fiyatlıyken yazdırma düzeniyle AYNI sıkıştırma: barkod kısalır, ad 2 TAM satır
                     (flexShrink 0 — yoksa flex adı ezip tek satıra indiriyordu). */}
-                <div className="font-bold leading-none flex-shrink-0" style={{ fontSize: fiyatGoster ? '7px' : '8px', letterSpacing: '0.5px' }}>{MAGAZA_ADI}</div>
                 <div className="leading-tight overflow-hidden flex-shrink-0" style={{ fontSize: fiyatGoster ? '8px' : '9px', maxHeight: '2.15em' }}>{urun.ad}</div>
                 {onizlemeSvg && (
                   <div className="w-full leading-none my-0.5 overflow-hidden [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-h-full" style={{ maxHeight: fiyatGoster ? '20px' : '36px' }}

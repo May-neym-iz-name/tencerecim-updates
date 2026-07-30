@@ -65,6 +65,11 @@ export function barkodYazdirHtml({ magaza, ad, deger, fiyat, adet = 1, fiyatGost
   // Fiyat satırı varken 20mm yüksekliğe her şey sığmıyordu (ad kırpılıyordu).
   // Fiyatlı düzen bütçesi (kullanılabilir ~18.4mm): mağaza 2 + ad 2×2.1 + barkod 5.5
   // + numara 2.3 + fiyat 3 + boşluklar ≈ 17.6mm → ada İKİ TAM satır kalır.
+  //
+  // NOT: uygulama artık `magaza` GEÇMİYOR (BarkodModal, 2026-07-30) — o satırın 2mm'si
+  // boşta. Alan opsiyonel bırakıldı; isteyen tekrar geçebilir. Boşalan yeri barkoda
+  // vermek okunurluğu artırabilir ama fiziksel baskı henüz doğrulanmadığı için
+  // ölçüler bilerek DEĞİŞTİRİLMEDİ.
   const barkodMaksMm = fiyatGoster ? 5.5 : 9
   const adPt = fiyatGoster ? 6 : 6.5
   const magazaPt = fiyatGoster ? 5.5 : 6
