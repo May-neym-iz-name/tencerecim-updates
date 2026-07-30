@@ -60,3 +60,12 @@ CREATE TABLE IF NOT EXISTS ikas_olaylar (
 
 -- Uygulama imleci bu sütun üzerinden okur.
 CREATE INDEX IF NOT EXISTS ikas_olaylar_zaman ON ikas_olaylar (alinma_zaman);
+
+-- TEŞHİS: işlenemeyen webhook gövdeleri. ikas gövde şemasını belgelemiyor;
+-- id'yi çıkaramadığımızda ham gövdeyi buraya yazıp GET /ikas/ham ile okuyoruz.
+-- Boş kalması "ikas hiç ulaşmadı" demektir — bu ayrım olmadan teşhis yapılamıyor.
+CREATE TABLE IF NOT EXISTS ikas_ham (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  govde        TEXT,
+  alinma_zaman TEXT NOT NULL
+);

@@ -190,9 +190,17 @@ export default {
         url.pathname === `/ikas/webhook/${env.IKAS_WEBHOOK_YOLU}`) {
       let govde = null
       try { govde = await istek.json() } catch {}
-      const siparisId = String(govde?.data?.id || govde?.id || '').trim()
+      const siparisId = String(govde?.data?.id || govde?.id || govde?.orderId || '').trim()
       const konu = String(govde?.scope || govde?.topic || 'bilinmeyen').slice(0, 64)
-      if (!ID_DESENI.test(siparisId)) return json({ ok: true, atlandi: 'gecersiz-id' })
+      if (!ID_DESENI.test(siparisId)) {
+        // TEŞHİS: id'yi çıkaramadıysak gövde biçimi beklediğimizden farklı demektir.
+        // Sessizce atmak "ikas hiç göndermedi" ile "gönderdi ama biz eledik" arasındaki
+        // farkı ölçülemez yapardı — ham gövdeyi saklayıp GET /ikas/ham ile okuyoruz.
+        await env.DB.prepare(
+          'INSERT INTO ikas_ham (govde, alinma_zaman) VALUES (?1, ?2)'
+        ).bind(JSON.stringify(govde || null).slice(0, 2000), simdi()).run()
+        return json({ ok: true, atlandi: 'gecersiz-id' })
+      }
       if (await olayTavaniAsildiMi(env)) return json({ ok: true, atlandi: 'tavan' })
       await env.DB.prepare(
         'INSERT INTO ikas_olaylar (siparis_id, konu, alinma_zaman) VALUES (?1, ?2, ?3)'
@@ -265,6 +273,16 @@ export default {
         kayitlar: results,
         imlec: results.length ? results[results.length - 1].alinma_zaman : since,
       })
+    }
+
+    // TEŞHİS ucu: işlenemeyen webhook gövdeleri. ikas'ın gerçekte ne gönderdiğini
+    // görmek için — belge gövde şemasını vermiyor. Boş dönmesi "ikas hiç ulaşmadı"
+    // demektir; dolu dönmesi "ulaştı ama biçimi farklı" demektir.
+    if (url.pathname === '/ikas/ham' && istek.method === 'GET') {
+      const { results } = await env.DB.prepare(
+        'SELECT id, govde, alinma_zaman FROM ikas_ham ORDER BY id DESC LIMIT 20'
+      ).all()
+      return json({ kayitlar: results })
     }
 
     // Elle tetikleme — canlı doğrulama ve "şimdi bak" düğmesi için.
