@@ -110,6 +110,7 @@ export const barkodApi = {
 export const upsApi = {
   ayarGetir: () => invoke('ups-ayar:getir'),
   ayarKaydet: (veri) => invoke('ups-ayar:kaydet', veri),
+  bulutTest: () => invoke('ups:bulut-test'),
   iller: () => invoke('ups:iller'),
   ilceler: (ilKodu) => invoke('ups:ilceler', ilKodu),
   yazicilar: () => invoke('barkod:yazicilar'),

@@ -15,6 +15,12 @@ const { _ayarlariGetir } = require('../db/ups-ayarlar')
 const soap = require('./soap')
 const { _ikasaBildir: ikasaBildir } = require('../ikas/kargo-durum')
 const { _ekle: bildirimEkle } = require('../db/bildirimler')
+const bulut = require('./bulut')
+const yerelAyar = require('../db/yerel-ayarlar')
+
+// Bulut köprüsünün okuma imleci. PC'ye ÖZEL (yerel_ayarlar senkronlanmaz): her PC
+// değişiklikleri kendi yerel DB'sine uygulamak zorunda, dolayısıyla kendi damgasını tutar.
+const IMLEC_ANAHTARI = 'kargo_bulut_imlec'
 
 // docs/ups-api-reference.md §1. Metne ASLA bakma — StatusCode tek doğru kaynak
 // ("HD" metninde 'teslim' geçer ama teslim değil; "S7"de geçmez ama teslim de değil).
@@ -176,13 +182,36 @@ async function takipleriYokla() {
   const bekleyenler = _bekleyenKargolar(db)
   if (!bekleyenler.length) return sonuc
 
-  const ayar = _ayarlariGetir()
-  if (!ayar.musteri_kodu || !ayar.kullanici_kodu || !ayar.sifre) return sonuc
+  // İKİ KAYNAK, TEK İŞLEME. Aşağıdaki döngü (durumCevir, bildirim, ikas, DB yazımı)
+  // verinin hangi kaynaktan geldiğini BİLMEZ ve bilmemeli — tek fark onu nereden aldığımız:
+  //   bulut açık   → Worker'ın D1'deki önbelleği (UPS'e burada hiç gidilmez)
+  //   bulut kapalı → doğrudan UPS SOAP (eski yol, aynen duruyor)
+  // Köprü çökerse tek yapılacak ayarı boşaltmak; eski kod yolu yerinde duruyor.
+  const bulutAyar = bulut._ayar()
+  let session = null
+  let bulutDurumlar = null // Map<takip_no, ham UPS alanları>
+  let yeniImlec = null
 
-  // Takip servisi KENDİ oturumunu ister (gönderi oturumu burada geçmez) — bir kez al, hepsinde kullan.
-  const session = await soap.trackingLogin({
-    musteriKodu: ayar.musteri_kodu, kullaniciKodu: ayar.kullanici_kodu, sifre: ayar.sifre,
-  })
+  if (bulutAyar.acik) {
+    // Worker yoklanacak listeyi kendi üretemez (liste yerel SQLite'tan çıkıyor) — her turda iteriz.
+    // Birleştirme Worker'da idempotent: iki PC aynı numarayı itse de sorun olmaz.
+    await bulut._itListe(bekleyenler.map(b => b.takip_no))
+    const cekilen = await bulut._durumlariCek(yerelAyar._getir(IMLEC_ANAHTARI))
+    // Yalnız DEĞİŞENLER gelir. Haritada olmayan kargo = durumu değişmemiş = yapılacak iş yok.
+    bulutDurumlar = new Map(cekilen.kayitlar.map(r => [String(r.takip_no), {
+      durumKodu: r.durum_kodu, aciklama: r.aciklama || '', aciklama2: r.aciklama2 || '',
+      sube: r.sube || '', zaman: r.ups_zaman || '',
+    }]))
+    yeniImlec = cekilen.imlec
+  } else {
+    const ayar = _ayarlariGetir()
+    if (!ayar.musteri_kodu || !ayar.kullanici_kodu || !ayar.sifre) return sonuc
+
+    // Takip servisi KENDİ oturumunu ister (gönderi oturumu burada geçmez) — bir kez al, hepsinde kullan.
+    session = await soap.trackingLogin({
+      musteriKodu: ayar.musteri_kodu, kullaniciKodu: ayar.kullanici_kodu, sifre: ayar.sifre,
+    })
+  }
 
   const kargoYaz = db.prepare(`UPDATE kargolar SET son_durum = ?, son_durum_kodu = ?,
     son_durum_tarihi = datetime('now','localtime'), takip_sorgu_tarihi = datetime('now','localtime') WHERE id = ?`)
@@ -199,26 +228,36 @@ async function takipleriYokla() {
   for (const k of bekleyenler) {
     sonuc.sorgulanan++
     let d = null
-    try {
-      d = await soap.trackLast(session, k.takip_no)
-    } catch (e) {
-      // Kod 13 = henüz ağda değil: HATA DEĞİL, beklenen durum (etiket kesildi, koli verilmedi).
-      // Ölçüm (2026-07-17): 93 gönderinin 19'u bu durumdaydı — normal, gürültü yapma.
-      if (String(e.message).includes('kod 13')) {
-        sonuc.agdaDegil++
-        if (k.kargo_id) sorguDamga.run(k.kargo_id)
-      } else {
-        sonuc.hatalar.push(`${k.takip_no}: ${e.message}`)
+
+    if (bulutDurumlar) {
+      d = bulutDurumlar.get(String(k.takip_no)) || null
+      // Haritada yok = son okumamızdan beri değişmemiş. Ağa hiç girmemiş (kod 13)
+      // kargolar da buraya düşer — Worker onlar için durum satırı yazmaz.
+      if (!d) continue
+      // durumKodu null → Worker sorguladı ama UPS kod döndürmedi. Aşağıdaki
+      // durumCevir(null) zaten 'yok' der ve kargo atlanır; ayrıca dallanmaya gerek yok.
+    } else {
+      try {
+        d = await soap.trackLast(session, k.takip_no)
+      } catch (e) {
+        // Kod 13 = henüz ağda değil: HATA DEĞİL, beklenen durum (etiket kesildi, koli verilmedi).
+        // Ölçüm (2026-07-17): 93 gönderinin 19'u bu durumdaydı — normal, gürültü yapma.
+        if (String(e.message).includes('kod 13')) {
+          sonuc.agdaDegil++
+          if (k.kargo_id) sorguDamga.run(k.kargo_id)
+        } else {
+          sonuc.hatalar.push(`${k.takip_no}: ${e.message}`)
+        }
+        await bekle(CAGRI_ARASI_MS)
+        continue
       }
-      await bekle(CAGRI_ARASI_MS)
-      continue
     }
 
     const { durum, gonderildi } = durumCevir(d.durumKodu)
     if (durum === 'yok') {
       sonuc.agdaDegil++
       if (k.kargo_id) sorguDamga.run(k.kargo_id)
-      await bekle(CAGRI_ARASI_MS)
+      if (!bulutDurumlar) await bekle(CAGRI_ARASI_MS)
       continue
     }
 
@@ -261,8 +300,16 @@ async function takipleriYokla() {
     if (durum === 'teslim') sonuc.teslim++
     else if (gonderildi) sonuc.gonderildi++
 
-    await bekle(CAGRI_ARASI_MS)
+    // Nezaket beklemesi YALNIZ doğrudan UPS'e giderken gerekli. Bulut yolunda ağ
+    // çağrısı yok (harita bellekte) — burada beklemek 90 kargoda 22 sn'yi çöpe atardı.
+    if (!bulutDurumlar) await bekle(CAGRI_ARASI_MS)
   }
+
+  // İmleç EN SONDA ilerletilir: tur ortasında hata fırlarsa (throw) buraya hiç gelinmez
+  // ve aynı kayıtlar bir sonraki turda yeniden okunur. Tekrar okumak zararsız — yerel
+  // yazımlar idempotent (WHERE koşulları aynı damgayı ikinci kez basmaz), ama kaçırmak
+  // zararlı olurdu: o kargo bir daha ASLA "değişmiş" olarak gelmez.
+  if (yeniImlec) yerelAyar._yaz(IMLEC_ANAHTARI, yeniImlec)
 
   pencerelereDuyur(sonuc)
   return sonuc

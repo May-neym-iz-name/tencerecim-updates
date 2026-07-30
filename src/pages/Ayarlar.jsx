@@ -92,6 +92,16 @@ export default function Ayarlar() {
     finally { setUpsKaydediliyor(false) }
   }
 
+  // Bulut köprüsü bağlantı testi. Kaydedilmiş ayarla test eder — kutuya yeni bir değer
+  // yazıp KAYDETMEDEN test edilirse eski ayar denenir, bu yüzden önce kaydetmesi söylenir.
+  const [bulutTest, setBulutTest] = useState(null) // null | 'deneniyor' | {ok, ...}
+  async function bulutTestEt() {
+    setBulutTest('deneniyor')
+    try {
+      setBulutTest(await upsApi.bulutTest())
+    } catch (e) { setBulutTest({ ok: false, hata: e.message }) }
+  }
+
   // Mağaza-bazlı UPS gönderici adresleri
   const [gondericiler, setGondericiler] = useState({})
   const [gondericiMesgul, setGondericiMesgul] = useState(null)
@@ -442,6 +452,36 @@ export default function Ayarlar() {
           </select>
           <p className="text-xs text-gray-400 mb-4">
             UPS etiketi 100×150mm boyutundadır; ürün barkodu yazıcısından (45×20mm) farklı bir kargo etiketi yazıcısı/rulosu gerektirir.
+          </p>
+
+          <p className="text-sm font-medium text-gray-600 mb-2">☁️ Bulut Takip Köprüsü</p>
+          <p className="text-xs text-gray-400 mb-2">
+            Doldurulursa kargo durumları UPS'ten <b>Cloudflare üzerinden 7/24</b> yoklanır — program kapalıyken
+            teslim olan kargolar da işlenir. Boş bırakılırsa eski yöntem (program açıkken doğrudan UPS'e sorma)
+            kullanılır. Her iki alan da dolu olmalı.
+          </p>
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <input value={ups.bulut_url || ''} onChange={e => upsAlan('bulut_url', e.target.value)}
+              placeholder="Worker adresi (https://…workers.dev)" className="border rounded px-2 py-1.5 text-sm" />
+            <input type="password" value={ups.bulut_anahtar || ''} onChange={e => upsAlan('bulut_anahtar', e.target.value)}
+              placeholder="Paylaşılan anahtar" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+          <div className="flex items-center gap-2 mb-4">
+            <button type="button" onClick={bulutTestEt} disabled={bulutTest === 'deneniyor'}
+              className="border px-3 py-1 rounded-lg text-xs hover:bg-gray-50 disabled:opacity-50">
+              {bulutTest === 'deneniyor' ? 'Deneniyor…' : 'Bağlantıyı Test Et'}
+            </button>
+            {bulutTest && bulutTest !== 'deneniyor' && (
+              bulutTest.ok
+                ? <span className="text-xs text-green-600">
+                    ✓ Bağlandı — {bulutTest.izlenenAktif ?? 0} kargo izleniyor
+                    {bulutTest.sonSorgu ? ` · son yoklama ${new Date(bulutTest.sonSorgu).toLocaleString('tr-TR')}` : ' · henüz yoklama yapılmadı'}
+                  </span>
+                : <span className="text-xs text-red-600">✗ {bulutTest.hata || 'Bağlanılamadı'}</span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 mb-4">
+            Not: test <b>kaydedilmiş</b> ayarla yapılır — yeni değer girdiyseniz önce kaydedin.
           </p>
 
           <button onClick={upsKaydet} disabled={upsKaydediliyor}

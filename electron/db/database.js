@@ -186,6 +186,17 @@ function createTables() {
       deger TEXT
     );
 
+    -- BU PC'YE ÖZEL anahtar-değer. ups_ayarlar/uygulama_ayarlar'dan farkı: PC'ler arası
+    -- SENKRONLANMAZ (db/ayar-senk.js bu tabloya bakmaz) ve bakmamalı.
+    -- İlk kullanıcısı kargo bulut köprüsünün okuma imleci: her PC Worker'daki durum
+    -- değişikliklerini KENDİ yerel DB'sine uygulamak zorunda, dolayısıyla her PC'nin
+    -- "nereye kadar okudum" damgası ayrı olmak zorunda. Senkronlansaydı hızlı davranan
+    -- PC imleci ileri atar, diğeri aradaki değişiklikleri hiç görmezdi.
+    CREATE TABLE IF NOT EXISTS yerel_ayarlar (
+      anahtar TEXT PRIMARY KEY,
+      deger TEXT
+    );
+
     -- UPS il/ilçe (semt) kod tablosu. Districts.xlsx'ten seed edilir.
     CREATE TABLE IF NOT EXISTS ups_sehir_ilce (
       il_kodu INTEGER NOT NULL,

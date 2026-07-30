@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tencerecim-kargo",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-20",
+
+  "vars": {
+    // Tur başına kaç takip numarası yoklanır. Ücretsiz planda 45'i GEÇMEMELİ
+    // (50 alt-istek/çağrı sınırı; login + D1 batch de birer alt-istek).
+    // CPU sınırı da (10 ms) burada belirleyici: XML regex ayrıştırma partiyle büyür.
+    "PARTI_BOYUTU": "15"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tencerecim-kargo",
+      // Info@resiftencerecim.com's Account (9c347c235d3503fc66bfb2666ff5be33), bölge EEUR.
+      "database_id": "35121cb8-2cb1-4fb9-9d1c-9f42995cb7c2"
+    }
+  ],
+
+  "triggers": {
+    "crons": [
+      // Yoklama: 5 dakikada bir × 15 numara = saatte ~180 sorgu.
+      // Uygulamadaki 10 dk'lık tur bunun yanında 60 dk'ya çekilecek (mutabakat turu).
+      "*/5 * * * *",
+      // Gece temizliği: TTL dolmuş kayıtları siler. Ayrı tutuluyor ki yoklama turunun
+      // alt-istek bütçesini yemesin.
+      "15 3 * * *"
+    ]
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}
