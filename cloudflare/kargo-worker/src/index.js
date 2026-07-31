@@ -190,7 +190,13 @@ export default {
         url.pathname === `/ikas/webhook/${env.IKAS_WEBHOOK_YOLU}`) {
       let govde = null
       try { govde = await istek.json() } catch {}
-      const siparisId = String(govde?.data?.id || govde?.id || govde?.orderId || '').trim()
+      // ikas gövdesi: { merchantId, scope, data }
+      // ⚠ `data` bir NESNE DEĞİL, JSON METNİDİR (2026-07-31'de teşhis ucuyla ölçüldü).
+      // `govde.data.id` okumak bu yüzden hep boş dönüyordu ve gerçek siparişler
+      // "gecersiz-id" deyip sessizce eleniyordu. Metinse önce ayrıştır.
+      let veri = govde?.data
+      if (typeof veri === 'string') { try { veri = JSON.parse(veri) } catch { veri = null } }
+      const siparisId = String(veri?.id || govde?.id || govde?.orderId || '').trim()
       const konu = String(govde?.scope || govde?.topic || 'bilinmeyen').slice(0, 64)
       if (!ID_DESENI.test(siparisId)) {
         // TEŞHİS: id'yi çıkaramadıysak gövde biçimi beklediğimizden farklı demektir.
@@ -198,7 +204,9 @@ export default {
         // farkı ölçülemez yapardı — ham gövdeyi saklayıp GET /ikas/ham ile okuyoruz.
         await env.DB.prepare(
           'INSERT INTO ikas_ham (govde, alinma_zaman) VALUES (?1, ?2)'
-        ).bind(JSON.stringify(govde || null).slice(0, 2000), simdi()).run()
+        // 2000 karakter YETMİYORDU: ikas gövdesi siparişin tamamını taşıyor ve
+        // kesilen metin ayrıştırılamıyordu (id'yi görmek için tam gövde gerekti).
+        ).bind(JSON.stringify(govde || null).slice(0, 20000), simdi()).run()
         return json({ ok: true, atlandi: 'gecersiz-id' })
       }
       if (await olayTavaniAsildiMi(env)) return json({ ok: true, atlandi: 'tavan' })
