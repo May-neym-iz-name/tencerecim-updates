@@ -42,6 +42,10 @@ beforeEach(() => {
       urun_id INTEGER NOT NULL REFERENCES urunler(id) ON DELETE CASCADE,
       barkod TEXT NOT NULL UNIQUE, aciklama TEXT,
       olusturma_tarihi TEXT DEFAULT (datetime('now','localtime')));
+    CREATE TABLE urun_stoklar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      urun_id INTEGER NOT NULL REFERENCES urunler(id) ON DELETE CASCADE,
+      miktar REAL DEFAULT 0);
     INSERT INTO urunler (id, ad, barkod, sku, satis_fiyati) VALUES (1, 'Tencere 24', '8690000000001', 'TNC.LAV.00001', 100);
     INSERT INTO urunler (id, ad, barkod, sku, satis_fiyati) VALUES (2, 'Tava 20', '8690000000002', 'TNC.LAV.00002', 80);
   `)
@@ -96,5 +100,49 @@ describe('takma ad silme', () => {
 
   test('olmayan kayıt silinmek istenirse hata verir', () => {
     expect(() => urunler._barkodSil(999, db)).toThrow(/Barkod bulunamadı/)
+  })
+})
+
+describe('takma ad ile ürün bulma', () => {
+  test('takma ad barkod okutulunca doğru ürün gelir', () => {
+    urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    expect(urunler._barkodla('2900000000017', db).id).toBe(1)
+  })
+
+  test('birincil barkod hâlâ bulunur (regresyon)', () => {
+    expect(urunler._barkodla('8690000000001', db).id).toBe(1)
+  })
+
+  test('SKU ile bulma hâlâ çalışır (regresyon)', () => {
+    expect(urunler._barkodla('TNC.LAV.00001', db).id).toBe(1)
+  })
+
+  test('baştaki/sondaki boşluk yok sayılır', () => {
+    urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    expect(urunler._barkodla('  2900000000017 ', db).id).toBe(1)
+  })
+
+  test('takma ad silinince o barkod artık ürünü bulmaz', () => {
+    const b = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    urunler._barkodSil(b.id, db)
+    expect(urunler._barkodla('2900000000017', db)).toBeUndefined()
+  })
+
+  test('pasif ürünün takma adı ürün getirmez', () => {
+    urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    db.prepare('UPDATE urunler SET aktif=0 WHERE id=1').run()
+    expect(urunler._barkodla('2900000000017', db)).toBeUndefined()
+  })
+
+  test('bilinmeyen kod undefined döner', () => {
+    expect(urunler._barkodla('yokboyle', db)).toBeUndefined()
+  })
+})
+
+describe('ürün araması takma adı kapsar', () => {
+  test('takma ad barkodla arama sonuç döndürür', () => {
+    urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    const sql = "SELECT u.id FROM urunler u WHERE u.aktif=1 AND (u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE((SELECT GROUP_CONCAT(ub.barkod, ' ') FROM urun_barkodlar ub WHERE ub.urun_id = u.id),'')) LIKE ?"
+    expect(db.prepare(sql).all('%2900000000017%').map(r => r.id)).toEqual([1])
   })
 })

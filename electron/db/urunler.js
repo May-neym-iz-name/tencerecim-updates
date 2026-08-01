@@ -95,6 +95,20 @@ function barkodSil(id, db) {
   return { mesaj: 'Barkod silindi' }
 }
 
+// Barkod/SKU/takma ad ile ürün bul. Takma ad eşleşmesi urun_barkodlar üzerinden;
+// birincil barkod ve SKU davranışı DEĞİŞMEDEN korunur.
+function barkodIleBul(barkod, db) {
+  const deger = String(barkod || '').trim()
+  if (!deger) return undefined
+  return db.prepare(
+    `${URUN_SELECT} WHERE (
+        TRIM(u.barkod) = ?
+        OR TRIM(u.sku) = ?
+        OR u.id IN (SELECT ub.urun_id FROM urun_barkodlar ub WHERE TRIM(ub.barkod) = ?)
+      ) AND u.aktif = 1`
+  ).get(deger, deger, deger)
+}
+
 module.exports = {
   // durum: 'aktif' (varsayılan) | 'pasif'. Pasifler YALNIZCA Ürünler sekmesindeki
   // Pasif alanından istenir; satış/stok/set gibi tüm diğer çağrılar varsayılanla
@@ -114,7 +128,12 @@ module.exports = {
       // ancak bu sıra ve boşluklarla BİREBİR geçiyorsa eşleşiyordu, ayrıca "ÇELİK"
       // büyük yazılınca hiç bulunmuyordu (LIKE yalnız ASCII'de duyarsız).
       // Marka adı da aranır: ürün adında marka geçmese bile "lava tencere" çalışsın.
-      const k = kelimeKosulu("u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE(m.ad,'')", arama)
+      // Takma ad barkodlar da aranabilir olmalı: mal kabul/set ekranları ürünü
+      // urunler:listele ile arıyor, okutulan ek barkod orada da bulunmalı.
+      const k = kelimeKosulu(
+        "u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE(m.ad,'')" +
+        " || ' ' || COALESCE((SELECT GROUP_CONCAT(ub.barkod, ' ') FROM urun_barkodlar ub WHERE ub.urun_id = u.id),'')",
+        arama)
       where += k.sql
       params.push(...k.params)
       const kAd = kelimeKosulu('u.ad', arama)
@@ -153,14 +172,9 @@ module.exports = {
     return getDb().prepare(`${URUN_SELECT} WHERE u.id = ? AND u.aktif = 1`).get(id)
   },
 
-  'urunler:barkodla': (barkod) => {
-    const deger = String(barkod || '').trim()
-    if (!deger) return undefined
-    // Barkod ya da SKU ile eşleştir; olası baştaki/sondaki boşlukları yok say.
-    return getDb().prepare(
-      `${URUN_SELECT} WHERE (TRIM(u.barkod) = ? OR TRIM(u.sku) = ?) AND u.aktif = 1`
-    ).get(deger, deger)
-  },
+  _barkodla: barkodIleBul,
+
+  'urunler:barkodla': (barkod) => barkodIleBul(barkod, getDb()),
 
   // Marka seçilince formda gösterilecek otomatik stok kodu önerisi.
   'urunler:sonraki-stok-kodu': (marka_id) => sonrakiStokKodu(getDb(), marka_id),
