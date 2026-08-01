@@ -60,6 +60,40 @@ const URUN_SELECT = `
   LEFT JOIN tedarikciler t ON u.tedarikci_id = t.id
 `
 
+// --- Takma ad barkodlar ---
+// urunler.barkod BİRİNCİL kalır; buradakiler ek "bu barkod da bu ürüne gider" kayıtlarıdır.
+// db enjekte edilebilir (test için); üretimde IPC sarmalayıcısı getDb() geçer.
+
+function barkodListe(urun_id, db) {
+  return db.prepare(
+    'SELECT id, barkod, aciklama FROM urun_barkodlar WHERE urun_id=? ORDER BY id'
+  ).all(urun_id)
+}
+
+function barkodEkle({ urun_id, barkod, aciklama }, db) {
+  const deger = String(barkod || '').trim()
+  if (!deger) throw new Error('Barkod boş olamaz')
+  const urun = db.prepare('SELECT id, barkod FROM urunler WHERE id=?').get(urun_id)
+  if (!urun) throw new Error('Ürün bulunamadı')
+  if (String(urun.barkod || '').trim() === deger) {
+    throw new Error('Bu kod zaten bu ürünün barkodu')
+  }
+  // Başka bir ürünün birincil barkodu ya da takma adı olamaz — okutulunca hangi ürünün
+  // geleceği belirsiz kalırdı.
+  const baskaBirincil = db.prepare('SELECT id FROM urunler WHERE TRIM(barkod)=? AND id!=?').get(deger, urun_id)
+  const baskaTakma = db.prepare('SELECT urun_id FROM urun_barkodlar WHERE barkod=?').get(deger)
+  if (baskaBirincil || baskaTakma) throw new Error('Bu barkod başka bir ürüne tanımlı')
+  const r = db.prepare('INSERT INTO urun_barkodlar (urun_id, barkod, aciklama) VALUES (?,?,?)')
+    .run(urun_id, deger, (aciklama && String(aciklama).trim()) || null)
+  return { id: Number(r.lastInsertRowid), barkod: deger, aciklama: aciklama || null }
+}
+
+function barkodSil(id, db) {
+  const r = db.prepare('DELETE FROM urun_barkodlar WHERE id=?').run(id)
+  if (!r.changes) throw new Error('Barkod bulunamadı')
+  return { mesaj: 'Barkod silindi' }
+}
+
 module.exports = {
   // durum: 'aktif' (varsayılan) | 'pasif'. Pasifler YALNIZCA Ürünler sekmesindeki
   // Pasif alanından istenir; satış/stok/set gibi tüm diğer çağrılar varsayılanla
@@ -213,6 +247,22 @@ module.exports = {
     }
     db.prepare(`UPDATE urunler SET barkod = ?, guncelleme_tarihi = datetime('now','localtime') WHERE id = ?`).run(barkod, id)
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(id)
+  },
+
+  _barkodListe: barkodListe,
+  _barkodEkle: barkodEkle,
+  _barkodSil: barkodSil,
+
+  'urunler:barkod-liste': (urun_id) => barkodListe(urun_id, getDb()),
+
+  'urunler:barkod-ekle': (veri) => {
+    yetkiKontrol('urun_duzenle')
+    return barkodEkle(veri, getDb())
+  },
+
+  'urunler:barkod-sil': (id) => {
+    yetkiKontrol('urun_duzenle')
+    return barkodSil(id, getDb())
   },
 
   'urunler:sil': (id) => {
