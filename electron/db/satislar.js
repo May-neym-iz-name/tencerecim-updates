@@ -138,6 +138,62 @@ function iptalUygula(id, db, ikasPushFn) {
   return { mesaj: 'Satış iptal edildi' }
 }
 
+// Mağaza içi (kısmi) iade çekirdeği: seçilen kalem/adetler stoğa geri eklenir ve
+// raporlara negatif "iade satışı" olarak yansır (ciro otomatik netleşir).
+// kalemler: [{ satis_kalemi_id, miktar }]
+// Ön sipariş satışı kaynak olarak KABUL EDİLMEZ: stok hiç düşülmediği için iade
+// stoğu olmayan bir miktarla ARTIRIR ve ikas'a yanlış stok push eder.
+function iadeUygula({ satis_id, kalemler, notlar }, db, ikasPushFn) {
+  const satis = db.prepare("SELECT * FROM satislar WHERE id=? AND durum='tamamlandi' AND COALESCE(tip,'satis')='satis' AND COALESCE(on_siparis,0)=0").get(satis_id)
+  if (!satis) throw new Error('İade için uygun satış bulunamadı')
+  if (!Array.isArray(kalemler) || kalemler.length === 0) throw new Error('İade edilecek ürün seçin')
+
+  const origMap = new Map(db.prepare('SELECT * FROM satis_kalemleri WHERE satis_id=?').all(satis_id).map(k => [k.id, k]))
+  const iadeler = []
+  for (const it of kalemler) {
+    const ok = origMap.get(it.satis_kalemi_id)
+    if (!ok) throw new Error('Satış kalemi bulunamadı')
+    const kalan = ok.miktar - (ok.iade_miktar || 0)
+    const m = parseInt(it.miktar, 10) || 0
+    if (m <= 0) continue
+    if (m > kalan) throw new Error(`"${ok.urun_id}" için iade adedi kalan adetten (${kalan}) fazla olamaz`)
+    iadeler.push({ ok, miktar: m })
+  }
+  if (!iadeler.length) throw new Error('İade adedi girilmedi')
+
+  // Bu satışın kaçıncı iadesi (benzersiz fiş no için).
+  const iadeSira = db.prepare("SELECT COUNT(*) n FROM satislar WHERE iade_kaynak_id=?").get(satis_id).n + 1
+
+  const tx = db.transaction(() => {
+    let ara = 0, kdv = 0, gen = 0
+    const stokArt = db.prepare('UPDATE urun_stoklar SET miktar=miktar+? WHERE urun_id=? AND lokasyon_id=?')
+    const iadeArt = db.prepare('UPDATE satis_kalemleri SET iade_miktar=COALESCE(iade_miktar,0)+? WHERE id=?')
+    const retKalem = []
+    for (const { ok, miktar } of iadeler) {
+      const birimEf = ok.miktar ? (ok.toplam || 0) / ok.miktar : 0
+      const tutar = birimEf * miktar
+      const kdvT = tutar * ok.kdv_orani / (100 + ok.kdv_orani)
+      gen += tutar; kdv += kdvT; ara += (tutar - kdvT)
+      stokArt.run(miktar, ok.urun_id, satis.lokasyon_id)
+      iadeArt.run(miktar, ok.id)
+      retKalem.push({ ok, miktar, tutar })
+    }
+    const ret = db.prepare(`INSERT INTO satislar
+      (fis_no, lokasyon_id, musteri_id, odeme_tipi, durum, tip, iade_kaynak_id, ara_toplam, iskonto_toplam, kdv_toplam, genel_toplam, notlar)
+      VALUES (?,?,?,?,'tamamlandi','iade',?,?,?,?,?,?)`).run(
+      `I${satis.fis_no}-${iadeSira}`, satis.lokasyon_id, satis.musteri_id, satis.odeme_tipi, satis.id,
+      r(-ara), 0, r(-kdv), r(-gen), notlar || null)
+    const kalemEkle = db.prepare('INSERT INTO satis_kalemleri (satis_id,urun_id,miktar,birim_fiyat,iskonto_orani,kdv_orani,toplam) VALUES (?,?,?,?,?,?,?)')
+    for (const { ok, miktar, tutar } of retKalem) {
+      kalemEkle.run(ret.lastInsertRowid, ok.urun_id, -miktar, ok.birim_fiyat, ok.iskonto_orani, ok.kdv_orani, r(-tutar))
+    }
+    return ret.lastInsertRowid
+  })
+  const id = tx()
+  ikasPushFn(iadeler.map(x => x.ok.urun_id))
+  return db.prepare('SELECT * FROM satislar WHERE id=?').get(id)
+}
+
 const ON_SIPARIS_DURUMLARI = ['bekliyor', 'kargolandi', 'teslim']
 
 // Ön sipariş listesi: satış + müşteri (kargo formunu ön doldurmak için adres alanları
@@ -177,7 +233,7 @@ function onSiparisleriGetir({ durum, lokasyon_id, baslangic, bitis } = {}, db) {
 // akışının işidir (para/durum bütünlüğü orada kurulur).
 function onSiparisDurumYaz(id, durum, db) {
   if (!ON_SIPARIS_DURUMLARI.includes(durum)) throw new Error('Geçersiz ön sipariş durumu')
-  const satis = db.prepare('SELECT id FROM satislar WHERE id=? AND on_siparis=1').get(id)
+  const satis = db.prepare("SELECT id FROM satislar WHERE id=? AND on_siparis=1 AND COALESCE(durum,'')!='iptal'").get(id)
   if (!satis) throw new Error('Ön sipariş bulunamadı')
   db.prepare('UPDATE satislar SET on_siparis_durum=? WHERE id=?').run(durum, id)
   return { mesaj: 'Ön sipariş durumu güncellendi' }
@@ -234,61 +290,12 @@ module.exports = {
     return satis
   },
 
-  // Mağaza içi (kısmi) iade: seçilen kalem/adetler stoğa geri eklenir ve raporlara
-  // negatif "iade satışı" olarak yansır (ciro otomatik netleşir).
-  // kalemler: [{ satis_kalemi_id, miktar }]
   'satislar:iade': ({ satis_id, kalemler, notlar }) => {
     yetkiKontrol('satis_iptal')
     const db = getDb()
-    const satis = db.prepare("SELECT * FROM satislar WHERE id=? AND durum='tamamlandi' AND COALESCE(tip,'satis')='satis'").get(satis_id)
-    if (!satis) throw new Error('İade için uygun satış bulunamadı')
-    lokasyonKontrol(satis.lokasyon_id)
-    if (!Array.isArray(kalemler) || kalemler.length === 0) throw new Error('İade edilecek ürün seçin')
-
-    const origMap = new Map(db.prepare('SELECT * FROM satis_kalemleri WHERE satis_id=?').all(satis_id).map(k => [k.id, k]))
-    const iadeler = []
-    for (const it of kalemler) {
-      const ok = origMap.get(it.satis_kalemi_id)
-      if (!ok) throw new Error('Satış kalemi bulunamadı')
-      const kalan = ok.miktar - (ok.iade_miktar || 0)
-      const m = parseInt(it.miktar, 10) || 0
-      if (m <= 0) continue
-      if (m > kalan) throw new Error(`"${ok.urun_id}" için iade adedi kalan adetten (${kalan}) fazla olamaz`)
-      iadeler.push({ ok, miktar: m })
-    }
-    if (!iadeler.length) throw new Error('İade adedi girilmedi')
-
-    // Bu satışın kaçıncı iadesi (benzersiz fiş no için).
-    const iadeSira = db.prepare("SELECT COUNT(*) n FROM satislar WHERE iade_kaynak_id=?").get(satis_id).n + 1
-
-    const tx = db.transaction(() => {
-      let ara = 0, kdv = 0, gen = 0
-      const stokArt = db.prepare('UPDATE urun_stoklar SET miktar=miktar+? WHERE urun_id=? AND lokasyon_id=?')
-      const iadeArt = db.prepare('UPDATE satis_kalemleri SET iade_miktar=COALESCE(iade_miktar,0)+? WHERE id=?')
-      const retKalem = []
-      for (const { ok, miktar } of iadeler) {
-        const birimEf = ok.miktar ? (ok.toplam || 0) / ok.miktar : 0
-        const tutar = birimEf * miktar
-        const kdvT = tutar * ok.kdv_orani / (100 + ok.kdv_orani)
-        gen += tutar; kdv += kdvT; ara += (tutar - kdvT)
-        stokArt.run(miktar, ok.urun_id, satis.lokasyon_id)
-        iadeArt.run(miktar, ok.id)
-        retKalem.push({ ok, miktar, tutar })
-      }
-      const ret = db.prepare(`INSERT INTO satislar
-        (fis_no, lokasyon_id, musteri_id, odeme_tipi, durum, tip, iade_kaynak_id, ara_toplam, iskonto_toplam, kdv_toplam, genel_toplam, notlar)
-        VALUES (?,?,?,?,'tamamlandi','iade',?,?,?,?,?,?)`).run(
-        `I${satis.fis_no}-${iadeSira}`, satis.lokasyon_id, satis.musteri_id, satis.odeme_tipi, satis.id,
-        r(-ara), 0, r(-kdv), r(-gen), notlar || null)
-      const kalemEkle = db.prepare('INSERT INTO satis_kalemleri (satis_id,urun_id,miktar,birim_fiyat,iskonto_orani,kdv_orani,toplam) VALUES (?,?,?,?,?,?,?)')
-      for (const { ok, miktar, tutar } of retKalem) {
-        kalemEkle.run(ret.lastInsertRowid, ok.urun_id, -miktar, ok.birim_fiyat, ok.iskonto_orani, ok.kdv_orani, r(-tutar))
-      }
-      return ret.lastInsertRowid
-    })
-    const id = tx()
-    ikasPush(iadeler.map(x => x.ok.urun_id))
-    return db.prepare('SELECT * FROM satislar WHERE id=?').get(id)
+    const kaynak = db.prepare('SELECT lokasyon_id FROM satislar WHERE id=?').get(satis_id)
+    if (kaynak) lokasyonKontrol(kaynak.lokasyon_id)
+    return iadeUygula({ satis_id, kalemler, notlar }, db, ikasPush)
   },
 
   'satislar:gunluk-ozet': ({ lokasyon_id, tarih } = {}) => {
@@ -301,6 +308,7 @@ module.exports = {
   },
 
   _iptal: iptalUygula,
+  _iade: iadeUygula,
 
   'satislar:iptal': (id) => {
     yetkiKontrol('satis_iptal')

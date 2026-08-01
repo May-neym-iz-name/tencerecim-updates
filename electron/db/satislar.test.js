@@ -207,4 +207,33 @@ describe('ön sipariş durum güncelleme', () => {
     const s = satislar._olustur(veri(), db, ikasPushSahte)
     expect(() => satislar._onSiparisDurum(s.id, 'teslim', db)).toThrow(/Ön sipariş bulunamadı/)
   })
+
+  test('iptal edilmiş ön siparişin durumu güncellenemez', () => {
+    const o = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    satislar._iptal(o.id, db, ikasPushSahte)
+    expect(() => satislar._onSiparisDurum(o.id, 'teslim', db)).toThrow(/Ön sipariş bulunamadı/)
+  })
+})
+
+describe('iade', () => {
+  test('ön sipariş satışı iade edilemez: stok değişmez ve push edilmez', () => {
+    const s = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    pushEdilen = []
+    const kalem = db.prepare('SELECT id FROM satis_kalemleri WHERE satis_id=?').get(s.id)
+    expect(() => satislar._iade({ satis_id: s.id, kalemler: [{ satis_kalemi_id: kalem.id, miktar: 1 }] }, db, ikasPushSahte))
+      .toThrow(/İade için uygun satış bulunamadı/)
+    expect(stok()).toBe(5)
+    expect(pushEdilen).toEqual([])
+  })
+
+  test('normal satış iade edilebilir (regresyon): stok artar ve push edilir', () => {
+    const s = satislar._olustur(veri(), db, ikasPushSahte)
+    pushEdilen = []
+    const kalem = db.prepare('SELECT id FROM satis_kalemleri WHERE satis_id=?').get(s.id)
+    const iade = satislar._iade({ satis_id: s.id, kalemler: [{ satis_kalemi_id: kalem.id, miktar: 1 }] }, db, ikasPushSahte)
+    expect(stok()).toBe(4)
+    expect(pushEdilen).toEqual([[1]])
+    expect(iade.tip).toBe('iade')
+    expect(iade.iade_kaynak_id).toBe(s.id)
+  })
 })

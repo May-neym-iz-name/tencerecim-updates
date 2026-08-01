@@ -47,7 +47,7 @@ const TABLOLAR = {
                                 dogalCift: ['otomasyon_id', 'sablon_id'], sonradanEklendi: true },
 
   // --- Faz 2: işlemsel veri (append-mostly). lokasyon_id her PC'de aynı seed → düz kolon. ---
-  satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
+  satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih', 'on_siparis', 'on_siparis_durum', 'on_siparis_not'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
   satis_kalemleri:    { kolonlar: ['miktar', 'birim_fiyat', 'iskonto_orani', 'kdv_orani', 'toplam', 'iade_miktar', 'set_adi'], fk: { satis_id: 'satislar', urun_id: 'urunler' }, zorunluFk: ['satis_id', 'urun_id'], dogal: [] },
   satis_odemeler:     { kolonlar: ['odeme_tipi', 'tutar'], fk: { satis_id: 'satislar' }, zorunluFk: ['satis_id'], dogal: [] },
   kasa_oturumlar:     { kolonlar: ['lokasyon_id', 'acan', 'acilis_tarihi', 'acilis_nakit', 'kapatan', 'kapanis_tarihi', 'sayilan_nakit', 'beklenen_nakit', 'fark', 'durum', 'notlar'], fk: {}, dogal: [] },
