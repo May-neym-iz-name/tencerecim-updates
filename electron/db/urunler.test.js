@@ -8,6 +8,11 @@ import { createRequire } from 'module'
 
 const require = createRequire(import.meta.url)
 const urunler = require('./urunler.js')
+const yetki = require('../yetki.js')
+
+// urunler:olustur/guncelle yetkiKontrol('urun_duzenle') çağırır; testte gerçek giriş
+// akışı yok, bu yüzden super_admin profili elle set edilir (yetki.js modül-singleton).
+yetki['auth:profil-ayarla']({ aktif: 1, rol: 'super_admin' })
 
 function bellekDb() {
   const d = new DatabaseSync(':memory:')
@@ -144,5 +149,31 @@ describe('ürün araması takma adı kapsar', () => {
     urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
     const sql = "SELECT u.id FROM urunler u WHERE u.aktif=1 AND (u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE((SELECT GROUP_CONCAT(ub.barkod, ' ') FROM urun_barkodlar ub WHERE ub.urun_id = u.id),'')) LIKE ?"
     expect(db.prepare(sql).all('%2900000000017%').map(r => r.id)).toEqual([1])
+  })
+})
+
+describe('barkod tekilliği çift yönlü (TERS YÖN kontrolü)', () => {
+  test('bir ürünün birincil barkodu, başka ürünün takma adıyla aynı değere güncellenemez', () => {
+    // ürün 2'ye takma ad ekle
+    urunler._barkodEkle({ urun_id: 2, barkod: '2900000000017' }, db)
+    // ürün 1'in birincil barkodunu o takma ada eşitlemeye çalış
+    expect(() => urunler['urunler:guncelle']({
+      id: 1, ad: 'Tencere 24', barkod: '2900000000017', sku: 'TNC.LAV.00001', satis_fiyati: 100
+    }, db)).toThrow(/başka bir ürüne takma ad/)
+  })
+
+  test('yeni ürün oluştururken barkod olarak başka ürünün takma adı verilemez', () => {
+    urunler._barkodEkle({ urun_id: 1, barkod: '2900000000099' }, db)
+    expect(() => urunler['urunler:olustur']({
+      ad: 'Yeni Ürün', barkod: '2900000000099', sku: 'TNC.LAV.00099', satis_fiyati: 50
+    }, db)).toThrow(/başka bir ürüne takma ad/)
+  })
+
+  test('barkodIleBul çakışma durumunda BİRİNCİL eşleşmeyi döndürür (deterministik)', () => {
+    // Doğrulama kapılarını atlayarak (doğrudan INSERT) geçmişte oluşmuş bir çakışmayı simüle et:
+    // ürün 2'nin birincil barkodu, ürün 1'e ait bir takma adla aynı değer olsun.
+    db.prepare('INSERT INTO urun_barkodlar (urun_id, barkod) VALUES (1, ?)').run('8690000000002')
+    const sonuc = urunler._barkodla('8690000000002', db)
+    expect(sonuc.id).toBe(2)
   })
 })

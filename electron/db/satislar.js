@@ -1,6 +1,6 @@
 const { getDb } = require('./database')
 const { satisHesapla } = require('./satis-hesapla')
-const { _yetkiKontrol: yetkiKontrol, _lokasyonKontrol: lokasyonKontrol } = require('../yetki')
+const { _yetkiKontrol: yetkiKontrol, _yetkiKontrolBirden: yetkiKontrolBirden, _lokasyonKontrol: lokasyonKontrol } = require('../yetki')
 const { _pushArkaPlan: ikasPush } = require('../ikas')
 
 function bugununTarihKodu() {
@@ -331,7 +331,10 @@ module.exports = {
   },
 
   'satislar:on-siparis-durum': ({ id, durum }) => {
-    yetkiKontrol('on_siparis_yap')
+    // kargo_yonet de kabul edilir: kargoyu oluşturan kişi (kargo personeli, ön sipariş
+    // yetkisi olmayabilir) durumunu da işaretleyebilsin — aksi halde kargo çıkar ama
+    // sipariş "Bekliyor"da sessizce kalır.
+    yetkiKontrolBirden(['on_siparis_yap', 'kargo_yonet'])
     return onSiparisDurumYaz(id, durum, getDb())
   },
 }

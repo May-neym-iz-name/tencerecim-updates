@@ -62,9 +62,19 @@ function lokasyonKontrol(lokasyonId) {
   }
 }
 
+// Kodlardan HERHANGİ BİRİ varsa geçer (OR). Örn. kargo durumunu hem "ön sipariş yapabilen"
+// hem de "kargo yönetebilen" personel işaretleyebilsin — kargoyu oluşturan kişi durumunu da
+// yazabilmeli, aksi halde kargo çıkar ama sipariş "Bekliyor"da sessizce kalır.
+function yetkiKontrolBirden(kodlar) {
+  if (!kodlar.some((kod) => yetkiVar(aktifProfil, kod))) {
+    throw new Error('Bu işlem için yetkiniz yok')
+  }
+}
+
 module.exports = {
   // IPC dışı yardımcılar (main.js _ önekli kanalları atlar).
   _yetkiKontrol: yetkiKontrol,
+  _yetkiKontrolBirden: yetkiKontrolBirden,
   _lokasyonKontrol: lokasyonKontrol,
 
   'auth:profil-ayarla': (profil) => { aktifProfil = profil || null; return { ok: true } },

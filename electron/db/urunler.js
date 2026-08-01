@@ -89,6 +89,15 @@ function barkodEkle({ urun_id, barkod, aciklama }, db) {
   return { id: Number(r.lastInsertRowid), barkod: deger, aciklama: aciklamaDeger }
 }
 
+// TERS YÖN kontrolü: bir ürünün BİRİNCİL barkodu, başka bir ürüne ait TAKMA AD ile
+// çakışabiliyordu (barkodEkle yalnız takma ad tarafını kontrol ediyordu). haric_id
+// kendi ürününü (güncellemede) hariç tutar; oluşturmada 0/undefined geçilir.
+function baskaUrununTakmaAdiMi(db, deger, haric_id) {
+  if (!deger) return false
+  const takma = db.prepare('SELECT urun_id FROM urun_barkodlar WHERE barkod=?').get(deger)
+  return !!(takma && takma.urun_id !== (haric_id || 0))
+}
+
 function barkodSil(id, db) {
   const r = db.prepare('DELETE FROM urun_barkodlar WHERE id=?').run(id)
   if (!r.changes) throw new Error('Barkod bulunamadı')
@@ -100,13 +109,17 @@ function barkodSil(id, db) {
 function barkodIleBul(barkod, db) {
   const deger = String(barkod || '').trim()
   if (!deger) return undefined
+  // Savunma katmanı: geçmişte oluşmuş bir çakışma bile deterministik davransın diye
+  // BİRİNCİL barkod/SKU eşleşmesi takma ad eşleşmesinden önce gelsin (ORDER BY oncelik).
   return db.prepare(
     `${URUN_SELECT} WHERE (
         TRIM(u.barkod) = ?
         OR TRIM(u.sku) = ?
         OR u.id IN (SELECT ub.urun_id FROM urun_barkodlar ub WHERE TRIM(ub.barkod) = ?)
-      ) AND u.aktif = 1`
-  ).get(deger, deger, deger)
+      ) AND u.aktif = 1
+      ORDER BY (CASE WHEN TRIM(u.barkod) = ? OR TRIM(u.sku) = ? THEN 0 ELSE 1 END)
+      LIMIT 1`
+  ).get(deger, deger, deger, deger, deger)
 }
 
 module.exports = {
@@ -179,13 +192,18 @@ module.exports = {
   // Marka seçilince formda gösterilecek otomatik stok kodu önerisi.
   'urunler:sonraki-stok-kodu': (marka_id) => sonrakiStokKodu(getDb(), marka_id),
 
-  'urunler:olustur': (veri) => {
+  'urunler:olustur': (veri, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
-    const db = getDb()
     let { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
     // SKU boş bırakıldıysa marka şablonundan otomatik türet (TNC.XXX.00001+).
     if ((!sku || !String(sku).trim()) && marka_id) {
       sku = sonrakiStokKodu(db, marka_id)
+    }
+
+    // TERS YÖN kontrolü: yeni ürünün birincil barkodu, başka bir ürünün takma adıyla
+    // çakışmasın (bkz. baskaUrununTakmaAdiMi tanımı).
+    if (barkod && baskaUrununTakmaAdiMi(db, String(barkod).trim(), 0)) {
+      throw new Error('Bu barkod başka bir ürüne takma ad olarak tanımlı')
     }
 
     // Yumuşak silme (aktif=0) nedeniyle aynı barkod/SKU pasif bir üründe kalmış olabilir.
@@ -214,9 +232,8 @@ module.exports = {
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(r.lastInsertRowid)
   },
 
-  'urunler:guncelle': ({ id, ...veri }) => {
+  'urunler:guncelle': ({ id, ...veri }, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
-    const db = getDb()
     const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
     // Satış fiyatı değişiyorsa ayrıca fiyat_degistir yetkisi gerekir.
     const mevcut = db.prepare('SELECT satis_fiyati, alis_fiyati FROM urunler WHERE id = ?').get(id)
@@ -226,6 +243,11 @@ module.exports = {
     // Fiyat (satış/alış) değişti mi → ikas'a arka planda gönder.
     const fiyatDegisti = mevcut &&
       (Number(mevcut.satis_fiyati) !== Number(satis_fiyati) || Number(mevcut.alis_fiyati) !== Number(alis_fiyati))
+    // TERS YÖN kontrolü: bu ürünün birincil barkodu başka bir ürünün takma adıyla
+    // çakışmasın (bkz. baskaUrununTakmaAdiMi tanımı).
+    if (barkod && baskaUrununTakmaAdiMi(db, String(barkod).trim(), id)) {
+      throw new Error('Bu barkod başka bir ürüne takma ad olarak tanımlı')
+    }
     try {
       db.prepare(`
         UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
@@ -253,10 +275,12 @@ module.exports = {
     if (urun.barkod && String(urun.barkod).trim()) throw new Error('Bu ürünün zaten bir barkodu var')
 
     const barkodVar = db.prepare('SELECT 1 FROM urunler WHERE barkod = ?')
+    const takmaAdVar = db.prepare('SELECT 1 FROM urun_barkodlar WHERE barkod = ?')
     let barkod = magazaBarkoduUret(urun.id)
     // Çakışma teorik olarak imkânsız (29 öneki + benzersiz id); yine de savunmacı kontrol.
+    // urun_barkodlar da kontrol edilir — üretilen değer bir takma adla çakışabilir.
     let deneme = 0
-    while (barkodVar.get(barkod)) {
+    while (barkodVar.get(barkod) || takmaAdVar.get(barkod)) {
       barkod = magazaBarkoduUret(Math.floor(Math.random() * 1e10))
       if (++deneme > 20) throw new Error('Benzersiz barkod üretilemedi, tekrar deneyin')
     }
