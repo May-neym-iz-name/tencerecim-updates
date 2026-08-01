@@ -180,6 +180,11 @@ export default function SatisGecmisi() {
                   <td className="px-3 py-2 font-semibold">₺{s.genel_toplam?.toFixed(2)}</td>
                   <td className="px-3 py-2">
                     <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${durumRenk[s.tip==='iade'?'iade':s.durum]||''}`}>{s.tip==='iade'?'iade':s.durum}</span>
+                    {s.on_siparis === 1 && (
+                      <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium">
+                        🕐 Ön Sipariş
+                      </span>
+                    )}
                   </td>
                   <td className="px-2 py-2">
                     {s.durum==='tamamlandi' && s.tip!=='iade' && iptalYetkisi && (
@@ -264,9 +269,11 @@ export default function SatisGecmisi() {
 
           {satisDetay.durum === 'tamamlandi' && satisDetay.tip !== 'iade' && iptalYetkisi && (
             <>
-              <button onClick={() => iadeAc(satisDetay)} className="w-full mt-2 border border-orange-300 text-orange-600 py-1.5 rounded-lg text-sm hover:bg-orange-50">
-                ↩ Ürün İade Al
-              </button>
+              {satisDetay.on_siparis !== 1 && (
+                <button onClick={() => iadeAc(satisDetay)} className="w-full mt-2 border border-orange-300 text-orange-600 py-1.5 rounded-lg text-sm hover:bg-orange-50">
+                  ↩ Ürün İade Al
+                </button>
+              )}
               <button onClick={() => satisIptal(satisDetay.id)} className="w-full mt-2 border border-red-300 text-red-600 py-1.5 rounded-lg text-sm hover:bg-red-50">
                 Satışı İptal Et
               </button>
