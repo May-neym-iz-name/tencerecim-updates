@@ -25,6 +25,15 @@ const MUSTERI_ALANLARI = [
   [['iskonto_orani', 'Sabit İskonto Oranı (%)', false]],
 ]
 
+// Elle girilen fiyatı sayıya çevirir; geçersiz/boş/negatif ise null döner
+// (o zaman ürünün kayıtlı fiyatı geçerlidir). Ekran hesabı (efektifFiyat) ve
+// satış payload'ı AYNI bu fonksiyondan geçer — ikisi ayrışırsa kullanıcı
+// gördüğünden farklı bir tutarı kaydeder ve bunu fark etmez.
+function elleFiyatSayi(k) {
+  const n = Number(String(k.elleFiyat ?? '').replace(',', '.'))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export default function Satis() {
   // Ürün browser — hiyerarşik gezinme: Markalar → Kategoriler → Ürünler (hepsi kart).
   const [urunler, setUrunler] = useState([])
@@ -243,13 +252,7 @@ export default function Satis() {
   // Hesaplamalar
   // Ön siparişte elle girilen satır fiyatı (yalnız normal kalemler, set hariç) toplamlarda
   // ürünün kayıtlı fiyatının yerine geçer; geçersiz/boş değer kayıtlı fiyata düşer.
-  const efektifFiyat = (k) => {
-    if (onSiparis && k.tip !== 'set') {
-      const elle = Number(String(k.elleFiyat ?? '').replace(',', '.'))
-      if (Number.isFinite(elle) && elle > 0) return elle
-    }
-    return k.satis_fiyati
-  }
+  const efektifFiyat = (k) => (onSiparis && k.tip !== 'set' ? (elleFiyatSayi(k) ?? k.satis_fiyati) : k.satis_fiyati)
   // Brüt toplam (iskontosuz) — TL indirimi yüzdeye çevirmek için
   const brutToplam = sepet.reduce((t, k) => t + efektifFiyat(k) * k.miktar, 0)
   const musteriIskonto = secilenMusteri?.iskonto_orani || 0
@@ -305,8 +308,7 @@ export default function Satis() {
           : [{
               urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k),
               // Ön siparişte elle girilen fiyat yalnız bu satışa geçer; ürün kartı değişmez.
-              ...(onSiparis && Number(String(k.elleFiyat ?? '').replace(',', '.')) > 0
-                ? { birim_fiyat: Number(String(k.elleFiyat).replace(',', '.')) } : {}),
+              ...(onSiparis && elleFiyatSayi(k) != null ? { birim_fiyat: elleFiyatSayi(k) } : {}),
             }]),
       })
       toast.success(onSiparis
