@@ -64,6 +64,12 @@ export default function Satis() {
   const [kargoFormAcik, setKargoFormAcik] = useState(false)
   const [sonSatis, setSonSatis] = useState(null) // { satisId, fisNo, musteri }
 
+  // Ön sipariş: stokta olmayan ürün için peşin ödemeli satış. Stok düşülmez.
+  // KALICI DEĞİL — her satıştan sonra sıfırlanır ki yanlışlıkla açık kalmasın.
+  const [onSiparis, setOnSiparis] = useState(false)
+  const [onSiparisNot, setOnSiparisNot] = useState('')
+  const onSiparisYetkisi = yetkiVar('on_siparis_yap')
+
   // Uygulama ayarları (müşteri zorunlu mu, indirim tipi)
   const { ayarlar, kaydet: ayarKaydet } = useAyarlar()
   const iskontoTipi = ayarlar.iskonto_tipi || 'oran'
@@ -280,18 +286,24 @@ export default function Satis() {
         odeme_oran: odemelerArg ? 0 : odemeOran,
         odemeler: odemelerArg || undefined,
         stok_zorla: !!ayarlar.stok_yetersiz_satis,
+        // Ön siparişte backend stok kontrolünü ve stok düşümünü atlar.
+        on_siparis: onSiparis || undefined,
+        on_siparis_not: onSiparis ? (onSiparisNot.trim() || null) : undefined,
         // Set kalemleri bileşen ürünlere açılır (set fiyatı dağıtılmış birim_fiyat + set_adi);
         // normal kalemler olduğu gibi gider.
         kalemler: sepet.flatMap(k => k.tip === 'set'
           ? setiAc(k)
           : [{ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) }]),
       })
-      toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
+      toast.success(onSiparis
+        ? `✓ Ön sipariş alındı (stok düşülmedi) — Fiş: ${satis.fis_no}`
+        : `✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
       senkTetikle() // yeni satışı anında Supabase'e gönder
       // Kargo butonu için bu satışı ve müşterisini sakla (sepet temizlenmeden önce).
       setSonSatis({ satisId: satis.id, fisNo: satis.fis_no, musteri: secilenMusteri })
       setSepet([]); setSecilenMusteri(null); setMusteriArama(''); setManuelIskonto(0)
       setParcaliAcik(false); setParcali({ nakit: '', kart: '', havale: '' })
+      setOnSiparis(false); setOnSiparisNot('')
       barkodRef.current?.focus()
       // Fişi yazdır (hata olursa satışı engellemesin)
       fisApi.yazdir(satis.id).catch(err => toast.error(`Fiş yazdırılamadı: ${err.message}`))
@@ -659,6 +671,21 @@ export default function Satis() {
             })}
           </div>
 
+          {onSiparisYetkisi && (
+            <div className={`rounded-lg border px-3 py-2 transition-colors ${onSiparis ? 'border-amber-400 bg-amber-50' : 'border-gray-200'}`}>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={onSiparis} onChange={e => setOnSiparis(e.target.checked)}
+                  className="w-4 h-4 accent-amber-600" />
+                <span className="text-xs font-semibold text-gray-700">🕐 Ön Sipariş <span className="font-normal text-gray-500">(stok düşülmez)</span></span>
+              </label>
+              {onSiparis && (
+                <input type="text" value={onSiparisNot} onChange={e => setOnSiparisNot(e.target.value)}
+                  placeholder="Not (ör. tedarikçiden 10 gün)"
+                  className="mt-2 w-full text-xs border border-amber-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400" />
+              )}
+            </div>
+          )}
+
           <button type="button" onClick={() => { setParcali({ nakit: '', kart: '', havale: '' }); setParcaliAcik(true) }}
             disabled={sepet.length === 0}
             className="w-full text-xs font-medium text-gray-600 border border-dashed border-gray-300 rounded-lg py-1.5 hover:bg-gray-50 disabled:opacity-40">
@@ -678,8 +705,9 @@ export default function Satis() {
             </button>
           )}
           <button onClick={() => satisOlustur()} disabled={islemde}
-            className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 text-sm transition-colors">
-            {islemde ? '⏳ İşleniyor...' : `✓ Satışı Tamamla  ₺${genelToplamSon.toFixed(2)}`}
+            className={`w-full text-white py-3 rounded-xl font-bold disabled:opacity-50 text-sm transition-colors ${
+              onSiparis ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}>
+            {islemde ? '⏳ İşleniyor...' : `${onSiparis ? '🕐 Ön Siparişi Kaydet' : '✓ Satışı Tamamla'}  ₺${genelToplamSon.toFixed(2)}`}
           </button>
 
           {sepet.length > 0 && (
