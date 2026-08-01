@@ -45,12 +45,13 @@ beforeEach(() => {
     CREATE TABLE urun_barkodlar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       urun_id INTEGER NOT NULL REFERENCES urunler(id) ON DELETE CASCADE,
-      barkod TEXT NOT NULL UNIQUE, aciklama TEXT,
+      barkod TEXT NOT NULL UNIQUE, aciklama TEXT, aktif INTEGER DEFAULT 1,
       olusturma_tarihi TEXT DEFAULT (datetime('now','localtime')));
     CREATE TABLE urun_stoklar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       urun_id INTEGER NOT NULL REFERENCES urunler(id) ON DELETE CASCADE,
-      miktar REAL DEFAULT 0);
+      lokasyon_id INTEGER, miktar REAL DEFAULT 0, minimum_stok REAL DEFAULT 0);
+    CREATE TABLE lokasyonlar (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT);
     INSERT INTO urunler (id, ad, barkod, sku, satis_fiyati) VALUES (1, 'Tencere 24', '8690000000001', 'TNC.LAV.00001', 100);
     INSERT INTO urunler (id, ad, barkod, sku, satis_fiyati) VALUES (2, 'Tava 20', '8690000000002', 'TNC.LAV.00002', 80);
   `)
@@ -96,7 +97,7 @@ describe('takma ad barkod ekleme kuralları', () => {
   })
 })
 
-describe('takma ad silme', () => {
+describe('takma ad silme (yumuşak silme — senkron için)', () => {
   test('silinince listeden düşer', () => {
     const b = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
     urunler._barkodSil(b.id, db)
@@ -105,6 +106,59 @@ describe('takma ad silme', () => {
 
   test('olmayan kayıt silinmek istenirse hata verir', () => {
     expect(() => urunler._barkodSil(999, db)).toThrow(/Barkod bulunamadı/)
+  })
+
+  test('silinen barkod artık ürünü bulmaz', () => {
+    const b = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    urunler._barkodSil(b.id, db)
+    expect(urunler._barkodla('2900000000017', db)).toBeUndefined()
+  })
+
+  test('silme satırı gerçekten SİLMEZ, aktif=0 yapar (senkronun taşıyacağı iz)', () => {
+    const b = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    urunler._barkodSil(b.id, db)
+    const satir = db.prepare('SELECT COUNT(*) as n FROM urun_barkodlar WHERE barkod=?').get('2900000000017')
+    expect(satir.n).toBe(1)
+    const kayit = db.prepare('SELECT aktif FROM urun_barkodlar WHERE barkod=?').get('2900000000017')
+    expect(Number(kayit.aktif)).toBe(0)
+  })
+
+  test('silinen barkod aynı ürüne yeniden eklenebilir, yeni satır açılmaz', () => {
+    const b = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    urunler._barkodSil(b.id, db)
+    const yeniden = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    expect(yeniden.id).toBe(b.id)
+    const satir = db.prepare('SELECT COUNT(*) as n FROM urun_barkodlar WHERE barkod=?').get('2900000000017')
+    expect(satir.n).toBe(1)
+    const kayit = db.prepare('SELECT aktif FROM urun_barkodlar WHERE barkod=?').get('2900000000017')
+    expect(Number(kayit.aktif)).toBe(1)
+  })
+
+  test('silinen barkod başka ürüne verilebilir, satır sayısı yine 1', () => {
+    const b = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    urunler._barkodSil(b.id, db)
+    const yeniden = urunler._barkodEkle({ urun_id: 2, barkod: '2900000000017' }, db)
+    expect(yeniden.id).toBe(b.id)
+    const satir = db.prepare('SELECT COUNT(*) as n, urun_id, aktif FROM urun_barkodlar WHERE barkod=?').get('2900000000017')
+    expect(satir.n).toBe(1)
+    expect(satir.urun_id).toBe(2)
+    expect(Number(satir.aktif)).toBe(1)
+    expect(urunler._barkodla('2900000000017', db).id).toBe(2)
+  })
+
+  test('aktif bir takma ad aynı ürüne tekrar eklenemez', () => {
+    urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db)
+    expect(() => urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017' }, db))
+      .toThrow(/zaten bu ürüne tanımlı/)
+  })
+
+  test('pasif takma adın değeri başka ürünün birincil barkodu olabilir', () => {
+    const b = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000099' }, db)
+    urunler._barkodSil(b.id, db)
+    const urun = urunler['urunler:olustur']({
+      ad: 'Yeni Ürün', barkod: '2900000000099', sku: 'TNC.LAV.00099', satis_fiyati: 50
+    }, db)
+    expect(urun.barkod).toBe('2900000000099')
   })
 })
 

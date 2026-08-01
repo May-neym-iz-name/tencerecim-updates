@@ -520,6 +520,10 @@ function migrate() {
     )`)
   } catch {}
   try { db.exec('CREATE INDEX IF NOT EXISTS idx_urun_barkodlar_urun ON urun_barkodlar(urun_id)') } catch {}
+  // Ek barkodlar SİLİNMEZ, pasifleştirilir: senkron motoru silmeyi PC'ler arasına
+  // taşımıyor (bkz. Gülsan importu dersi), pasifleme ise bir "değişiklik" olduğu için
+  // taşınıyor. Aksi halde bir PC'de silinen barkod diğerinde okutmaya devam ederdi.
+  try { db.exec("ALTER TABLE urun_barkodlar ADD COLUMN aktif INTEGER DEFAULT 1") } catch {}
   // musteriler — ikas müşteri istatistikleri (listCustomer: orderCount/totalOrderPrice...).
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_musteri_id TEXT") } catch {}
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_siparis_sayisi INTEGER") } catch {}
