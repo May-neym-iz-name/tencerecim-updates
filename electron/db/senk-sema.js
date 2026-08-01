@@ -23,6 +23,11 @@ const TABLOLAR = {
   musteriler:   { kolonlar: ['ad', 'soyad', 'telefon', 'email', 'tc_kimlik', 'vergi_no', 'vergi_dairesi', 'unvan', 'adres', 'il', 'ilce', 'iskonto_orani', 'aktif', 'ikas_musteri_id', 'ikas_siparis_sayisi', 'ikas_toplam_harcama', 'ikas_ilk_siparis', 'ikas_son_siparis'], fk: {}, dogal: ['telefon'] },
   urunler:      { kolonlar: ['ad', 'barkod', 'sku', 'marka', 'kategori', 'aciklama', 'alis_fiyati', 'satis_fiyati', 'kdv_orani', 'aktif', 'ikas_urun_id', 'ikas_varyant_id'], fk: { marka_id: 'markalar', kategori_id: 'kategoriler', tedarikci_id: 'tedarikciler' }, dogal: ['barkod', 'sku'] },
   urun_stoklar: { kolonlar: ['lokasyon_id', 'miktar', 'minimum_stok'], fk: { urun_id: 'urunler' }, zorunluFk: ['urun_id'], dogalCift: ['urun_id', 'lokasyon_id'] },
+  // Takma ad barkodlar: bir ürünün ek barkodları. Senkronlanmazsa diğer PC'de ek
+  // barkod okutma sessizce çalışmaz (ön sipariş çalışmasında birebir aynısı yaşandı).
+  // barkod tüm PC'lerde AYNI ve UNIQUE → doğal anahtar, dedup garantili.
+  urun_barkodlar: { kolonlar: ['barkod', 'aciklama'], fk: { urun_id: 'urunler' },
+                    zorunluFk: ['urun_id'], dogal: ['barkod'], sonradanEklendi: true },
   setler:       { kolonlar: ['ad', 'fiyat', 'aktif'], fk: {}, dogal: ['ad'] },
   set_urunler:  { kolonlar: ['miktar'], fk: { set_id: 'setler', urun_id: 'urunler' }, zorunluFk: ['set_id', 'urun_id'], dogalCift: ['set_id', 'urun_id'] },
   // Sosyal medya otomasyon şablonları: içerik (metin/fiyat/link) — küçük, şişirmez.
@@ -47,7 +52,7 @@ const TABLOLAR = {
                                 dogalCift: ['otomasyon_id', 'sablon_id'], sonradanEklendi: true },
 
   // --- Faz 2: işlemsel veri (append-mostly). lokasyon_id her PC'de aynı seed → düz kolon. ---
-  satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
+  satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih', 'on_siparis', 'on_siparis_durum', 'on_siparis_not'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
   satis_kalemleri:    { kolonlar: ['miktar', 'birim_fiyat', 'iskonto_orani', 'kdv_orani', 'toplam', 'iade_miktar', 'set_adi'], fk: { satis_id: 'satislar', urun_id: 'urunler' }, zorunluFk: ['satis_id', 'urun_id'], dogal: [] },
   satis_odemeler:     { kolonlar: ['odeme_tipi', 'tutar'], fk: { satis_id: 'satislar' }, zorunluFk: ['satis_id'], dogal: [] },
   kasa_oturumlar:     { kolonlar: ['lokasyon_id', 'acan', 'acilis_tarihi', 'acilis_nakit', 'kapatan', 'kapanis_tarihi', 'sayilan_nakit', 'beklenen_nakit', 'fark', 'durum', 'notlar'], fk: {}, dogal: [] },
@@ -85,7 +90,7 @@ const TABLOLAR = {
 // tehlikeydi (diğer PC kapalı sanıp ikinci otomasyon kurar). Çift gönderimi engelleyen şey
 // senkronun yokluğu değil, yürütücü kilidi (meta/yurutucu.js).
 const SIRA = [
-  'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
+  'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar', 'urun_barkodlar',
   'setler', 'set_urunler', 'sosyal_sablonlar',
   'sosyal_otomasyonlar', 'sosyal_otomasyon_sablonlar',
   'satislar', 'satis_kalemleri', 'satis_odemeler',

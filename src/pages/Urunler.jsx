@@ -74,6 +74,10 @@ export default function Urunler() {
   const [sekme, setSekme] = useState('urunler')
   // 'aktif' | 'pasif' — pasif ürünler YALNIZCA burada listelenir (satış/stok görmez).
   const [durum, setDurum] = useState('aktif')
+  // Ek barkodlar (takma adlar): yalnız düzenleme modunda gösterilir.
+  const [ekBarkodlar, setEkBarkodlar] = useState([])
+  const [ekBarkod, setEkBarkod] = useState('')
+  const [ekBarkodAciklama, setEkBarkodAciklama] = useState('')
 
   // Arama DEBOUNCE'lu: doğrudan `arama` bağımlılıkta olsaydı her tuş vuruşu ayrı bir tam
   // tablo sorgusu (2755 ürün + 3 JOIN) tetiklerdi. better-sqlite3 senkron olduğu için bu
@@ -104,6 +108,17 @@ export default function Urunler() {
   useEffect(() => { yukle() }, [yukle])
   useEffect(() => { yukleYardimcilar() }, [yukleYardimcilar])
 
+  // Ek barkod listesi: düzenlenen ürün değişince yeniden yüklenir, yeni ürün eklerken boş.
+  const ekBarkodlariYukle = useCallback(async () => {
+    if (!duzenlenenId) { setEkBarkodlar([]); return }
+    try {
+      const liste = await urunlerApi.barkodListe(duzenlenenId)
+      setEkBarkodlar(liste)
+    } catch (e) { toast.error(e.message) }
+  }, [duzenlenenId])
+
+  useEffect(() => { ekBarkodlariYukle() }, [ekBarkodlariYukle])
+
   // Barkod okuyucu: kutuya tıklamadan okutulabilsin, her okutmada eskisi silinsin.
   // Form/modal açıkken kapalı — o sırada barkod alanına elle yazılıyor olabilir.
   useBarkodTarama({ ref: aramaRef, aktif: !formAcik, onKod: setArama })
@@ -129,6 +144,24 @@ export default function Urunler() {
       await urunlerApi.barkodUret(u.id)
       toast.success('Barkod üretildi')
       yukle()
+    } catch (e) { toast.error(e.message) }
+  }
+
+  async function handleEkBarkodEkle() {
+    if (!ekBarkod.trim()) return
+    try {
+      await urunlerApi.barkodEkle({ urun_id: duzenlenenId, barkod: ekBarkod.trim(), aciklama: ekBarkodAciklama.trim() })
+      toast.success('Ek barkod eklendi')
+      setEkBarkod(''); setEkBarkodAciklama('')
+      ekBarkodlariYukle()
+    } catch (e) { toast.error(e.message) }
+  }
+
+  async function handleEkBarkodSil(id) {
+    try {
+      await urunlerApi.barkodSil(id)
+      toast.success('Ek barkod silindi')
+      ekBarkodlariYukle()
     } catch (e) { toast.error(e.message) }
   }
 
@@ -383,6 +416,41 @@ export default function Urunler() {
                   <textarea value={form.aciklama} onChange={e => setForm(f=>({...f,aciklama:e.target.value}))} rows={2} className="w-full border rounded-lg px-3 py-2 text-sm" />
                 </div>
               </div>
+
+              {/* Ek Barkodlar: yalnız düzenleme modunda (ürün id'si yoksa iç içe form kurmayı gerektirirdi). */}
+              {duzenlenenId && (
+                <div className="mt-4 border-t pt-3">
+                  <label className="block text-xs font-medium text-gray-600">Ek Barkodlar</label>
+                  <p className="text-xs text-gray-400 mb-2">Bu ürün bu barkodlarla da okutulabilir. Etikete her zaman ana barkod basılır.</p>
+
+                  {ekBarkodlar.length === 0 ? (
+                    <p className="text-xs text-gray-400 mb-2">Ek barkod tanımlı değil.</p>
+                  ) : (
+                    <ul className="mb-2 space-y-1">
+                      {ekBarkodlar.map(b => (
+                        <li key={b.id} className="flex items-center justify-between text-xs bg-gray-50 border rounded px-2 py-1">
+                          <span>
+                            <span className="font-mono">{b.barkod}</span>
+                            {b.aciklama && <span className="text-gray-400 ml-2">{b.aciklama}</span>}
+                          </span>
+                          <button type="button" onClick={() => handleEkBarkodSil(b.id)} className="text-gray-400 hover:text-red-600 ml-2">✕</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div className="flex gap-1">
+                    <input value={ekBarkod} onChange={e => setEkBarkod(e.target.value)} placeholder="Barkod"
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleEkBarkodEkle() } }}
+                      className="flex-1 border rounded px-2 py-1 text-xs" />
+                    <input value={ekBarkodAciklama} onChange={e => setEkBarkodAciklama(e.target.value)} placeholder="Açıklama (opsiyonel)"
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleEkBarkodEkle() } }}
+                      className="flex-1 border rounded px-2 py-1 text-xs" />
+                    <button type="button" onClick={handleEkBarkodEkle} className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700">Ekle</button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 mt-4">
                 <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-medium">{duzenlenenId ? 'Güncelle' : 'Ekle'}</button>
                 <button type="button" onClick={() => { setFormAcik(false); setDuzenlenenId(null) }} className="flex-1 border py-2 rounded-lg hover:bg-gray-50">İptal</button>

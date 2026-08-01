@@ -501,6 +501,25 @@ function migrate() {
   try { db.exec("ALTER TABLE satislar ADD COLUMN tip TEXT DEFAULT 'satis'") } catch {}
   try { db.exec("ALTER TABLE satislar ADD COLUMN iade_kaynak_id INTEGER REFERENCES satislar(id)") } catch {}
   try { db.exec("ALTER TABLE satis_kalemleri ADD COLUMN iade_miktar INTEGER DEFAULT 0") } catch {}
+  // satislar — ön sipariş: stokta olmayan ürün için peşin ödemeli sipariş.
+  // Stok DÜŞÜLMEZ ve ikas'a push edilmez; ciro/kasa normal satış gibi işler (ödeme anında).
+  // on_siparis_durum: 'bekliyor' -> 'kargolandi' -> 'teslim' | 'iptal'
+  try { db.exec("ALTER TABLE satislar ADD COLUMN on_siparis INTEGER DEFAULT 0") } catch {}
+  try { db.exec("ALTER TABLE satislar ADD COLUMN on_siparis_durum TEXT") } catch {}
+  try { db.exec("ALTER TABLE satislar ADD COLUMN on_siparis_not TEXT") } catch {}
+  // Ürün takma ad barkodları: bir ürün birden fazla barkodla okutulabilsin
+  // (tedarikçi barkodu + kendi 29'lu dahili barkodumuz + eski barkod).
+  // urunler.barkod BİRİNCİL kalır (etikete basılan, senkronun doğal anahtarı).
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS urun_barkodlar (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      urun_id INTEGER NOT NULL REFERENCES urunler(id) ON DELETE CASCADE,
+      barkod TEXT NOT NULL UNIQUE,
+      aciklama TEXT,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    )`)
+  } catch {}
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_urun_barkodlar_urun ON urun_barkodlar(urun_id)') } catch {}
   // musteriler — ikas müşteri istatistikleri (listCustomer: orderCount/totalOrderPrice...).
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_musteri_id TEXT") } catch {}
   try { db.exec("ALTER TABLE musteriler ADD COLUMN ikas_siparis_sayisi INTEGER") } catch {}

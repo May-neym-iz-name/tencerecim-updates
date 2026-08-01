@@ -25,6 +25,15 @@ const MUSTERI_ALANLARI = [
   [['iskonto_orani', 'Sabit İskonto Oranı (%)', false]],
 ]
 
+// Elle girilen fiyatı sayıya çevirir; geçersiz/boş/negatif ise null döner
+// (o zaman ürünün kayıtlı fiyatı geçerlidir). Ekran hesabı (efektifFiyat) ve
+// satış payload'ı AYNI bu fonksiyondan geçer — ikisi ayrışırsa kullanıcı
+// gördüğünden farklı bir tutarı kaydeder ve bunu fark etmez.
+function elleFiyatSayi(k) {
+  const n = Number(String(k.elleFiyat ?? '').replace(',', '.'))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export default function Satis() {
   // Ürün browser — hiyerarşik gezinme: Markalar → Kategoriler → Ürünler (hepsi kart).
   const [urunler, setUrunler] = useState([])
@@ -63,6 +72,12 @@ export default function Satis() {
   const kargoYetkisi = yetkiVar('kargo_yonet')
   const [kargoFormAcik, setKargoFormAcik] = useState(false)
   const [sonSatis, setSonSatis] = useState(null) // { satisId, fisNo, musteri }
+
+  // Ön sipariş: stokta olmayan ürün için peşin ödemeli satış. Stok düşülmez.
+  // KALICI DEĞİL — her satıştan sonra sıfırlanır ki yanlışlıkla açık kalmasın.
+  const [onSiparis, setOnSiparis] = useState(false)
+  const [onSiparisNot, setOnSiparisNot] = useState('')
+  const onSiparisYetkisi = yetkiVar('on_siparis_yap')
 
   // Uygulama ayarları (müşteri zorunlu mu, indirim tipi)
   const { ayarlar, kaydet: ayarKaydet } = useAyarlar()
@@ -235,8 +250,11 @@ export default function Satis() {
   }
 
   // Hesaplamalar
+  // Ön siparişte elle girilen satır fiyatı (yalnız normal kalemler, set hariç) toplamlarda
+  // ürünün kayıtlı fiyatının yerine geçer; geçersiz/boş değer kayıtlı fiyata düşer.
+  const efektifFiyat = (k) => (onSiparis && k.tip !== 'set' ? (elleFiyatSayi(k) ?? k.satis_fiyati) : k.satis_fiyati)
   // Brüt toplam (iskontosuz) — TL indirimi yüzdeye çevirmek için
-  const brutToplam = sepet.reduce((t, k) => t + k.satis_fiyati * k.miktar, 0)
+  const brutToplam = sepet.reduce((t, k) => t + efektifFiyat(k) * k.miktar, 0)
   const musteriIskonto = secilenMusteri?.iskonto_orani || 0
   // Manuel indirimi yüzdeye çevir (ayar 'tutar' ise TL → %)
   const manuelYuzde = iskontoTipi === 'tutar'
@@ -245,10 +263,10 @@ export default function Satis() {
   const genelIskontoYuzde = Math.max(musteriIskonto, manuelYuzde)
 
   const efektifIskonto = (k) => Math.max(k.kalem_iskonto || 0, genelIskontoYuzde)
-  const kalemToplam = (k) => k.satis_fiyati * k.miktar * (1 - efektifIskonto(k) / 100)
+  const kalemToplam = (k) => efektifFiyat(k) * k.miktar * (1 - efektifIskonto(k) / 100)
   const toplamKDVsiz = sepet.reduce((t, k) => t + kalemToplam(k) * 100 / (100 + k.kdv_orani), 0)
   const toplamKDV = sepet.reduce((t, k) => t + kalemToplam(k) * k.kdv_orani / (100 + k.kdv_orani), 0)
-  const toplamIskonto = sepet.reduce((t, k) => t + k.satis_fiyati * k.miktar * efektifIskonto(k) / 100, 0)
+  const toplamIskonto = sepet.reduce((t, k) => t + efektifFiyat(k) * k.miktar * efektifIskonto(k) / 100, 0)
   const genelToplam = sepet.reduce((t, k) => t + kalemToplam(k), 0)
 
   // Ödeme tipi farkını (kart/havale/nakit %) iskontolu toplamların ÜZERİNE uygula.
@@ -280,18 +298,28 @@ export default function Satis() {
         odeme_oran: odemelerArg ? 0 : odemeOran,
         odemeler: odemelerArg || undefined,
         stok_zorla: !!ayarlar.stok_yetersiz_satis,
+        // Ön siparişte backend stok kontrolünü ve stok düşümünü atlar.
+        on_siparis: onSiparis || undefined,
+        on_siparis_not: onSiparis ? (onSiparisNot.trim() || null) : undefined,
         // Set kalemleri bileşen ürünlere açılır (set fiyatı dağıtılmış birim_fiyat + set_adi);
         // normal kalemler olduğu gibi gider.
         kalemler: sepet.flatMap(k => k.tip === 'set'
           ? setiAc(k)
-          : [{ urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k) }]),
+          : [{
+              urun_id: k.urun_id, miktar: k.miktar, iskonto_orani: efektifIskonto(k),
+              // Ön siparişte elle girilen fiyat yalnız bu satışa geçer; ürün kartı değişmez.
+              ...(onSiparis && elleFiyatSayi(k) != null ? { birim_fiyat: elleFiyatSayi(k) } : {}),
+            }]),
       })
-      toast.success(`✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
+      toast.success(onSiparis
+        ? `✓ Ön sipariş alındı (stok düşülmedi) — Fiş: ${satis.fis_no}`
+        : `✓ Satış tamamlandı — Fiş: ${satis.fis_no}`)
       senkTetikle() // yeni satışı anında Supabase'e gönder
       // Kargo butonu için bu satışı ve müşterisini sakla (sepet temizlenmeden önce).
       setSonSatis({ satisId: satis.id, fisNo: satis.fis_no, musteri: secilenMusteri })
       setSepet([]); setSecilenMusteri(null); setMusteriArama(''); setManuelIskonto(0)
       setParcaliAcik(false); setParcali({ nakit: '', kart: '', havale: '' })
+      setOnSiparis(false); setOnSiparisNot('')
       barkodRef.current?.focus()
       // Fişi yazdır (hata olursa satışı engellemesin)
       fisApi.yazdir(satis.id).catch(err => toast.error(`Fiş yazdırılamadı: ${err.message}`))
@@ -598,6 +626,19 @@ export default function Satis() {
                         onChange={e => setSepet(prev => prev.map(i => i.urun_id === k.urun_id ? { ...i, kalem_iskonto: parseFloat(e.target.value) || 0 } : i))}
                         className="w-12 border rounded px-1.5 py-1 text-xs text-center" />
                     </div>
+                    {/* Ön sipariş: satır fiyatı elle girilebilir (boş = ürünün kayıtlı fiyatı). Set kalemlerinde açılmaz. */}
+                    {onSiparis && k.tip !== 'set' && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <span className="text-xs text-gray-400">₺</span>
+                        <input type="text" inputMode="decimal"
+                          value={k.elleFiyat ?? ''} placeholder={k.satis_fiyati.toFixed(2)}
+                          onChange={e => {
+                            const deger = e.target.value
+                            setSepet(prev => prev.map(i => i.urun_id === k.urun_id ? { ...i, elleFiyat: deger } : i))
+                          }}
+                          className="w-16 border border-amber-300 rounded px-1.5 py-1 text-xs text-center" />
+                      </div>
+                    )}
                     <div className="ml-auto text-right flex-shrink-0">
                       <div className="text-sm font-bold text-gray-800">₺{kalemToplam(k).toFixed(2)}</div>
                       {efektifIskonto(k) > 0 && <div className="text-xs text-green-600">-%{efektifIskonto(k)}</div>}
@@ -659,6 +700,26 @@ export default function Satis() {
             })}
           </div>
 
+          {onSiparisYetkisi && (
+            <div className={`rounded-lg border px-3 py-2 transition-colors ${onSiparis ? 'border-amber-400 bg-amber-50' : 'border-gray-200'}`}>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={onSiparis} onChange={e => {
+                    const acik = e.target.checked
+                    setOnSiparis(acik)
+                    // Kutucuk kapatılınca elle girilen fiyatlar temizlenir (normal satışa sızmasın).
+                    if (!acik) setSepet(prev => prev.map(i => i.elleFiyat !== undefined ? { ...i, elleFiyat: undefined } : i))
+                  }}
+                  className="w-4 h-4 accent-amber-600" />
+                <span className="text-xs font-semibold text-gray-700">🕐 Ön Sipariş <span className="font-normal text-gray-500">(stok düşülmez)</span></span>
+              </label>
+              {onSiparis && (
+                <input type="text" value={onSiparisNot} onChange={e => setOnSiparisNot(e.target.value)}
+                  placeholder="Not (ör. tedarikçiden 10 gün)"
+                  className="mt-2 w-full text-xs border border-amber-300 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400" />
+              )}
+            </div>
+          )}
+
           <button type="button" onClick={() => { setParcali({ nakit: '', kart: '', havale: '' }); setParcaliAcik(true) }}
             disabled={sepet.length === 0}
             className="w-full text-xs font-medium text-gray-600 border border-dashed border-gray-300 rounded-lg py-1.5 hover:bg-gray-50 disabled:opacity-40">
@@ -678,8 +739,9 @@ export default function Satis() {
             </button>
           )}
           <button onClick={() => satisOlustur()} disabled={islemde}
-            className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-50 text-sm transition-colors">
-            {islemde ? '⏳ İşleniyor...' : `✓ Satışı Tamamla  ₺${genelToplamSon.toFixed(2)}`}
+            className={`w-full text-white py-3 rounded-xl font-bold disabled:opacity-50 text-sm transition-colors ${
+              onSiparis ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}>
+            {islemde ? '⏳ İşleniyor...' : `${onSiparis ? '🕐 Ön Siparişi Kaydet' : '✓ Satışı Tamamla'}  ₺${genelToplamSon.toFixed(2)}`}
           </button>
 
           {sepet.length > 0 && (

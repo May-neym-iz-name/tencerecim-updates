@@ -10,6 +10,9 @@ export const urunlerApi = {
   getir: (id) => invoke('urunler:getir', id),
   barkodla: (barkod) => invoke('urunler:barkodla', barkod),
   barkodUret: (id) => invoke('urunler:barkodUret', id),
+  barkodListe: (urunId) => invoke('urunler:barkod-liste', urunId),
+  barkodEkle: (veri) => invoke('urunler:barkod-ekle', veri),
+  barkodSil: (id) => invoke('urunler:barkod-sil', id),
   sonrakiStokKodu: (marka_id) => invoke('urunler:sonraki-stok-kodu', marka_id),
   olustur: (veri) => invoke('urunler:olustur', veri),
   guncelle: (id, veri) => invoke('urunler:guncelle', { id, ...veri }),
@@ -33,6 +36,8 @@ export const satisApi = {
   gunlukOzet: (params) => invoke('satislar:gunluk-ozet', params),
   iptal: (id) => invoke('satislar:iptal', id),
   iade: (veri) => invoke('satislar:iade', veri),
+  onSiparisler: (params) => invoke('satislar:on-siparisler', params),
+  onSiparisDurum: (id, durum) => invoke('satislar:on-siparis-durum', { id, durum }),
 }
 
 export const sistemApi = {

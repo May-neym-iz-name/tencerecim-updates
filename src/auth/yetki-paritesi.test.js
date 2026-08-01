@@ -29,7 +29,7 @@ function backendYetkiVar(profil, kod) {
 
 // Uygulamada geçen tüm yetki kodları (Supabase yetki_kodlari + sosyal medya kodları).
 const TUM_KODLAR = [
-  'satis_yap', 'satis_gecmisi_goruntule', 'satis_iptal',
+  'satis_yap', 'satis_gecmisi_goruntule', 'satis_iptal', 'on_siparis_yap',
   'urun_goruntule', 'urun_duzenle', 'urun_sil', 'fiyat_degistir',
   'stok_goruntule', 'stok_duzenle', 'stok_sayim', 'mal_kabul_yonet',
   'musteri_goruntule', 'musteri_duzenle', 'musteri_sil',
@@ -85,5 +85,22 @@ describe('sosyal medya yetkileri', () => {
   test('yönetici otomasyonu yönetebilir', () => {
     const p = { rol: 'yonetici', aktif: true, izinler: {} }
     expect(yetkiVar(p, 'sosyal_otomasyon_yonet')).toBe(true)
+  })
+})
+
+describe('ön sipariş yetkisi', () => {
+  test('personel ön sipariş alamaz (varsayılan kapalı)', () => {
+    const p = { rol: 'personel', aktif: true, izinler: {} }
+    expect(yetkiVar(p, 'satis_yap')).toBe(true)
+    expect(yetkiVar(p, 'on_siparis_yap')).toBe(false)
+  })
+
+  test('yönetici ön sipariş alabilir', () => {
+    expect(yetkiVar({ rol: 'yonetici', aktif: true, izinler: {} }, 'on_siparis_yap')).toBe(true)
+  })
+
+  test('override ile personele açılabilir', () => {
+    const p = { rol: 'personel', aktif: true, izinler: { on_siparis_yap: true } }
+    expect(yetkiVar(p, 'on_siparis_yap')).toBe(true)
   })
 })

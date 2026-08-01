@@ -20,6 +20,9 @@ const PERSONEL_VARSAYILAN = new Set([
   // 'sosyal_otomasyon_yonet' BİLEREK yok: otomasyon tek tıkla yüzlerce kişiye DM
   // gönderir, o yüzden varsayılan kapalı — kime açılacağına yönetici karar verir.
   'sosyal_medya_yonet',
+  // 'on_siparis_yap' BİLEREK yok: ön sipariş stok yeterlilik kontrolünü ATLAR
+  // (stokta olmayan ürün satılır). Yanlış kullanılırsa stok güvenilirliği sessizce
+  // bozulur — kime açılacağına yönetici karar verir.
 ])
 
 // Renderer'dan gelen aktif kullanıcı profili (rol + izinler + izinli_lokasyonlar).
@@ -59,9 +62,19 @@ function lokasyonKontrol(lokasyonId) {
   }
 }
 
+// Kodlardan HERHANGİ BİRİ varsa geçer (OR). Örn. kargo durumunu hem "ön sipariş yapabilen"
+// hem de "kargo yönetebilen" personel işaretleyebilsin — kargoyu oluşturan kişi durumunu da
+// yazabilmeli, aksi halde kargo çıkar ama sipariş "Bekliyor"da sessizce kalır.
+function yetkiKontrolBirden(kodlar) {
+  if (!kodlar.some((kod) => yetkiVar(aktifProfil, kod))) {
+    throw new Error('Bu işlem için yetkiniz yok')
+  }
+}
+
 module.exports = {
   // IPC dışı yardımcılar (main.js _ önekli kanalları atlar).
   _yetkiKontrol: yetkiKontrol,
+  _yetkiKontrolBirden: yetkiKontrolBirden,
   _lokasyonKontrol: lokasyonKontrol,
 
   'auth:profil-ayarla': (profil) => { aktifProfil = profil || null; return { ok: true } },

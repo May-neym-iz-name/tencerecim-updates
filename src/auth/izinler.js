@@ -19,6 +19,7 @@ const PERSONEL_VARSAYILAN = new Set([
   // Personel sosyal medyayı kullanabilir (yorum/DM görüntüleme + elle cevap).
   // 'sosyal_otomasyon_yonet' BİLEREK yok — bkz. electron/yetki.js'teki aynı not.
   'sosyal_medya_yonet',
+  // 'on_siparis_yap' BİLEREK yok — bkz. electron/yetki.js'teki aynı not.
 ])
 
 /**

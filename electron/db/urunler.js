@@ -60,6 +60,68 @@ const URUN_SELECT = `
   LEFT JOIN tedarikciler t ON u.tedarikci_id = t.id
 `
 
+// --- Takma ad barkodlar ---
+// urunler.barkod BİRİNCİL kalır; buradakiler ek "bu barkod da bu ürüne gider" kayıtlarıdır.
+// db enjekte edilebilir (test için); üretimde IPC sarmalayıcısı getDb() geçer.
+
+function barkodListe(urun_id, db) {
+  return db.prepare(
+    'SELECT id, barkod, aciklama FROM urun_barkodlar WHERE urun_id=? ORDER BY id'
+  ).all(urun_id)
+}
+
+function barkodEkle({ urun_id, barkod, aciklama }, db) {
+  const deger = String(barkod || '').trim()
+  if (!deger) throw new Error('Barkod boş olamaz')
+  const urun = db.prepare('SELECT id, barkod FROM urunler WHERE id=?').get(urun_id)
+  if (!urun) throw new Error('Ürün bulunamadı')
+  if (String(urun.barkod || '').trim() === deger) {
+    throw new Error('Bu kod zaten bu ürünün barkodu')
+  }
+  // Başka bir ürünün birincil barkodu ya da takma adı olamaz — okutulunca hangi ürünün
+  // geleceği belirsiz kalırdı.
+  const baskaBirincil = db.prepare('SELECT id FROM urunler WHERE TRIM(barkod)=? AND id!=?').get(deger, urun_id)
+  const baskaTakma = db.prepare('SELECT urun_id FROM urun_barkodlar WHERE barkod=?').get(deger)
+  if (baskaBirincil || baskaTakma) throw new Error('Bu barkod başka bir ürüne tanımlı')
+  const aciklamaDeger = (aciklama && String(aciklama).trim()) || null
+  const r = db.prepare('INSERT INTO urun_barkodlar (urun_id, barkod, aciklama) VALUES (?,?,?)')
+    .run(urun_id, deger, aciklamaDeger)
+  return { id: Number(r.lastInsertRowid), barkod: deger, aciklama: aciklamaDeger }
+}
+
+// TERS YÖN kontrolü: bir ürünün BİRİNCİL barkodu, başka bir ürüne ait TAKMA AD ile
+// çakışabiliyordu (barkodEkle yalnız takma ad tarafını kontrol ediyordu). haric_id
+// kendi ürününü (güncellemede) hariç tutar; oluşturmada 0/undefined geçilir.
+function baskaUrununTakmaAdiMi(db, deger, haric_id) {
+  if (!deger) return false
+  const takma = db.prepare('SELECT urun_id FROM urun_barkodlar WHERE barkod=?').get(deger)
+  return !!(takma && takma.urun_id !== (haric_id || 0))
+}
+
+function barkodSil(id, db) {
+  const r = db.prepare('DELETE FROM urun_barkodlar WHERE id=?').run(id)
+  if (!r.changes) throw new Error('Barkod bulunamadı')
+  return { mesaj: 'Barkod silindi' }
+}
+
+// Barkod/SKU/takma ad ile ürün bul. Takma ad eşleşmesi urun_barkodlar üzerinden;
+// birincil barkod ve SKU davranışı DEĞİŞMEDEN korunur.
+function barkodIleBul(barkod, db) {
+  const deger = String(barkod || '').trim()
+  if (!deger) return undefined
+  // Savunma katmanı: geçmişte oluşmuş bir çakışma bile deterministik davransın diye
+  // BİRİNCİL barkod/SKU eşleşmesi takma ad eşleşmesinden önce gelsin (ORDER BY oncelik).
+  return db.prepare(
+    `${URUN_SELECT} WHERE (
+        TRIM(u.barkod) = ?
+        OR TRIM(u.sku) = ?
+        OR u.id IN (SELECT ub.urun_id FROM urun_barkodlar ub WHERE TRIM(ub.barkod) = ?)
+      ) AND u.aktif = 1
+      ORDER BY (CASE WHEN TRIM(u.barkod) = ? OR TRIM(u.sku) = ? THEN 0 ELSE 1 END)
+      LIMIT 1`
+  ).get(deger, deger, deger, deger, deger)
+}
+
 module.exports = {
   // durum: 'aktif' (varsayılan) | 'pasif'. Pasifler YALNIZCA Ürünler sekmesindeki
   // Pasif alanından istenir; satış/stok/set gibi tüm diğer çağrılar varsayılanla
@@ -79,7 +141,12 @@ module.exports = {
       // ancak bu sıra ve boşluklarla BİREBİR geçiyorsa eşleşiyordu, ayrıca "ÇELİK"
       // büyük yazılınca hiç bulunmuyordu (LIKE yalnız ASCII'de duyarsız).
       // Marka adı da aranır: ürün adında marka geçmese bile "lava tencere" çalışsın.
-      const k = kelimeKosulu("u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE(m.ad,'')", arama)
+      // Takma ad barkodlar da aranabilir olmalı: mal kabul/set ekranları ürünü
+      // urunler:listele ile arıyor, okutulan ek barkod orada da bulunmalı.
+      const k = kelimeKosulu(
+        "u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE(m.ad,'')" +
+        " || ' ' || COALESCE((SELECT GROUP_CONCAT(ub.barkod, ' ') FROM urun_barkodlar ub WHERE ub.urun_id = u.id),'')",
+        arama)
       where += k.sql
       params.push(...k.params)
       const kAd = kelimeKosulu('u.ad', arama)
@@ -118,25 +185,25 @@ module.exports = {
     return getDb().prepare(`${URUN_SELECT} WHERE u.id = ? AND u.aktif = 1`).get(id)
   },
 
-  'urunler:barkodla': (barkod) => {
-    const deger = String(barkod || '').trim()
-    if (!deger) return undefined
-    // Barkod ya da SKU ile eşleştir; olası baştaki/sondaki boşlukları yok say.
-    return getDb().prepare(
-      `${URUN_SELECT} WHERE (TRIM(u.barkod) = ? OR TRIM(u.sku) = ?) AND u.aktif = 1`
-    ).get(deger, deger)
-  },
+  _barkodla: barkodIleBul,
+
+  'urunler:barkodla': (barkod) => barkodIleBul(barkod, getDb()),
 
   // Marka seçilince formda gösterilecek otomatik stok kodu önerisi.
   'urunler:sonraki-stok-kodu': (marka_id) => sonrakiStokKodu(getDb(), marka_id),
 
-  'urunler:olustur': (veri) => {
+  'urunler:olustur': (veri, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
-    const db = getDb()
     let { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
     // SKU boş bırakıldıysa marka şablonundan otomatik türet (TNC.XXX.00001+).
     if ((!sku || !String(sku).trim()) && marka_id) {
       sku = sonrakiStokKodu(db, marka_id)
+    }
+
+    // TERS YÖN kontrolü: yeni ürünün birincil barkodu, başka bir ürünün takma adıyla
+    // çakışmasın (bkz. baskaUrununTakmaAdiMi tanımı).
+    if (barkod && baskaUrununTakmaAdiMi(db, String(barkod).trim(), 0)) {
+      throw new Error('Bu barkod başka bir ürüne takma ad olarak tanımlı')
     }
 
     // Yumuşak silme (aktif=0) nedeniyle aynı barkod/SKU pasif bir üründe kalmış olabilir.
@@ -165,9 +232,8 @@ module.exports = {
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(r.lastInsertRowid)
   },
 
-  'urunler:guncelle': ({ id, ...veri }) => {
+  'urunler:guncelle': ({ id, ...veri }, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
-    const db = getDb()
     const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
     // Satış fiyatı değişiyorsa ayrıca fiyat_degistir yetkisi gerekir.
     const mevcut = db.prepare('SELECT satis_fiyati, alis_fiyati FROM urunler WHERE id = ?').get(id)
@@ -177,6 +243,11 @@ module.exports = {
     // Fiyat (satış/alış) değişti mi → ikas'a arka planda gönder.
     const fiyatDegisti = mevcut &&
       (Number(mevcut.satis_fiyati) !== Number(satis_fiyati) || Number(mevcut.alis_fiyati) !== Number(alis_fiyati))
+    // TERS YÖN kontrolü: bu ürünün birincil barkodu başka bir ürünün takma adıyla
+    // çakışmasın (bkz. baskaUrununTakmaAdiMi tanımı).
+    if (barkod && baskaUrununTakmaAdiMi(db, String(barkod).trim(), id)) {
+      throw new Error('Bu barkod başka bir ürüne takma ad olarak tanımlı')
+    }
     try {
       db.prepare(`
         UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
@@ -204,15 +275,36 @@ module.exports = {
     if (urun.barkod && String(urun.barkod).trim()) throw new Error('Bu ürünün zaten bir barkodu var')
 
     const barkodVar = db.prepare('SELECT 1 FROM urunler WHERE barkod = ?')
+    const takmaAdVar = db.prepare('SELECT 1 FROM urun_barkodlar WHERE barkod = ?')
     let barkod = magazaBarkoduUret(urun.id)
     // Çakışma teorik olarak imkânsız (29 öneki + benzersiz id); yine de savunmacı kontrol.
+    // urun_barkodlar da kontrol edilir — üretilen değer bir takma adla çakışabilir.
     let deneme = 0
-    while (barkodVar.get(barkod)) {
+    while (barkodVar.get(barkod) || takmaAdVar.get(barkod)) {
       barkod = magazaBarkoduUret(Math.floor(Math.random() * 1e10))
       if (++deneme > 20) throw new Error('Benzersiz barkod üretilemedi, tekrar deneyin')
     }
     db.prepare(`UPDATE urunler SET barkod = ?, guncelleme_tarihi = datetime('now','localtime') WHERE id = ?`).run(barkod, id)
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(id)
+  },
+
+  _barkodListe: barkodListe,
+  _barkodEkle: barkodEkle,
+  _barkodSil: barkodSil,
+
+  'urunler:barkod-liste': (urun_id) => {
+    yetkiKontrol('urun_goruntule')
+    return barkodListe(urun_id, getDb())
+  },
+
+  'urunler:barkod-ekle': (veri) => {
+    yetkiKontrol('urun_duzenle')
+    return barkodEkle(veri, getDb())
+  },
+
+  'urunler:barkod-sil': (id) => {
+    yetkiKontrol('urun_duzenle')
+    return barkodSil(id, getDb())
   },
 
   'urunler:sil': (id) => {

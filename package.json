@@ -1,6 +1,6 @@
 {
   "name": "tencerecim",
-  "version": "1.2.148",
+  "version": "1.2.149",
   "description": "Tencerecim Mağaza Yönetim Sistemi",
   "main": "electron/main.js",
   "author": "Tencerecim",

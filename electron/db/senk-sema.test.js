@@ -100,3 +100,19 @@ describe('sosyal_otomasyonlar senkronu (v1.2.114)', () => {
     expect(TABLOLAR.sosyal_otomasyon_sablonlar.sonradanEklendi).toBe(true)
   })
 })
+
+describe('urun_barkodlar senkronu', () => {
+  test('TABLOLAR içinde tanımlı ve urunler FK\'sı var', () => {
+    const t = TABLOLAR.urun_barkodlar
+    expect(t).toBeDefined()
+    expect(t.fk.urun_id).toBe('urunler')
+    expect(t.zorunluFk).toContain('urun_id')
+    expect(t.dogal).toEqual(['barkod'])
+    expect(t.sonradanEklendi).toBe(true)
+  })
+
+  test('SIRA içinde urunler tablosundan SONRA gelir (FK bağımlılığı)', () => {
+    expect(SIRA).toContain('urun_barkodlar')
+    expect(SIRA.indexOf('urun_barkodlar')).toBeGreaterThan(SIRA.indexOf('urunler'))
+  })
+})

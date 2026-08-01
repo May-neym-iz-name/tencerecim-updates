@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { stokApi, lokasyonApi } from '../api/ipc'
+import { stokApi, lokasyonApi, urunlerApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
@@ -187,7 +187,7 @@ export default function Stok() {
     kodIsle(barkodInput)
   }
 
-  function kodIsle(ham) {
+  async function kodIsle(ham) {
     const kod = String(ham || '').trim()
     setBarkodInput('')
     if (!kod || !aktifSayim) return
@@ -195,7 +195,17 @@ export default function Stok() {
     // sorun olmaz). ESKİ HATA: hedef güncelleyicinin içinde hesaplanıp dışarıda
     // senkron okunuyordu; React güncelleyiciyi genelde sonra çalıştırdığı için
     // null kalıyor ve DB yazımı atlanıyordu. Artık DB yazımı senkron effect'inde.
-    const kalem = aktifSayim.kalemler.find(k => String(k.barkod || '').trim() === kod)
+    // Hızlı yol: ana barkodla tam eşleşme, sunucuya gitmeden anında çalışır
+    // (art arda hızlı okutmada ağ/IPC turu yaşanmaz).
+    let kalem = aktifSayim.kalemler.find(k => String(k.barkod || '').trim() === kod)
+    // Takma ad barkod: sayım kalemlerinde ana barkodla eşleşme yoksa kodu sunucuya
+    // sor (urunler:barkodla takma adları da çözer) ve dönen ürün id'siyle kalemi bul.
+    if (!kalem) {
+      try {
+        const urun = await urunlerApi.barkodla(kod)
+        if (urun) kalem = aktifSayim.kalemler.find(k => k.urun_id === urun.id)
+      } catch { /* çözülemezse aşağıdaki "bulunamadı" akışı devreye girer */ }
+    }
     if (!kalem) { toast.error('Bu sayımda ürün bulunamadı: ' + kod); return }
     setAktifSayim(prev => {
       if (!prev) return prev
