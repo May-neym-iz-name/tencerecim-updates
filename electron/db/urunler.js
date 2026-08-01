@@ -66,7 +66,7 @@ const URUN_SELECT = `
 
 function barkodListe(urun_id, db) {
   return db.prepare(
-    'SELECT id, barkod, aciklama FROM urun_barkodlar WHERE urun_id=? ORDER BY id'
+    'SELECT id, barkod, aciklama FROM urun_barkodlar WHERE urun_id=? AND COALESCE(aktif,1)=1 ORDER BY id'
   ).all(urun_id)
 }
 
@@ -78,12 +78,22 @@ function barkodEkle({ urun_id, barkod, aciklama }, db) {
   if (String(urun.barkod || '').trim() === deger) {
     throw new Error('Bu kod zaten bu ürünün barkodu')
   }
-  // Başka bir ürünün birincil barkodu ya da takma adı olamaz — okutulunca hangi ürünün
-  // geleceği belirsiz kalırdı.
+  // Başka bir ürünün birincil barkodu olamaz — okutulunca hangi ürünün geleceği belirsiz kalırdı.
   const baskaBirincil = db.prepare('SELECT id FROM urunler WHERE TRIM(barkod)=? AND id!=?').get(deger, urun_id)
-  const baskaTakma = db.prepare('SELECT urun_id FROM urun_barkodlar WHERE barkod=?').get(deger)
-  if (baskaBirincil || baskaTakma) throw new Error('Bu barkod başka bir ürüne tanımlı')
+  if (baskaBirincil) throw new Error('Bu barkod başka bir ürüne tanımlı')
   const aciklamaDeger = (aciklama && String(aciklama).trim()) || null
+  const mevcutTakma = db.prepare('SELECT id, urun_id, aktif FROM urun_barkodlar WHERE barkod=?').get(deger)
+  if (mevcutTakma && Number(mevcutTakma.aktif ?? 1) === 1) {
+    if (mevcutTakma.urun_id === urun_id) throw new Error('Bu barkod zaten bu ürüne tanımlı')
+    throw new Error('Bu barkod başka bir ürüne tanımlı')
+  }
+  if (mevcutTakma) {
+    // Pasif (silinmiş) satır: yeni satır AÇMA — barkod UNIQUE ve senkronun doğal anahtarı,
+    // aynı satırın canlandırılması diğer PC'ye "bu barkod artık şu ürüne ait ve aktif" bilgisini taşır.
+    db.prepare('UPDATE urun_barkodlar SET urun_id=?, aciklama=?, aktif=1 WHERE id=?')
+      .run(urun_id, aciklamaDeger, mevcutTakma.id)
+    return { id: mevcutTakma.id, barkod: deger, aciklama: aciklamaDeger }
+  }
   const r = db.prepare('INSERT INTO urun_barkodlar (urun_id, barkod, aciklama) VALUES (?,?,?)')
     .run(urun_id, deger, aciklamaDeger)
   return { id: Number(r.lastInsertRowid), barkod: deger, aciklama: aciklamaDeger }
@@ -91,15 +101,17 @@ function barkodEkle({ urun_id, barkod, aciklama }, db) {
 
 // TERS YÖN kontrolü: bir ürünün BİRİNCİL barkodu, başka bir ürüne ait TAKMA AD ile
 // çakışabiliyordu (barkodEkle yalnız takma ad tarafını kontrol ediyordu). haric_id
-// kendi ürününü (güncellemede) hariç tutar; oluşturmada 0/undefined geçilir.
+// kendi ürününü (güncellemede) hariç tutar; oluşturmada 0/undefined geçilir. Pasif
+// (silinmiş) takma ad birincil barkod olarak kullanılmayı engellemez.
 function baskaUrununTakmaAdiMi(db, deger, haric_id) {
   if (!deger) return false
-  const takma = db.prepare('SELECT urun_id FROM urun_barkodlar WHERE barkod=?').get(deger)
+  const takma = db.prepare('SELECT urun_id FROM urun_barkodlar WHERE barkod=? AND COALESCE(aktif,1)=1').get(deger)
   return !!(takma && takma.urun_id !== (haric_id || 0))
 }
 
 function barkodSil(id, db) {
-  const r = db.prepare('DELETE FROM urun_barkodlar WHERE id=?').run(id)
+  // Silmiyoruz, pasifleştiriyoruz — bkz. dosya başındaki senkron notu.
+  const r = db.prepare('UPDATE urun_barkodlar SET aktif=0 WHERE id=? AND COALESCE(aktif,1)=1').run(id)
   if (!r.changes) throw new Error('Barkod bulunamadı')
   return { mesaj: 'Barkod silindi' }
 }
@@ -115,7 +127,7 @@ function barkodIleBul(barkod, db) {
     `${URUN_SELECT} WHERE (
         TRIM(u.barkod) = ?
         OR TRIM(u.sku) = ?
-        OR u.id IN (SELECT ub.urun_id FROM urun_barkodlar ub WHERE TRIM(ub.barkod) = ?)
+        OR u.id IN (SELECT ub.urun_id FROM urun_barkodlar ub WHERE TRIM(ub.barkod) = ? AND COALESCE(ub.aktif,1)=1)
       ) AND u.aktif = 1
       ORDER BY (CASE WHEN TRIM(u.barkod) = ? OR TRIM(u.sku) = ? THEN 0 ELSE 1 END)
       LIMIT 1`
@@ -145,7 +157,7 @@ module.exports = {
       // urunler:listele ile arıyor, okutulan ek barkod orada da bulunmalı.
       const k = kelimeKosulu(
         "u.ad || ' ' || COALESCE(u.barkod,'') || ' ' || COALESCE(u.sku,'') || ' ' || COALESCE(m.ad,'')" +
-        " || ' ' || COALESCE((SELECT GROUP_CONCAT(ub.barkod, ' ') FROM urun_barkodlar ub WHERE ub.urun_id = u.id),'')",
+        " || ' ' || COALESCE((SELECT GROUP_CONCAT(ub.barkod, ' ') FROM urun_barkodlar ub WHERE ub.urun_id = u.id AND COALESCE(ub.aktif,1)=1),'')",
         arama)
       where += k.sql
       params.push(...k.params)

@@ -26,7 +26,7 @@ const TABLOLAR = {
   // Takma ad barkodlar: bir ürünün ek barkodları. Senkronlanmazsa diğer PC'de ek
   // barkod okutma sessizce çalışmaz (ön sipariş çalışmasında birebir aynısı yaşandı).
   // barkod tüm PC'lerde AYNI ve UNIQUE → doğal anahtar, dedup garantili.
-  urun_barkodlar: { kolonlar: ['barkod', 'aciklama'], fk: { urun_id: 'urunler' },
+  urun_barkodlar: { kolonlar: ['barkod', 'aciklama', 'aktif'], fk: { urun_id: 'urunler' },
                     zorunluFk: ['urun_id'], dogal: ['barkod'], sonradanEklendi: true },
   setler:       { kolonlar: ['ad', 'fiyat', 'aktif'], fk: {}, dogal: ['ad'] },
   set_urunler:  { kolonlar: ['miktar'], fk: { set_id: 'setler', urun_id: 'urunler' }, zorunluFk: ['set_id', 'urun_id'], dogalCift: ['set_id', 'urun_id'] },

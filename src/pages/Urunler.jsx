@@ -421,7 +421,7 @@ export default function Urunler() {
               {duzenlenenId && (
                 <div className="mt-4 border-t pt-3">
                   <label className="block text-xs font-medium text-gray-600">Ek Barkodlar</label>
-                  <p className="text-xs text-gray-400 mb-2">Bu ürün bu barkodlarla da okutulabilir. Etikete her zaman ana barkod basılır.</p>
+                  <p className="text-xs text-gray-400 mb-2">Bu ürün bu barkodlarla da okutulabilir. Etikete her zaman ana barkod basılır. Silinen bir ek barkod diğer mağazada da kalkar.</p>
 
                   {ekBarkodlar.length === 0 ? (
                     <p className="text-xs text-gray-400 mb-2">Ek barkod tanımlı değil.</p>
