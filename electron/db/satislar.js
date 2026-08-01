@@ -138,6 +138,51 @@ function iptalUygula(id, db, ikasPushFn) {
   return { mesaj: 'Satış iptal edildi' }
 }
 
+const ON_SIPARIS_DURUMLARI = ['bekliyor', 'kargolandi', 'teslim']
+
+// Ön sipariş listesi: satış + müşteri (kargo formunu ön doldurmak için adres alanları
+// dahil) + varsa bağlı UPS gönderisinin takip no'su. Kargo bağı kargolar.satis_id
+// üzerindendir (satış ekranından oluşturulan kargolarla aynı yol).
+function onSiparisleriGetir({ durum, lokasyon_id, baslangic, bitis } = {}, db) {
+  let where = 'WHERE s.on_siparis=1'
+  const params = []
+  if (durum) { where += ' AND COALESCE(s.on_siparis_durum,?)=?'; params.push('bekliyor', durum) }
+  if (lokasyon_id) { where += ' AND s.lokasyon_id=?'; params.push(lokasyon_id) }
+  if (baslangic) { where += ' AND DATE(s.tarih)>=?'; params.push(baslangic) }
+  if (bitis) { where += ' AND DATE(s.tarih)<=?'; params.push(bitis) }
+  const satislar = db.prepare(`
+    SELECT s.*, l.ad AS lokasyon_adi,
+           m.ad||' '||m.soyad AS musteri_adi, m.telefon AS musteri_telefon, m.email AS musteri_email,
+           m.adres AS musteri_adres, m.il AS musteri_il, m.ilce AS musteri_ilce,
+           (SELECT k.takip_no FROM kargolar k
+              WHERE k.satis_id=s.id AND COALESCE(k.durum,'')!='iptal'
+              ORDER BY k.id DESC LIMIT 1) AS takip_no,
+           (SELECT k.son_durum FROM kargolar k
+              WHERE k.satis_id=s.id AND COALESCE(k.durum,'')!='iptal'
+              ORDER BY k.id DESC LIMIT 1) AS kargo_durum
+    FROM satislar s
+    LEFT JOIN lokasyonlar l ON s.lokasyon_id=l.id
+    LEFT JOIN musteriler m ON s.musteri_id=m.id
+    ${where} ORDER BY s.tarih DESC
+  `).all(...params)
+  const kalemSorgu = db.prepare(`
+    SELECT sk.urun_id, u.ad AS urun_adi, sk.miktar
+    FROM satis_kalemleri sk JOIN urunler u ON sk.urun_id=u.id
+    WHERE sk.satis_id=?`)
+  for (const s of satislar) s.kalemler = kalemSorgu.all(s.id)
+  return satislar
+}
+
+// Ön sipariş durumu ilerletme. 'iptal' BURADAN yazılmaz — iptal satislar:iptal
+// akışının işidir (para/durum bütünlüğü orada kurulur).
+function onSiparisDurumYaz(id, durum, db) {
+  if (!ON_SIPARIS_DURUMLARI.includes(durum)) throw new Error('Geçersiz ön sipariş durumu')
+  const satis = db.prepare('SELECT id FROM satislar WHERE id=? AND on_siparis=1').get(id)
+  if (!satis) throw new Error('Ön sipariş bulunamadı')
+  db.prepare('UPDATE satislar SET on_siparis_durum=? WHERE id=?').run(durum, id)
+  return { mesaj: 'Ön sipariş durumu güncellendi' }
+}
+
 module.exports = {
   _olustur: olusturUygula,
 
@@ -260,6 +305,19 @@ module.exports = {
   'satislar:iptal': (id) => {
     yetkiKontrol('satis_iptal')
     return iptalUygula(id, getDb(), ikasPush)
+  },
+
+  _onSiparisler: onSiparisleriGetir,
+  _onSiparisDurum: onSiparisDurumYaz,
+
+  'satislar:on-siparisler': (filtre) => {
+    yetkiKontrol('satis_gecmisi_goruntule')
+    return onSiparisleriGetir(filtre || {}, getDb())
+  },
+
+  'satislar:on-siparis-durum': ({ id, durum }) => {
+    yetkiKontrol('on_siparis_yap')
+    return onSiparisDurumYaz(id, durum, getDb())
   },
 }
 

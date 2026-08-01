@@ -33,6 +33,8 @@ export const satisApi = {
   gunlukOzet: (params) => invoke('satislar:gunluk-ozet', params),
   iptal: (id) => invoke('satislar:iptal', id),
   iade: (veri) => invoke('satislar:iade', veri),
+  onSiparisler: (params) => invoke('satislar:on-siparisler', params),
+  onSiparisDurum: (id, durum) => invoke('satislar:on-siparis-durum', { id, durum }),
 }
 
 export const sistemApi = {

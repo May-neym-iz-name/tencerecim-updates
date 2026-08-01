@@ -35,7 +35,8 @@ beforeEach(() => {
   pushEdilen = []
   db.exec(`
     CREATE TABLE lokasyonlar (id INTEGER PRIMARY KEY, ad TEXT);
-    CREATE TABLE musteriler (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, soyad TEXT);
+    CREATE TABLE musteriler (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, soyad TEXT,
+      telefon TEXT, email TEXT, adres TEXT, il TEXT, ilce TEXT);
     CREATE TABLE urunler (
       id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, satis_fiyati REAL,
       kdv_orani REAL DEFAULT 20, aktif INTEGER DEFAULT 1);
@@ -55,6 +56,7 @@ beforeEach(() => {
       iade_miktar INTEGER DEFAULT 0, set_adi TEXT);
     CREATE TABLE satis_odemeler (
       id INTEGER PRIMARY KEY AUTOINCREMENT, satis_id INTEGER, odeme_tipi TEXT, tutar REAL);
+    CREATE TABLE kargolar (id INTEGER PRIMARY KEY AUTOINCREMENT, satis_id INTEGER, takip_no TEXT, durum TEXT, son_durum TEXT);
     INSERT INTO lokasyonlar (id, ad) VALUES (1, 'Pendik');
     INSERT INTO urunler (id, ad, satis_fiyati, kdv_orani) VALUES (1, 'Tencere', 100, 20);
     INSERT INTO urun_stoklar (urun_id, lokasyon_id, miktar) VALUES (1, 1, 5);
@@ -159,5 +161,50 @@ describe('iptal', () => {
     const s = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
     satislar._iptal(s.id, db, ikasPushSahte)
     expect(() => satislar._iptal(s.id, db, ikasPushSahte)).toThrow(/bulunamadı veya zaten iptal/)
+  })
+})
+
+describe('ön sipariş listeleme', () => {
+  test('yalnızca ön siparişleri döner', () => {
+    satislar._olustur(veri(), db, ikasPushSahte)                      // normal satış
+    const o = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    const liste = satislar._onSiparisler({}, db)
+    expect(liste.map(s => s.id)).toEqual([o.id])
+  })
+
+  test('kalemleri ürün adıyla birlikte getirir', () => {
+    satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    const [s] = satislar._onSiparisler({}, db)
+    expect(s.kalemler).toEqual([{ urun_id: 1, urun_adi: 'Tencere', miktar: 2 }])
+  })
+
+  test('durum filtresi uygular', () => {
+    const o = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    expect(satislar._onSiparisler({ durum: 'bekliyor' }, db).map(s => s.id)).toEqual([o.id])
+    expect(satislar._onSiparisler({ durum: 'teslim' }, db)).toEqual([])
+  })
+
+  test('iptal edilen ön sipariş listede durum iptal ile görünür', () => {
+    const o = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    satislar._iptal(o.id, db, ikasPushSahte)
+    expect(satislar._onSiparisler({ durum: 'iptal' }, db).map(s => s.id)).toEqual([o.id])
+  })
+})
+
+describe('ön sipariş durum güncelleme', () => {
+  test('kargolandi olarak işaretlenir', () => {
+    const o = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    satislar._onSiparisDurum(o.id, 'kargolandi', db)
+    expect(db.prepare('SELECT on_siparis_durum FROM satislar WHERE id=?').get(o.id).on_siparis_durum).toBe('kargolandi')
+  })
+
+  test('geçersiz durum reddedilir', () => {
+    const o = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    expect(() => satislar._onSiparisDurum(o.id, 'her neyse', db)).toThrow(/Geçersiz ön sipariş durumu/)
+  })
+
+  test('ön sipariş olmayan satışın durumu güncellenemez', () => {
+    const s = satislar._olustur(veri(), db, ikasPushSahte)
+    expect(() => satislar._onSiparisDurum(s.id, 'teslim', db)).toThrow(/Ön sipariş bulunamadı/)
   })
 })
