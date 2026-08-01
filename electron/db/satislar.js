@@ -143,6 +143,8 @@ module.exports = {
 
   'satislar:olustur': (veri) => {
     yetkiKontrol('satis_yap')
+    // Ön sipariş stok kontrolünü atladığı için AYRI yetki ister.
+    if (veri && veri.on_siparis) yetkiKontrol('on_siparis_yap')
     lokasyonKontrol(veri && veri.lokasyon_id)
     return olusturUygula(veri, getDb(), ikasPush)
   },

@@ -20,6 +20,9 @@ const PERSONEL_VARSAYILAN = new Set([
   // 'sosyal_otomasyon_yonet' BİLEREK yok: otomasyon tek tıkla yüzlerce kişiye DM
   // gönderir, o yüzden varsayılan kapalı — kime açılacağına yönetici karar verir.
   'sosyal_medya_yonet',
+  // 'on_siparis_yap' BİLEREK yok: ön sipariş stok yeterlilik kontrolünü ATLAR
+  // (stokta olmayan ürün satılır). Yanlış kullanılırsa stok güvenilirliği sessizce
+  // bozulur — kime açılacağına yönetici karar verir.
 ])
 
 // Renderer'dan gelen aktif kullanıcı profili (rol + izinler + izinli_lokasyonlar).
