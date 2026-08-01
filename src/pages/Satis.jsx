@@ -34,6 +34,28 @@ function elleFiyatSayi(k) {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+// Set kartı — hem "Setlerimiz" tam listesinde hem arama sonuçlarında AYNI görünüm ve
+// tıklama davranışı kullanılsın diye tekilleştirildi (kopyala-yapıştır yerine).
+function SetKart({ s, sepetKalem, onClick }) {
+  return (
+    <button onClick={onClick} title={s.bilesenler.map(b => b.ad).join(', ')}
+      className={`relative text-left rounded-xl border p-2.5 transition-all hover:shadow-md active:scale-95 flex flex-col ${sepetKalem ? 'border-purple-400 bg-purple-50 shadow-sm' : 'border-gray-200 bg-white hover:border-purple-300'}`}>
+      {sepetKalem && (
+        <span className="absolute top-1.5 right-1.5 bg-purple-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold z-10">
+          {sepetKalem.miktar}
+        </span>
+      )}
+      <div className="text-xs text-purple-500 mb-1">🎁 Set · {s.bilesenler.length} ürün</div>
+      <div className="text-xs font-medium text-gray-800 leading-snug mb-2 flex-1"
+        style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '3.6em' }}>
+        {s.ad}
+      </div>
+      <div className="text-sm font-bold text-purple-700 mt-auto">₺{Number(s.fiyat).toFixed(2)}</div>
+      <div className="text-xs text-gray-400">Set fiyatı</div>
+    </button>
+  )
+}
+
 export default function Satis() {
   // Ürün browser — hiyerarşik gezinme: Markalar → Kategoriler → Ürünler (hepsi kart).
   const [urunler, setUrunler] = useState([])
@@ -115,7 +137,6 @@ export default function Satis() {
       }
     })
     markaApi.listele().then(setMarkalar)
-    setApi.listele().then(setSetler).catch(() => {})
     // erisilebilirLokasyonlar bağımlılıkta OLMALI: profil asenkron geliyor, boş [] ile
     // yalnız mount'ta çalışsaydı ilk hesap eski/boş profille yapılır ve kullanıcı yetkili
     // olduğu lokasyonu göremezdi. (AuthContext'te useCallback ile stabil hâle getirildi,
@@ -124,7 +145,10 @@ export default function Satis() {
 
   // Ürün listesini yükle. Arama modunda tüm ürünlerde arar; gezinmede seçili
   // markanın ürünleri gelir (kategori kartları da bu listeden türetilir).
+  // Setler AYNI arama terimiyle, aynı debounce içinde yüklenir (ikinci zamanlayıcı yok) —
+  // aramaya bir karakter yazılınca setler de yeniden filtrelenip görünsün.
   const urunleriYukle = useCallback(async () => {
+    setApi.listele({ arama: urunArama || undefined }).then(setSetler).catch(() => {})
     if (!urunArama.trim() && (!secilenMarka || secilenMarka === '__setler__')) { setUrunler([]); return } // marka/set kartları görünümü
     setUrunYukleniyor(true)
     try {
@@ -446,31 +470,27 @@ export default function Satis() {
           {/* SET kartları — tıklayınca set tek kalem (set fiyatıyla) sepete girer */}
           {gorunum === 'setler' && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-              {setler.map(s => {
-                const sepetKalem = sepetteVar('set:' + s.id)
-                return (
-                  <button key={s.id} onClick={() => setSepeteEkle(s)} title={s.bilesenler.map(b => b.ad).join(', ')}
-                    className={`relative text-left rounded-xl border p-2.5 transition-all hover:shadow-md active:scale-95 flex flex-col ${sepetKalem ? 'border-purple-400 bg-purple-50 shadow-sm' : 'border-gray-200 bg-white hover:border-purple-300'}`}>
-                    {sepetKalem && (
-                      <span className="absolute top-1.5 right-1.5 bg-purple-600 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold z-10">
-                        {sepetKalem.miktar}
-                      </span>
-                    )}
-                    <div className="text-xs text-purple-500 mb-1">🎁 Set · {s.bilesenler.length} ürün</div>
-                    <div className="text-xs font-medium text-gray-800 leading-snug mb-2 flex-1"
-                      style={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '3.6em' }}>
-                      {s.ad}
-                    </div>
-                    <div className="text-sm font-bold text-purple-700 mt-auto">₺{Number(s.fiyat).toFixed(2)}</div>
-                    <div className="text-xs text-gray-400">Set fiyatı</div>
-                  </button>
-                )
-              })}
+              {setler.map(s => (
+                <SetKart key={s.id} s={s} sepetKalem={sepetteVar('set:' + s.id)} onClick={() => setSepeteEkle(s)} />
+              ))}
               {setler.length === 0 && (
                 <div className="col-span-full flex items-center justify-center h-32 text-gray-400 text-sm">
                   Henüz set yok — Ürünler › 🎁 Setler sekmesinden oluşturun.
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Arama modunda eşleşen setler, ürün grid'inin ÜSTÜNDE ayrı bir bölüm olarak
+              gösterilir — gorunum ternary'sine dokunmadan (hiyerarşik gezinme bozulmasın). */}
+          {aramaModu && setler.length > 0 && (
+            <div className="mb-3">
+              <div className="text-xs font-semibold text-purple-600 uppercase tracking-wide mb-1.5">🎁 Setler</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                {setler.map(s => (
+                  <SetKart key={s.id} s={s} sepetKalem={sepetteVar('set:' + s.id)} onClick={() => setSepeteEkle(s)} />
+                ))}
+              </div>
             </div>
           )}
 
@@ -507,9 +527,14 @@ export default function Satis() {
             </div>
           )}
 
-          {/* ÜRÜN kartları */}
-          {!urunYukleniyor && gorunum === 'urun' && gosterilecekUrunler.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Ürün bulunamadı</div>
+          {/* ÜRÜN kartları — arama modunda "sonuç yok" mesajı SETLERİ de hesaba katar:
+              set eşleşmişse (yukarıda ayrıca render edilir) burada çelişkili bir
+              "bulunamadı" mesajı göstermeyiz. Arama modu DIŞINDaki (kategori gezinme)
+              davranış değişmedi. */}
+          {!urunYukleniyor && gorunum === 'urun' && gosterilecekUrunler.length === 0 && (!aramaModu || setler.length === 0) && (
+            <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+              {aramaModu ? 'Aramanızla eşleşen ürün ya da set bulunamadı' : 'Ürün bulunamadı'}
+            </div>
           )}
           {gorunum === 'urun' && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">

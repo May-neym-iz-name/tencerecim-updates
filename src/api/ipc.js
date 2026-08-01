@@ -92,7 +92,7 @@ export const kategoriApi = {
 
 // Kendi setlerimiz (tek set fiyatlı ürün paketleri).
 export const setApi = {
-  listele: () => invoke('setler:listele'),
+  listele: (p) => invoke('setler:listele', p),
   olustur: (veri) => invoke('setler:olustur', veri),
   guncelle: (veri) => invoke('setler:guncelle', veri),
   sil: (id) => invoke('setler:sil', id),
