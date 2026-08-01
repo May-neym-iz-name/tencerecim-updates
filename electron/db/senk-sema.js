@@ -23,6 +23,11 @@ const TABLOLAR = {
   musteriler:   { kolonlar: ['ad', 'soyad', 'telefon', 'email', 'tc_kimlik', 'vergi_no', 'vergi_dairesi', 'unvan', 'adres', 'il', 'ilce', 'iskonto_orani', 'aktif', 'ikas_musteri_id', 'ikas_siparis_sayisi', 'ikas_toplam_harcama', 'ikas_ilk_siparis', 'ikas_son_siparis'], fk: {}, dogal: ['telefon'] },
   urunler:      { kolonlar: ['ad', 'barkod', 'sku', 'marka', 'kategori', 'aciklama', 'alis_fiyati', 'satis_fiyati', 'kdv_orani', 'aktif', 'ikas_urun_id', 'ikas_varyant_id'], fk: { marka_id: 'markalar', kategori_id: 'kategoriler', tedarikci_id: 'tedarikciler' }, dogal: ['barkod', 'sku'] },
   urun_stoklar: { kolonlar: ['lokasyon_id', 'miktar', 'minimum_stok'], fk: { urun_id: 'urunler' }, zorunluFk: ['urun_id'], dogalCift: ['urun_id', 'lokasyon_id'] },
+  // Takma ad barkodlar: bir ürünün ek barkodları. Senkronlanmazsa diğer PC'de ek
+  // barkod okutma sessizce çalışmaz (ön sipariş çalışmasında birebir aynısı yaşandı).
+  // barkod tüm PC'lerde AYNI ve UNIQUE → doğal anahtar, dedup garantili.
+  urun_barkodlar: { kolonlar: ['barkod', 'aciklama'], fk: { urun_id: 'urunler' },
+                    zorunluFk: ['urun_id'], dogal: ['barkod'], sonradanEklendi: true },
   setler:       { kolonlar: ['ad', 'fiyat', 'aktif'], fk: {}, dogal: ['ad'] },
   set_urunler:  { kolonlar: ['miktar'], fk: { set_id: 'setler', urun_id: 'urunler' }, zorunluFk: ['set_id', 'urun_id'], dogalCift: ['set_id', 'urun_id'] },
   // Sosyal medya otomasyon şablonları: içerik (metin/fiyat/link) — küçük, şişirmez.
@@ -85,7 +90,7 @@ const TABLOLAR = {
 // tehlikeydi (diğer PC kapalı sanıp ikinci otomasyon kurar). Çift gönderimi engelleyen şey
 // senkronun yokluğu değil, yürütücü kilidi (meta/yurutucu.js).
 const SIRA = [
-  'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar',
+  'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar', 'urun_barkodlar',
   'setler', 'set_urunler', 'sosyal_sablonlar',
   'sosyal_otomasyonlar', 'sosyal_otomasyon_sablonlar',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
