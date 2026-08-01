@@ -83,9 +83,10 @@ function barkodEkle({ urun_id, barkod, aciklama }, db) {
   const baskaBirincil = db.prepare('SELECT id FROM urunler WHERE TRIM(barkod)=? AND id!=?').get(deger, urun_id)
   const baskaTakma = db.prepare('SELECT urun_id FROM urun_barkodlar WHERE barkod=?').get(deger)
   if (baskaBirincil || baskaTakma) throw new Error('Bu barkod başka bir ürüne tanımlı')
+  const aciklamaDeger = (aciklama && String(aciklama).trim()) || null
   const r = db.prepare('INSERT INTO urun_barkodlar (urun_id, barkod, aciklama) VALUES (?,?,?)')
-    .run(urun_id, deger, (aciklama && String(aciklama).trim()) || null)
-  return { id: Number(r.lastInsertRowid), barkod: deger, aciklama: aciklama || null }
+    .run(urun_id, deger, aciklamaDeger)
+  return { id: Number(r.lastInsertRowid), barkod: deger, aciklama: aciklamaDeger }
 }
 
 function barkodSil(id, db) {
@@ -253,7 +254,10 @@ module.exports = {
   _barkodEkle: barkodEkle,
   _barkodSil: barkodSil,
 
-  'urunler:barkod-liste': (urun_id) => barkodListe(urun_id, getDb()),
+  'urunler:barkod-liste': (urun_id) => {
+    yetkiKontrol('urun_goruntule')
+    return barkodListe(urun_id, getDb())
+  },
 
   'urunler:barkod-ekle': (veri) => {
     yetkiKontrol('urun_duzenle')

@@ -78,6 +78,13 @@ describe('takma ad barkod ekleme kuralları', () => {
     const b = urunler._barkodEkle({ urun_id: 1, barkod: '  2900000000017  ' }, db)
     expect(b.barkod).toBe('2900000000017')
   })
+
+  test('dönüşteki aciklama kırpılır ve DB değeriyle aynıdır', () => {
+    const b = urunler._barkodEkle({ urun_id: 1, barkod: '2900000000017', aciklama: '  tedarikçi  ' }, db)
+    expect(b.aciklama).toBe('tedarikçi')
+    const dbKayit = db.prepare('SELECT aciklama FROM urun_barkodlar WHERE id=?').get(b.id)
+    expect(dbKayit.aciklama).toBe('tedarikçi')
+  })
 })
 
 describe('takma ad silme', () => {
