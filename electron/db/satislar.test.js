@@ -184,6 +184,24 @@ describe('ön sipariş listeleme', () => {
     expect(satislar._onSiparisler({ durum: 'teslim' }, db)).toEqual([])
   })
 
+  // 'aktif' varsayılan görünüm: kargo oluşturulunca kayıt listeden DÜŞMEMELİ.
+  test('aktif filtresi kargolanan siparişi de gösterir, teslim edileni göstermez', () => {
+    const bekleyen = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    const kargolanan = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    const teslim = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    satislar._onSiparisDurum(kargolanan.id, 'kargolandi', db)
+    satislar._onSiparisDurum(teslim.id, 'teslim', db)
+
+    const aktifIdler = satislar._onSiparisler({ durum: 'aktif' }, db).map(s => s.id).sort()
+    expect(aktifIdler).toEqual([bekleyen.id, kargolanan.id].sort())
+  })
+
+  test('aktif filtresi iptal edilen siparişi göstermez', () => {
+    const o = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    satislar._iptal(o.id, db, ikasPushSahte)
+    expect(satislar._onSiparisler({ durum: 'aktif' }, db)).toEqual([])
+  })
+
   test('iptal edilen ön sipariş listede durum iptal ile görünür', () => {
     const o = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
     satislar._iptal(o.id, db, ikasPushSahte)

@@ -202,7 +202,14 @@ const ON_SIPARIS_DURUMLARI = ['bekliyor', 'kargolandi', 'teslim']
 function onSiparisleriGetir({ durum, lokasyon_id, baslangic, bitis } = {}, db) {
   let where = 'WHERE s.on_siparis=1'
   const params = []
-  if (durum) { where += ' AND COALESCE(s.on_siparis_durum,?)=?'; params.push('bekliyor', durum) }
+  // 'aktif' gerçek bir durum değil, takip görünümüdür: teslim edilmemiş ve iptal
+  // edilmemiş her ön sipariş. Kargo oluşturulunca kayıt listeden DÜŞMESİN diye
+  // varsayılan görünüm budur — kargolanmış ama teslim olmamış sipariş hâlâ takip ister.
+  if (durum === 'aktif') {
+    where += " AND COALESCE(s.on_siparis_durum,'bekliyor') IN ('bekliyor','kargolandi')"
+  } else if (durum) {
+    where += ' AND COALESCE(s.on_siparis_durum,?)=?'; params.push('bekliyor', durum)
+  }
   if (lokasyon_id) { where += ' AND s.lokasyon_id=?'; params.push(lokasyon_id) }
   if (baslangic) { where += ' AND DATE(s.tarih)>=?'; params.push(baslangic) }
   if (bitis) { where += ' AND DATE(s.tarih)<=?'; params.push(bitis) }

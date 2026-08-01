@@ -15,7 +15,9 @@ const DURUM_ETIKET = {
 
 export default function OnSiparisler() {
   const { yetkiVar } = useAuth()
-  const [durum, setDurum] = useState('bekliyor')
+  // Varsayılan 'aktif' = bekleyen + kargolanan. Kargo oluşturulunca kayıt listeden
+  // düşmesin diye böyle; teslim edilene ya da iptal edilene kadar gözünün önünde kalır.
+  const [durum, setDurum] = useState('aktif')
   const [liste, setListe] = useState([])
   const [yukleniyor, setYukleniyor] = useState(false)
   const [kargoAcik, setKargoAcik] = useState(false)
@@ -87,6 +89,7 @@ export default function OnSiparisler() {
         <h2 className="text-lg font-bold">🕐 Ön Siparişler</h2>
         <select value={durum} onChange={e => setDurum(e.target.value)}
           className="text-sm border rounded-lg px-2 py-1.5">
+          <option value="aktif">Aktif (bekleyen + kargolanan)</option>
           <option value="bekliyor">Bekleyenler</option>
           <option value="kargolandi">Kargolananlar</option>
           <option value="teslim">Teslim edilenler</option>
