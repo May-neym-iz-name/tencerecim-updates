@@ -20,7 +20,7 @@ import Musteriler from './pages/Musteriler.jsx'
 import Kargo from './pages/Kargo.jsx'
 import Ayarlar from './pages/Ayarlar.jsx'
 import SatisFinans from './pages/SatisFinans.jsx'
-import OnlineSiparisler from './pages/OnlineSiparisler.jsx'
+import SiparisMerkezi from './pages/SiparisMerkezi.jsx'
 import Bildirimler from './pages/Bildirimler.jsx'
 import SosyalMedya from './pages/SosyalMedya.jsx'
 import Kullanicilar from './pages/Kullanicilar.jsx'
@@ -34,7 +34,7 @@ const navItems = [
   { to: '/satis-gecmisi', label: '📋 Satış & Kasa', yetkiler: ['satis_gecmisi_goruntule', 'kasa_kullan', 'gider_yonet'], el: <SatisFinans /> },
   { to: '/urunler', label: '📦 Ürünler', yetki: 'urun_goruntule', el: <Urunler /> },
   { to: '/stok', label: '📊 Stok', yetkiler: ['stok_goruntule', 'mal_kabul_yonet'], el: <StokYonetim /> },
-  { to: '/online-siparisler', label: '🛍️ Online Siparişler', yetki: 'online_siparis_goruntule', el: <OnlineSiparisler /> },
+  { to: '/online-siparisler', label: '🛍️ Siparişler', yetkiler: ['online_siparis_goruntule', 'satis_gecmisi_goruntule'], el: <SiparisMerkezi /> },
   { to: '/bildirimler', label: '🔔 Bildirimler', yetki: 'bildirim_goruntule', el: <Bildirimler /> },
   { to: '/sosyal-medya', label: '💬 Sosyal Medya', yetki: 'sosyal_medya_yonet', el: <SosyalMedya /> },
   { to: '/raporlar', label: '📈 Raporlar', yetki: 'rapor_goruntule', el: <Raporlar /> },
