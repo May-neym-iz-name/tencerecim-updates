@@ -21,11 +21,17 @@ function fisNoUret(db) {
   return `${onek}${String(sonSira + 1).padStart(4, '0')}`
 }
 
-module.exports = {
-  'satislar:olustur': ({ lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar, genel_iskonto = 0, odeme_oran = 0, odemeler = null, stok_zorla = false }) => {
-    yetkiKontrol('satis_yap')
-    lokasyonKontrol(lokasyon_id)
-    const db = getDb()
+// Satış oluşturma çekirdeği. db ve ikasPush dışarıdan verilir (test enjeksiyonu için;
+// üretimde IPC sarmalayıcısı getDb()/gerçek push'u geçer).
+// on_siparis=true iken stok kolu TAMAMEN atlanır: yeterlilik kontrolü yapılmaz,
+// urun_stoklar güncellenmez, ikas'a push edilmez. Ürün zaten mağazada yoktur.
+function olusturUygula(veri, db, ikasPushFn) {
+  const {
+    lokasyon_id, musteri_id, odeme_tipi = 'nakit', kalemler, notlar,
+    genel_iskonto = 0, odeme_oran = 0, odemeler = null, stok_zorla = false,
+    on_siparis = false, on_siparis_not = null,
+  } = veri || {}
+  const onSiparis = !!on_siparis
     if (!lokasyon_id) throw new Error('Lokasyon seçilmedi')
     if (!Array.isArray(kalemler) || kalemler.length === 0) throw new Error('Satış en az bir kalem içermelidir')
 
@@ -47,7 +53,8 @@ module.exports = {
       if (!urun) throw new Error(`Ürün bulunamadı: ${kalem.urun_id}`)
       const stok = db.prepare('SELECT * FROM urun_stoklar WHERE urun_id = ? AND lokasyon_id = ?').get(kalem.urun_id, lokasyon_id)
       // stok_zorla açıkken yetersiz stok satışı engellemez (stok 0'ın altına düşmez).
-      if ((!stok || stok.miktar < kalem.miktar) && !stok_zorla) {
+      // Ön siparişte ürün zaten stokta yok; yeterlilik kontrolü uygulanmaz.
+      if (!onSiparis && (!stok || stok.miktar < kalem.miktar) && !stok_zorla) {
         const mevcut = stok ? stok.miktar : 0
         throw new Error(`Yetersiz stok: ${urun.ad} (mevcut: ${mevcut}, istenen: ${kalem.miktar})`)
       }
@@ -72,18 +79,21 @@ module.exports = {
 
     const insertFn = db.transaction(() => {
       const satis = db.prepare(`
-        INSERT INTO satislar (fis_no, lokasyon_id, musteri_id, odeme_tipi, notlar, ara_toplam, iskonto_toplam, kdv_toplam, genel_toplam)
-        VALUES (?,?,?,?,?,?,?,?,?)
+        INSERT INTO satislar (fis_no, lokasyon_id, musteri_id, odeme_tipi, notlar, ara_toplam, iskonto_toplam, kdv_toplam, genel_toplam, on_siparis, on_siparis_durum, on_siparis_not)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
       `).run(fisNoUret(db), lokasyon_id, musteri_id||null, satisOdemeTipi, notlar||null,
-        araToplam, iskontoToplam, kdvToplam, genelToplam)
+        araToplam, iskontoToplam, kdvToplam, genelToplam,
+        onSiparis ? 1 : 0, onSiparis ? 'bekliyor' : null, onSiparis ? (on_siparis_not || null) : null)
 
       kalemMeta.forEach((k, i) => {
         const h = kalemSonuc[i]
         db.prepare(`INSERT INTO satis_kalemleri (satis_id,urun_id,miktar,birim_fiyat,iskonto_orani,kdv_orani,toplam,set_adi) VALUES (?,?,?,?,?,?,?,?)`)
           .run(satis.lastInsertRowid, k.urun_id, k.miktar, h.birimFiyat, h.iskonto, k.kdv_orani, r(h.toplam), k.set_adi)
-        // Stok satırı yoksa oluştur (stok_zorla durumunda eksik olabilir); 0 altına düşürme.
-        db.prepare('INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok) VALUES (?, ?, 0, 0)').run(k.urun_id, lokasyon_id)
-        db.prepare('UPDATE urun_stoklar SET miktar=MAX(0, miktar-?) WHERE urun_id=? AND lokasyon_id=?').run(k.miktar, k.urun_id, lokasyon_id)
+        if (!onSiparis) {
+          // Stok satırı yoksa oluştur (stok_zorla durumunda eksik olabilir); 0 altına düşürme.
+          db.prepare('INSERT OR IGNORE INTO urun_stoklar (urun_id, lokasyon_id, miktar, minimum_stok) VALUES (?, ?, 0, 0)').run(k.urun_id, lokasyon_id)
+          db.prepare('UPDATE urun_stoklar SET miktar=MAX(0, miktar-?) WHERE urun_id=? AND lokasyon_id=?').run(k.miktar, k.urun_id, lokasyon_id)
+        }
       })
 
       // Ödeme kalemlerini yaz (parçalı ise her tip; değilse tek satır = tüm tutar).
@@ -93,10 +103,20 @@ module.exports = {
 
       return db.prepare('SELECT * FROM satislar WHERE id=?').get(satis.lastInsertRowid)
     })
-    const sonuc = insertFn()
-    // Satılan ürünlerin güncel stoğunu ikas'a yansıt (arka plan, en iyi çaba).
-    ikasPush(kalemMeta.map(k => k.urun_id))
-    return sonuc
+  const sonuc = insertFn()
+  // Satılan ürünlerin güncel stoğunu ikas'a yansıt (arka plan, en iyi çaba).
+  // Ön siparişte yerel stok değişmediği için push edilecek bir şey YOK.
+  if (!onSiparis) ikasPushFn(kalemMeta.map(k => k.urun_id))
+  return sonuc
+}
+
+module.exports = {
+  _olustur: olusturUygula,
+
+  'satislar:olustur': (veri) => {
+    yetkiKontrol('satis_yap')
+    lokasyonKontrol(veri && veri.lokasyon_id)
+    return olusturUygula(veri, getDb(), ikasPush)
   },
 
   'satislar:listele': ({ lokasyon_id, baslangic, bitis, odeme_tipi, fis_no, sayfa = 1, boyut = 50 } = {}) => {
