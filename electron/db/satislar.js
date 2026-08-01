@@ -110,6 +110,34 @@ function olusturUygula(veri, db, ikasPushFn) {
   return sonuc
 }
 
+// Satış iptali çekirdeği. Ön siparişte stok hiç DÜŞÜLMEDİĞİ için geri de EKLENMEZ —
+// aksi halde var olmayan stok şişer ve ikas'a yanlış miktar gider.
+function iptalUygula(id, db, ikasPushFn) {
+  const satis = db.prepare('SELECT * FROM satislar WHERE id=?').get(id)
+  if (!satis || satis.durum === 'iptal') throw new Error('Satış bulunamadı veya zaten iptal')
+  if (satis.tip === 'iade') throw new Error('İade kaydı iptal edilemez (orijinal satıştan işlem yapın)')
+  const onSiparis = !!satis.on_siparis
+  const iptalFn = db.transaction(() => {
+    if (!onSiparis) {
+      const kalemler = db.prepare('SELECT * FROM satis_kalemleri WHERE satis_id=?').all(id)
+      for (const k of kalemler) {
+        // Zaten iade edilmiş adetler tekrar stoğa eklenmesin.
+        const geri = (k.miktar || 0) - (k.iade_miktar || 0)
+        if (geri > 0) db.prepare('UPDATE urun_stoklar SET miktar=miktar+? WHERE urun_id=? AND lokasyon_id=?').run(geri, k.urun_id, satis.lokasyon_id)
+      }
+    }
+    db.prepare("UPDATE satislar SET durum='iptal' WHERE id=?").run(id)
+    if (onSiparis) db.prepare("UPDATE satislar SET on_siparis_durum='iptal' WHERE id=?").run(id)
+  })
+  iptalFn()
+  if (!onSiparis) {
+    // İade edilen ürünlerin güncel stoğunu ikas'a yansıt.
+    const kalemler = db.prepare('SELECT DISTINCT urun_id FROM satis_kalemleri WHERE satis_id=?').all(id)
+    ikasPushFn(kalemler.map(k => k.urun_id))
+  }
+  return { mesaj: 'Satış iptal edildi' }
+}
+
 module.exports = {
   _olustur: olusturUygula,
 
@@ -225,26 +253,11 @@ module.exports = {
     return db.prepare(`SELECT COUNT(*) as satis_sayisi, SUM(genel_toplam) as toplam_ciro, SUM(kdv_toplam) as toplam_kdv, SUM(iskonto_toplam) as toplam_iskonto FROM satislar ${where}`).get(...params)
   },
 
+  _iptal: iptalUygula,
+
   'satislar:iptal': (id) => {
     yetkiKontrol('satis_iptal')
-    const db = getDb()
-    const satis = db.prepare('SELECT * FROM satislar WHERE id=?').get(id)
-    if (!satis || satis.durum === 'iptal') throw new Error('Satış bulunamadı veya zaten iptal')
-    if (satis.tip === 'iade') throw new Error('İade kaydı iptal edilemez (orijinal satıştan işlem yapın)')
-    const iptalFn = db.transaction(() => {
-      const kalemler = db.prepare('SELECT * FROM satis_kalemleri WHERE satis_id=?').all(id)
-      for (const k of kalemler) {
-        // Zaten iade edilmiş adetler tekrar stoğa eklenmesin.
-        const geri = (k.miktar || 0) - (k.iade_miktar || 0)
-        if (geri > 0) db.prepare('UPDATE urun_stoklar SET miktar=miktar+? WHERE urun_id=? AND lokasyon_id=?').run(geri, k.urun_id, satis.lokasyon_id)
-      }
-      db.prepare("UPDATE satislar SET durum='iptal' WHERE id=?").run(id)
-    })
-    iptalFn()
-    // İade edilen ürünlerin güncel stoğunu ikas'a yansıt.
-    const kalemler = db.prepare('SELECT DISTINCT urun_id FROM satis_kalemleri WHERE satis_id=?').all(id)
-    ikasPush(kalemler.map(k => k.urun_id))
-    return { mesaj: 'Satış iptal edildi' }
+    return iptalUygula(id, getDb(), ikasPush)
   },
 }
 

@@ -127,3 +127,37 @@ describe('ön sipariş', () => {
     expect(s.on_siparis_durum).toBe(null)
   })
 })
+
+describe('iptal', () => {
+  test('normal satış iptali stoğu geri ekler (regresyon)', () => {
+    const s = satislar._olustur(veri(), db, ikasPushSahte)
+    expect(stok()).toBe(3)
+    pushEdilen = []
+    satislar._iptal(s.id, db, ikasPushSahte)
+    expect(stok()).toBe(5)
+    expect(pushEdilen).toEqual([[1]])
+    expect(db.prepare('SELECT durum FROM satislar WHERE id=?').get(s.id).durum).toBe('iptal')
+  })
+
+  test('ÖN SİPARİŞ iptali stoğu ARTIRMAZ', () => {
+    const s = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    expect(stok()).toBe(5)
+    pushEdilen = []
+    satislar._iptal(s.id, db, ikasPushSahte)
+    expect(stok()).toBe(5)          // olmayan stok şişmedi
+    expect(pushEdilen).toEqual([])  // ikas'a yanlış stok gitmedi
+  })
+
+  test('ön sipariş iptalinde durum alanları güncellenir', () => {
+    const s = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    satislar._iptal(s.id, db, ikasPushSahte)
+    const son = db.prepare('SELECT durum, on_siparis_durum FROM satislar WHERE id=?').get(s.id)
+    expect(son).toEqual({ durum: 'iptal', on_siparis_durum: 'iptal' })
+  })
+
+  test('zaten iptal edilmiş satış tekrar iptal edilemez', () => {
+    const s = satislar._olustur(veri({ on_siparis: true }), db, ikasPushSahte)
+    satislar._iptal(s.id, db, ikasPushSahte)
+    expect(() => satislar._iptal(s.id, db, ikasPushSahte)).toThrow(/bulunamadı veya zaten iptal/)
+  })
+})
