@@ -3,11 +3,21 @@
 // yalnızca set fiyatı görünür (satis_kalemleri.set_adi ile gruplanır).
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
+const { kelimeKosulu } = require('./tr-arama')
 
 // Set listesi + bileşenleri (Satış ekranı ve Setler yönetimi için).
-function listele() {
-  const db = getDb()
-  const setler = db.prepare('SELECT * FROM setler WHERE aktif = 1 ORDER BY ad').all()
+// arama verilmezse (boş/undefined) mevcut davranış aynen korunur: tüm aktif setler.
+// Arama yalnız set ADINDA yapılır — bileşen ürün adlarında aramaz (kapsamı büyütmesin).
+// db enjekte edilebilir (test için); üretimde IPC sarmalayıcısı getDb() geçer.
+function listele({ arama } = {}, db = getDb()) {
+  let where = 'WHERE aktif = 1'
+  const params = []
+  if (arama) {
+    const k = kelimeKosulu('ad', arama)
+    where += k.sql
+    params.push(...k.params)
+  }
+  const setler = db.prepare(`SELECT * FROM setler ${where} ORDER BY ad`).all(...params)
   const bilesenStmt = db.prepare(`
     SELECT su.urun_id, su.miktar, u.ad, u.kdv_orani, u.satis_fiyati
     FROM set_urunler su JOIN urunler u ON u.id = su.urun_id
@@ -26,7 +36,9 @@ function kalemleriYaz(db, setId, kalemler) {
 }
 
 module.exports = {
-  'setler:listele': () => listele(),
+  _listele: listele,
+
+  'setler:listele': (p) => listele(p || {}),
 
   'setler:olustur': ({ ad, fiyat, kalemler }) => {
     yetkiKontrol('urun_duzenle')
