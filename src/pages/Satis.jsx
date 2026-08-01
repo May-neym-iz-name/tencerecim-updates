@@ -527,9 +527,14 @@ export default function Satis() {
             </div>
           )}
 
-          {/* ÜRÜN kartları */}
-          {!urunYukleniyor && gorunum === 'urun' && gosterilecekUrunler.length === 0 && (
-            <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Ürün bulunamadı</div>
+          {/* ÜRÜN kartları — arama modunda "sonuç yok" mesajı SETLERİ de hesaba katar:
+              set eşleşmişse (yukarıda ayrıca render edilir) burada çelişkili bir
+              "bulunamadı" mesajı göstermeyiz. Arama modu DIŞINDaki (kategori gezinme)
+              davranış değişmedi. */}
+          {!urunYukleniyor && gorunum === 'urun' && gosterilecekUrunler.length === 0 && (!aramaModu || setler.length === 0) && (
+            <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+              {aramaModu ? 'Aramanızla eşleşen ürün ya da set bulunamadı' : 'Ürün bulunamadı'}
+            </div>
           )}
           {gorunum === 'urun' && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
