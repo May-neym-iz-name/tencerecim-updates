@@ -6,6 +6,7 @@ const { graphql } = require('./client')
 const { bildirimUret, mevcutTalepleriBildir } = require('./bildirim-uret')
 const { asamalar, asamaYaz } = require('../db/talep-durumlari')
 const { TALEP_SORGUSU, _talepPaketleri } = require('./talep-detay')
+const { adresBirlestir } = require('./adres')
 
 const PUSH_PARTI = 50      // saveProductStockLocations parti boyutu
 const SIPARIS_LIMIT = 200  // listOrder sayfa boyutu (ikas tavanı 200 — daha az istek)
@@ -134,7 +135,7 @@ const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
       salesChannel { type }
       paymentMethods { type paymentGatewayName }
       customer { firstName lastName email phone }
-      shippingAddress { city { name } district { name } addressLine1 postalCode phone }
+      shippingAddress { city { name } district { name } addressLine1 addressLine2 postalCode phone }
       billingAddress { company taxNumber taxOffice identityNumber }
       orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink barcode } }
       orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } }
@@ -171,7 +172,7 @@ function musteriUpsert(db, customer, shipping, billing) {
   const soyad = (customer.lastName || '').trim()
   if (!tel && !email && !ad) return null
 
-  const adres = (shipping?.addressLine1 || '').trim() || null
+  const adres = adresBirlestir(shipping)
   const il = (shipping?.city?.name || '').trim() || null
   const ilce = (shipping?.district?.name || '').trim() || null
   const unvan = (billing?.company || '').trim() || null
@@ -336,7 +337,7 @@ async function pullSiparisler() {
           musteri_telefon: sip.customer?.phone || sip.shippingAddress?.phone || null,
           teslimat_il: sip.shippingAddress?.city?.name || null,
           teslimat_ilce: sip.shippingAddress?.district?.name || null,
-          teslimat_adres: sip.shippingAddress?.addressLine1 || null,
+          teslimat_adres: adresBirlestir(sip.shippingAddress),
           fatura_unvan: billing.company || null,
           fatura_vergi_no: billing.taxNumber || null,
           fatura_vergi_dairesi: billing.taxOffice || null,
@@ -375,7 +376,66 @@ async function pullSiparisler() {
   if (enSonUpdatedAt > sonSenk) ayarKaydet('son_siparis_senk', String(enSonUpdatedAt))
   // İlk (tüm geçmiş) çekim tamamlandı → işaretle; bundan sonra yalnızca yeniler gelir.
   if (ilkKurulum) ayarKaydet('gecmis_cekildi', '1')
-  return { ilkKurulum, kaydedilen, guncellenen, stokDusulen, eslesmeyen }
+  const adresOnarilan = await adresGeriTarama(db)
+  return { ilkKurulum, kaydedilen, guncellenen, stokDusulen, eslesmeyen, adresOnarilan }
+}
+
+// TEK SEFERLİK: 2026-08 öncesi çekilen siparişlerde adres satırı 2 (daire/blok/kat)
+// hiç istenmediği için kayıptı → kargo etiketine eksik adres basılıyordu. Yalnızca
+// adres alanlarını tazeler: sipariş EKLEMEZ, stok/durum/kalem'e DOKUNMAZ.
+// yerel_onarimlar kullanılır (uygulama_ayarlar PC'ler arası senkronlanır; işaret
+// yayılsaydı diğer PC kendi yerel verisini hiç onaramazdı).
+const ADRES_TARAMA_SORGU = `query AdresTara($page: Int, $limit: Int) {
+  listOrder(sort: "orderedAt asc", pagination: { page: $page, limit: $limit }) {
+    hasNext
+    data { id shippingAddress { addressLine1 addressLine2 } }
+  }
+}`
+
+async function adresGeriTarama(db) {
+  const ONARIM_ADI = 'teslimat_adres2_2026_08'
+  try {
+    db.exec('CREATE TABLE IF NOT EXISTS yerel_onarimlar (ad TEXT PRIMARY KEY, tarih TEXT)')
+    if (db.prepare('SELECT 1 FROM yerel_onarimlar WHERE ad = ?').get(ONARIM_ADI)) return 0
+
+    const sipGetir = db.prepare('SELECT id, musteri_id, teslimat_adres FROM online_siparisler WHERE ikas_siparis_id = ?')
+    const sipGuncelle = db.prepare('UPDATE online_siparisler SET teslimat_adres = ? WHERE id = ?')
+    // Müşteri kartındaki adres YALNIZCA eski (eksik) değerle birebir aynıysa güncellenir;
+    // farklıysa elle düzenlenmiş demektir, ezilmez.
+    const musteriGuncelle = db.prepare('UPDATE musteriler SET adres = ? WHERE id = ? AND adres = ?')
+
+    let onarilan = 0
+    for (let page = 1; ; page++) {
+      const data = await graphql(ADRES_TARAMA_SORGU, { page, limit: SIPARIS_LIMIT })
+      const liste = data?.listOrder
+      const siparisler = liste?.data || []
+      if (!siparisler.length) break
+
+      db.transaction(() => {
+        for (const sip of siparisler) {
+          const tam = adresBirlestir(sip.shippingAddress)
+          if (!tam) continue
+          const mevcut = sipGetir.get(sip.id)
+          if (!mevcut || mevcut.teslimat_adres === tam) continue
+          sipGuncelle.run(tam, mevcut.id)
+          if (mevcut.musteri_id && mevcut.teslimat_adres) {
+            musteriGuncelle.run(tam, mevcut.musteri_id, mevcut.teslimat_adres)
+          }
+          onarilan++
+        }
+      })()
+
+      if (!liste.hasNext) break
+    }
+
+    db.prepare("INSERT INTO yerel_onarimlar (ad, tarih) VALUES (?, datetime('now','localtime'))").run(ONARIM_ADI)
+    console.log(`ikas adres geri taraması: ${onarilan} sipariş onarıldı`)
+    return onarilan
+  } catch (e) {
+    // Onarım işareti YAZILMAZ → bir sonraki senkronda yeniden denenir.
+    console.error('ikas adres geri taraması:', e.message)
+    return 0
+  }
 }
 
 // Tek bir siparişin kalemlerini ikas'tan yeniden çeker ve yerel kalemleri
@@ -937,7 +997,7 @@ module.exports = {
     // Yerel teslimat alanlarını güncelle.
     if (shippingAddress) {
       db.prepare('UPDATE online_siparisler SET teslimat_adres = ?, teslimat_il = ?, teslimat_ilce = ?, musteri_telefon = COALESCE(?, musteri_telefon) WHERE id = ?')
-        .run(shippingAddress.addressLine1 || null, shippingAddress.city?.name || null, shippingAddress.district?.name || null, shippingAddress.phone || null, id)
+        .run(adresBirlestir(shippingAddress), shippingAddress.city?.name || null, shippingAddress.district?.name || null, shippingAddress.phone || null, id)
     }
     return { ok: true }
   },

@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { musteriApi } from '../api/ipc'
-import { telefonGoster, telefonHam, sadeceRakam, telefonHatasi, tcHatasi, vergiHatasi } from '../lib/girdiMaske'
+import { telefonHatasi, tcHatasi, vergiHatasi } from '../lib/girdiMaske'
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { useSiralama } from '../hooks/useSiralama'
 import SiraliBaslik from '../components/SiraliBaslik'
+import MusteriFormAlanlari from '../components/MusteriFormAlanlari'
 
 const BOSH = { ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '', vergi_dairesi: '', unvan: '', adres: '', il: '', ilce: '', iskonto_orani: '' }
 
@@ -64,16 +65,6 @@ export default function Musteriler() {
     try { await musteriApi.sil(id); toast.success('Müşteri silindi'); yukle() }
     catch (e) { toast.error(e.message) }
   }
-
-  const alanlar = [
-    [['ad', 'Ad *', true], ['soyad', 'Soyad *', true]],
-    [['telefon', 'Telefon', false], ['email', 'E-posta', false]],
-    [['tc_kimlik', 'TC Kimlik No', false], ['vergi_no', 'Vergi No', false]],
-    [['vergi_dairesi', 'Vergi Dairesi', false], ['unvan', 'Ünvan (Kurumsal)', false]],
-    [['adres', 'Adres', false]],
-    [['il', 'İl', false], ['ilce', 'İlçe', false]],
-    [['iskonto_orani', 'Sabit İskonto Oranı (%)', false]],
-  ]
 
   return (
     <div className="p-5">
@@ -145,32 +136,7 @@ export default function Musteriler() {
           <div className="bg-white rounded-xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-auto">
             <h3 className="text-lg font-bold mb-4">{duzenlenenId ? 'Müşteri Düzenle' : 'Yeni Müşteri Ekle'}</h3>
             <form onSubmit={handleSubmit} className="space-y-3">
-              {alanlar.map((satir, i) => (
-                <div key={i} className={`grid gap-3 grid-cols-${satir.length}`}>
-                  {satir.map(([name, label, req]) => (
-                    <div key={name}>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                      <input name={name} required={req}
-                        value={name === 'telefon' ? telefonGoster(form.telefon) : form[name]}
-                        type={name === 'iskonto_orani' ? 'number' : 'text'}
-                        min={name === 'iskonto_orani' ? 0 : undefined}
-                        max={name === 'iskonto_orani' ? 100 : undefined}
-                        inputMode={['telefon', 'tc_kimlik', 'vergi_no'].includes(name) ? 'numeric' : undefined}
-                        placeholder={name === 'telefon' ? '(5xx) xxx xx xx' : name === 'tc_kimlik' ? '11 hane' : name === 'vergi_no' ? '10 hane' : undefined}
-                        maxLength={name === 'telefon' ? 15 : name === 'tc_kimlik' ? 11 : name === 'vergi_no' ? 10 : undefined}
-                        onChange={e => {
-                          const v = e.target.value
-                          // Maskeli alanlar: yalnız rakam + sabit uzunluk (depoda ham rakam durur).
-                          const deger = name === 'telefon' ? telefonHam(v)
-                            : name === 'tc_kimlik' ? sadeceRakam(v, 11)
-                            : name === 'vergi_no' ? sadeceRakam(v, 10) : v
-                          setForm(f => ({ ...f, [name]: deger }))
-                        }}
-                        className="w-full border rounded-lg px-3 py-2 text-sm" />
-                    </div>
-                  ))}
-                </div>
-              ))}
+              <MusteriFormAlanlari form={form} setForm={setForm} />
               <div className="flex gap-3 pt-2">
                 <button type="submit" className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-medium">
                   {duzenlenenId ? 'Güncelle' : 'Ekle'}

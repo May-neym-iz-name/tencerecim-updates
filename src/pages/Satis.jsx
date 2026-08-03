@@ -2,28 +2,18 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, setApi, fisApi, kasaApi } from '../api/ipc'
-import { telefonGoster, telefonHam, sadeceRakam, telefonHatasi, tcHatasi, vergiHatasi } from '../lib/girdiMaske'
+import { telefonHatasi, tcHatasi, vergiHatasi } from '../lib/girdiMaske'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import { usePersistentState } from '../hooks/usePersistentState'
 import KargoFormu from '../components/KargoFormu'
+import MusteriFormAlanlari from '../components/MusteriFormAlanlari'
 import { senkTetikle } from '../lib/veriSenk'
 
 const MUSTERI_BOSH = {
   ad: '', soyad: '', telefon: '', email: '', tc_kimlik: '', vergi_no: '',
   vergi_dairesi: '', unvan: '', adres: '', il: '', ilce: '', iskonto_orani: '',
 }
-
-// Müşteri formu alanları (Müşteriler sayfasıyla aynı) — [name, label, zorunlu]
-const MUSTERI_ALANLARI = [
-  [['ad', 'Ad *', true], ['soyad', 'Soyad *', true]],
-  [['telefon', 'Telefon', false], ['email', 'E-posta', false]],
-  [['tc_kimlik', 'TC Kimlik No', false], ['vergi_no', 'Vergi No', false]],
-  [['vergi_dairesi', 'Vergi Dairesi', false], ['unvan', 'Ünvan (Kurumsal)', false]],
-  [['adres', 'Adres', false]],
-  [['il', 'İl *', true], ['ilce', 'İlçe *', true]],
-  [['iskonto_orani', 'Sabit İskonto Oranı (%)', false]],
-]
 
 // Elle girilen fiyatı sayıya çevirir; geçersiz/boş/negatif ise null döner
 // (o zaman ürünün kayıtlı fiyatı geçerlidir). Ekran hesabı (efektifFiyat) ve
@@ -861,33 +851,7 @@ export default function Satis() {
               <button onClick={() => setMusteriFormAcik(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
             </div>
             <form onSubmit={musteriKaydet} className="space-y-3">
-              {MUSTERI_ALANLARI.map((satir, i) => (
-                <div key={i} className={`grid gap-3 ${satir.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                  {satir.map(([name, label, req], j) => (
-                    <div key={name}>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                      <input name={name} required={req}
-                        value={name === 'telefon' ? telefonGoster(musteriForm.telefon) : musteriForm[name]}
-                        autoFocus={i === 0 && j === 0}
-                        type={name === 'iskonto_orani' ? 'number' : 'text'}
-                        min={name === 'iskonto_orani' ? 0 : undefined}
-                        max={name === 'iskonto_orani' ? 100 : undefined}
-                        inputMode={['telefon', 'tc_kimlik', 'vergi_no'].includes(name) ? 'numeric' : undefined}
-                        placeholder={name === 'telefon' ? '(5xx) xxx xx xx' : name === 'tc_kimlik' ? '11 hane' : name === 'vergi_no' ? '10 hane' : undefined}
-                        maxLength={name === 'telefon' ? 15 : name === 'tc_kimlik' ? 11 : name === 'vergi_no' ? 10 : undefined}
-                        onChange={e => {
-                          const v = e.target.value
-                          // Maskeli alanlar: yalnız rakam + sabit uzunluk (depoda ham rakam durur).
-                          const deger = name === 'telefon' ? telefonHam(v)
-                            : name === 'tc_kimlik' ? sadeceRakam(v, 11)
-                            : name === 'vergi_no' ? sadeceRakam(v, 10) : v
-                          setMusteriForm(f => ({ ...f, [name]: deger }))
-                        }}
-                        className="w-full border rounded-lg px-3 py-2 text-sm" />
-                    </div>
-                  ))}
-                </div>
-              ))}
+              <MusteriFormAlanlari form={musteriForm} setForm={setMusteriForm} ilZorunlu ilkAlanaOdaklan />
               <div className="flex gap-2 pt-1">
                 <button type="submit" disabled={musteriKayitYukleniyor}
                   className="flex-1 bg-blue-600 text-white py-2 rounded-lg font-medium text-sm hover:bg-blue-700 disabled:opacity-50">
