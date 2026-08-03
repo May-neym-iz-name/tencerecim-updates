@@ -2,6 +2,7 @@
 // Meta'dan çekilen yorum/DM'ler buraya idempotent (harici_id UNIQUE) yazılır.
 // Ağ çağrıları electron/meta/index.js'te; bu dosya yalnızca yerel okuma/yazma yapar.
 const { getDb } = require('./database')
+const { listeFiltreleri: _listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC } = require('./sosyal-filtre')
 
 // Çekilen bir öğeyi ekler/günceller. harici_id çakışırsa metin/durum korunur (idempotent).
 // Yeni gelen 'gelen' mesajları 'yeni' durumda kalır; giden (bizim gönderdiğimiz) 'giden'.
@@ -21,7 +22,10 @@ function _upsertMesaj(m) {
     if (m.konu_baslik || m.konu_gorsel || m.konu_link || m.ek_tur) {
       db.prepare(`UPDATE sosyal_mesajlar SET
         konu_baslik = COALESCE(konu_baslik, @konu_baslik),
-        konu_gorsel = COALESCE(konu_gorsel, @konu_gorsel),
+        -- Görsel adresi TERS yönde birleştirilir (yeni değer kazanır): Meta URL'leri
+        -- süreli, eskisini korumak ölü adresi kalıcılaştırırdı. Kalıcılık artık
+        -- meta/gorsel-onbellek.js'teki yerel dosyada.
+        konu_gorsel = COALESCE(@konu_gorsel, konu_gorsel),
         konu_link   = COALESCE(konu_link, @konu_link),
         ek_tur      = COALESCE(ek_tur, @ek_tur),
         ek_baslik   = COALESCE(ek_baslik, @ek_baslik),
@@ -194,7 +198,7 @@ function sayaclar() {
 
 // Yorum sekmeleri için: yorumların geldiği GÖNDERİLER (konu_id bazlı gruplama).
 // Her gönderi: başlık, görsel, yorum sayısı, okunmamış, son yorum zamanı.
-function gonderiler({ platform, arama, baslangic, bitis } = {}) {
+function gonderiler({ platform, arama, baslangic, bitis, cevapDurumu, okunma, atama, kullanici } = {}) {
   // 'gonderi' = gönderinin kendisi (yorumu olmasa bile listede görünsün); 'yorum' = yorumlar.
   const kosul = ["tur IN ('yorum','gonderi')"]
   const p = {}
@@ -205,11 +209,13 @@ function gonderiler({ platform, arama, baslangic, bitis } = {}) {
   const tarihExpr = "substr(COALESCE(MAX(CASE WHEN tur='gonderi' THEN mesaj_tarihi END), MAX(COALESCE(mesaj_tarihi, cekilme_tarihi))),1,10)"
   if (baslangic) { having.push(`${tarihExpr} >= @bas`); p.bas = baslangic }
   if (bitis) { having.push(`${tarihExpr} <= @bit`); p.bit = bitis }
+  _listeFiltreleri({ cevapDurumu, okunma, atama, kullanici }, having, p)
   return getDb().prepare(`
     SELECT konu_id, platform,
       MAX(konu_baslik) konu_baslik, MAX(konu_gorsel) konu_gorsel, MAX(konu_link) konu_link,
       COUNT(CASE WHEN tur='yorum' THEN 1 END) yorum_sayisi,
-      SUM(CASE WHEN durum='yeni' AND yon='gelen' THEN 1 ELSE 0 END) okunmamis,
+      ${OKUNMAMIS_SAYAC} okunmamis,
+      ${CEVAPSIZ_SAYAC} cevapsiz,
       MAX(atanan_kullanici) atanan,
       MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)) son_zaman,
       MAX(CASE WHEN tur='gonderi' THEN COALESCE(mesaj_tarihi, cekilme_tarihi) END) gonderi_tarihi,
@@ -227,7 +233,7 @@ function gonderiler({ platform, arama, baslangic, bitis } = {}) {
 }
 
 // DM sekmeleri için: konuşmalar (konu_id bazlı). Her konuşma: kişi, son mesaj, okunmamış.
-function konusmalar({ platform, arama, baslangic, bitis } = {}) {
+function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, atama, kullanici } = {}) {
   const kosul = ["tur='dm'"]
   const p = {}
   if (platform && platform !== 'hepsi') { kosul.push('platform=@platform'); p.platform = platform }
@@ -236,9 +242,11 @@ function konusmalar({ platform, arama, baslangic, bitis } = {}) {
   const having = []
   if (baslangic) { having.push("substr(MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)),1,10) >= @bas"); p.bas = baslangic }
   if (bitis) { having.push("substr(MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)),1,10) <= @bit"); p.bit = bitis }
+  _listeFiltreleri({ cevapDurumu, okunma, atama, kullanici }, having, p)
   return getDb().prepare(`
     SELECT konu_id, platform,
-      SUM(CASE WHEN durum='yeni' AND yon='gelen' THEN 1 ELSE 0 END) okunmamis,
+      ${OKUNMAMIS_SAYAC} okunmamis,
+      ${CEVAPSIZ_SAYAC} cevapsiz,
       MAX(atanan_kullanici) atanan,
       MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)) son_zaman,
       -- kisi = MÜŞTERİ: konuşmanın son GELEN mesajının göndereni. Son mesaj bizim

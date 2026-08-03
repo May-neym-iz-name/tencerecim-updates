@@ -126,6 +126,16 @@ function createWindow() {
     }
   })
 
+  // DIŞ BAĞLANTILAR TEK PENCEREDE.
+  // Electron varsayılanında target="_blank" olan HER bağlantı yeni bir pencere açar ve
+  // hiçbiri kapanmaz → birkaç Instagram gönderisine / kargo takibine bakınca arkada
+  // pencere yığılıyordu. Artık tek bir "dış içerik" penceresi yeniden kullanılır:
+  // yenisini açmak öncekinin yerine geçer.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    disLinkAc(url)
+    return { action: 'deny' } // pencereyi Electron değil biz yönetiyoruz
+  })
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
@@ -134,6 +144,29 @@ function createWindow() {
   }
 
   mainWindow.on('closed', () => { mainWindow = null })
+}
+
+// Dış bağlantılar için tekrar kullanılan tek pencere (Instagram gönderisi, UPS takip...).
+let disPencere = null
+
+function disLinkAc(url) {
+  // Yalnız http(s): file://, javascript: gibi şemalar uygulama içine sızmamalı.
+  if (!/^https?:\/\//i.test(String(url || ''))) return
+  if (disPencere && !disPencere.isDestroyed()) {
+    disPencere.loadURL(url)
+    if (disPencere.isMinimized()) disPencere.restore()
+    disPencere.focus()
+    return
+  }
+  disPencere = new BrowserWindow({
+    width: 1100, height: 820, autoHideMenuBar: true, title: 'Bağlantı',
+    // preload YOK: dış site window.api'ye (IPC köprüsü) asla erişememeli.
+    webPreferences: { nodeIntegration: false, contextIsolation: true, devTools: isDev },
+  })
+  disPencere.on('closed', () => { disPencere = null })
+  // Dış sitedeki bağlantılar da yeni pencere açmasın, aynı pencerede gezinsin.
+  disPencere.webContents.setWindowOpenHandler(({ url: u }) => { disLinkAc(u); return { action: 'deny' } })
+  disPencere.loadURL(url)
 }
 
 // ikas online siparişlerini periyodik çek — MUTABAKAT turu.

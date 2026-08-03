@@ -4,6 +4,7 @@ import { sosyalApi, metaApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
 import OtomasyonPaneli from '../components/OtomasyonPaneli'
+import SosyalGorsel, { useSosyalGorsel } from '../components/SosyalGorsel'
 
 // Üst sekmeler — Meta Business Suite düzeni. mod: 'karma'|'dm'|'yorum'
 const SEKMELER = [
@@ -38,6 +39,25 @@ function yanitlariCoz(deger) {
 // Token dolmadan bu kadar gün önce sarı uyarı göster.
 const TOKEN_UYARI_GUN = 10
 
+// Gelen kutusu filtreleri. "Cevapsız" ile "Okunmamış" AYNI şey değildir:
+// durum='yeni' okunmamış, 'okundu' okundu ama hâlâ cevapsız, 'cevaplandi' kapanmış.
+// Bu yüzden ikisi ayrı süzgeç (ölçüm: 14.730 yorum "okundu ama cevapsız" durumda).
+const CEVAP_SECENEK = [
+  { kod: 'hepsi', ad: 'Tümü' },
+  { kod: 'cevapsiz', ad: 'Cevapsız' },
+  { kod: 'cevaplandi', ad: 'Cevaplanmış' },
+]
+const OKUNMA_SECENEK = [
+  { kod: 'hepsi', ad: 'Tümü' },
+  { kod: 'okunmamis', ad: 'Okunmamış' },
+  { kod: 'okunmus', ad: 'Okunmuş' },
+]
+const ATAMA_SECENEK = [
+  { kod: 'hepsi', ad: 'Herkes' },
+  { kod: 'bana', ad: 'Bana atanan' },
+  { kod: 'atanmamis', ad: 'Atanmamış' },
+]
+
 const IG_IKON = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14"><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#g)"/><defs><linearGradient id="g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f9ce34"/><stop offset="0.5" stop-color="#ee2a7b"/><stop offset="1" stop-color="#6228d7"/></linearGradient></defs><circle cx="12" cy="12" r="4.5" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="17.2" cy="6.8" r="1.2" fill="#fff"/></svg>')
 
@@ -50,12 +70,36 @@ function zaman(t) {
   return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' })
 }
 
-function Avatar({ ad, platform, boyut = 40 }) {
+// Süzgeç çipi — seçili durumda dolu, değilken sade. Renk süzgeç grubunu ayırt ettirir.
+const CIP_RENK = {
+  amber: 'bg-amber-500 border-amber-500',
+  blue: 'bg-blue-600 border-blue-600',
+  emerald: 'bg-emerald-600 border-emerald-600',
+}
+function FiltreCip({ secili, onClick, renk, pasif, children }) {
+  return (
+    <button type="button" onClick={onClick} disabled={pasif}
+      className={`px-2 py-0.5 rounded-full text-[11px] border transition-colors disabled:opacity-40
+        ${secili ? `${CIP_RENK[renk]} text-white font-medium` : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+      {children}
+    </button>
+  )
+}
+
+// konuId verilirse Instagram DM'lerinde müşterinin profil fotoğrafı gösterilir.
+// Facebook Messenger'da Meta profil fotoğrafına izin vermiyor ((#3) capability hatası),
+// orada harf-avatar kalır — bu bir eksiklik değil, platform kısıtı.
+function Avatar({ ad, platform, boyut = 40, konuId }) {
   const harf = (ad || '?').trim().charAt(0).toUpperCase()
+  const foto = useSosyalGorsel(platform === 'instagram' && konuId ? konuId : null, 'profil')
   return (
     <div className="relative flex-shrink-0" style={{ width: boyut, height: boyut }}>
-      <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white font-semibold"
-        style={{ fontSize: boyut * 0.4 }}>{harf}</div>
+      {foto ? (
+        <img src={foto} alt="" className="w-full h-full rounded-full object-cover bg-gray-100" />
+      ) : (
+        <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white font-semibold"
+          style={{ fontSize: boyut * 0.4 }}>{harf}</div>
+      )}
       {platform && (
         <img src={platform === 'instagram' ? IG_IKON : ''} alt=""
           className="absolute -bottom-0.5 -right-0.5 rounded"
@@ -75,6 +119,9 @@ export default function SosyalMedya() {
   const [arama, setArama] = useState('')
   const [tarihBas, setTarihBas] = useState('') // tarih filtresi (YYYY-MM-DD)
   const [tarihBit, setTarihBit] = useState('')
+  const [cevapDurumu, setCevapDurumu] = useState('hepsi')
+  const [okunma, setOkunma] = useState('hepsi')
+  const [atama, setAtama] = useState('hepsi')
   // Son N gün kısayolu → başlangıç tarihini ayarlar (bitiş boş = bugüne kadar).
   const sonGun = (n) => {
     const d = new Date(); d.setDate(d.getDate() - (n - 1))
@@ -92,6 +139,9 @@ export default function SosyalMedya() {
   const [sonDurum, setSonDurum] = useState(null) // son arka plan senkron turunun özeti
   const [hizliYanitlar, setHizliYanitlar] = useState(VARSAYILAN_YANITLAR) // personel hazır yanıtları
   const kaydirmaRef = useRef(null)
+  // O an AÇIK olan konuşmanın kimliği. Geciken mesaj isteklerinin, kullanıcı başka
+  // konuşmaya geçtikten sonra ekranı ezmesini engeller (bkz. mesajlariTazele).
+  const acikKonuRef = useRef(null)
 
   // Hazır yanıtları ayarlardan yükle (meta_ayarlar.hizli_yanitlar).
   useEffect(() => {
@@ -125,7 +175,10 @@ export default function SosyalMedya() {
   const listeYukle = useCallback(async () => {
     try {
       const pf = sekme.platform || 'hepsi'
-      const tf = { baslangic: tarihBas || undefined, bitis: tarihBit || undefined }
+      const tf = {
+        baslangic: tarihBas || undefined, bitis: tarihBit || undefined,
+        cevapDurumu, okunma, atama, kullanici,
+      }
       let sonuc = []
       if (sekme.mod === 'yorum') {
         sonuc = (await sosyalApi.gonderiler({ platform: pf, arama, ...tf })).map(x => ({ ...x, kind: 'yorum' }))
@@ -141,20 +194,38 @@ export default function SosyalMedya() {
       }
       setListe(sonuc)
     } catch (e) { toast.error('Liste yüklenemedi: ' + e.message) }
-  }, [sekme, arama, tarihBas, tarihBit])
+  }, [sekme, arama, tarihBas, tarihBit, cevapDurumu, okunma, atama, kullanici])
 
   useEffect(() => { listeYukle(); sayaclariYukle() }, [listeYukle, sayaclariYukle])
   useEffect(() => { setSeciliKonu(null); setMesajlar([]) }, [sekmeKod])
 
+  // AÇIK konuşmanın mesajlarını yeniden yükler. Seçime ve yazılmakta olan taslağa
+  // DOKUNMAZ — "tazele" ile "yeni konuşma seç" bilerek ayrı tutulur.
+  //
+  // NEDEN AYRI (2026-08-03 hatası): yanıt gönderdikten sonra tazeleme için konuSec()
+  // çağrılıyordu; konuSec seçimi ve taslağı sıfırladığı için, gönderim ağda sürerken
+  // kullanıcı başka müşteriye geçip yazmaya başlarsa geciken yanıt ekranı ZORLA eski
+  // konuşmaya geri alıp yazılan metni siliyordu. Hızlı yanıt verirken birebir bu oluyordu.
+  const mesajlariTazele = useCallback(async (konuId) => {
+    const hedef = konuId || acikKonuRef.current
+    if (!hedef) return
+    try {
+      const m = await sosyalApi.konu(hedef)
+      // Yanıt gecikirken kullanıcı başka konuşmaya geçmiş olabilir → geç geleni yut.
+      if (acikKonuRef.current !== hedef) return
+      setMesajlar(m)
+    } catch (e) { toast.error(e.message) }
+  }, [])
+
   async function konuSec(satir) {
+    if (!satir) return
+    acikKonuRef.current = satir.konu_id
     setSeciliKonu(satir)
     setTaslak(''); setOzelMesaj(null)
-    try {
-      const m = await sosyalApi.konu(satir.konu_id)
-      setMesajlar(m)
-      // BİLEREK okundu YAPMIYORUZ: mesaj yanıtlanana (veya elle işaretlenene) kadar
-      // "okunmadı" kalmalı — sadece açıp bakmak rozeti söndürmesin (istek 2026-07-28).
-    } catch (e) { toast.error(e.message) }
+    setMesajlar([]) // önceki konuşmanın mesajları yeni başlığın altında görünmesin
+    // BİLEREK okundu YAPMIYORUZ: mesaj yanıtlanana (veya elle işaretlenene) kadar
+    // "okunmadı" kalmalı — sadece açıp bakmak rozeti söndürmesin (istek 2026-07-28).
+    await mesajlariTazele(satir.konu_id)
   }
 
   // Elle "okundu" işaretleme: yanıt gerektirmeyen konuşmalar için (yoksa rozet hiç sönmez).
@@ -164,7 +235,7 @@ export default function SosyalMedya() {
       const yeniler = m.filter(x => x.durum === 'yeni' && x.yon === 'gelen')
       for (const y of yeniler) await sosyalApi.durumGuncelle({ id: y.id, durum: 'okundu' }).catch(() => {})
       toast.success('Okundu işaretlendi')
-      sayaclariYukle(); listeYukle(); konuSec(seciliKonu)
+      sayaclariYukle(); listeYukle(); mesajlariTazele()
     } catch (e) { toast.error(e.message) }
   }
 
@@ -179,7 +250,7 @@ export default function SosyalMedya() {
       const toplam = (r.fbYorum || 0) + (r.igYorum || 0) + (r.fbDm || 0) + (r.igDm || 0)
       toast.success(`${toplam} öğe güncellendi`)
       listeYukle(); sayaclariYukle(); durumYukle()
-      if (seciliKonu) konuSec(seciliKonu)
+      mesajlariTazele()
     } catch (e) { toast.error('Çekme hatası: ' + e.message) }
     finally { setCekiliyor(false) }
   }
@@ -195,47 +266,74 @@ export default function SosyalMedya() {
     } catch (e) { toast.error(e.message) }
   }
 
+  // Gönderim ağda sürerken kullanıcı başka konuşmaya geçebilir. Taslak kutusu bu yüzden
+  // yanıt BEKLENMEDEN boşaltılır; gönderim başarısız olursa metin yalnızca HÂLÂ aynı
+  // konuşmadaysak geri konur (yoksa yeni konuşmada yazılanı ezerdi).
+  function taslagiGeriKoy(hedefKonu, metin, setici) {
+    if (acikKonuRef.current === hedefKonu) setici(metin)
+  }
+
   // DM sohbetine yanıt: son gelen mesajın id'siyle cevapla.
   async function dmGonder() {
     if (!taslak.trim()) return
     const songelen = [...mesajlar].reverse().find(m => m.yon === 'gelen')
     if (!songelen) { toast.error('Yanıtlanacak gelen mesaj yok.'); return }
+    const hedefKonu = seciliKonu?.konu_id
+    const metin = taslak
+    setTaslak('')
     setMesgul(true)
     try {
-      await metaApi.mesajCevapla({ id: songelen.id, metin: taslak, kullanici })
-      toast.success('Mesaj gönderildi'); setTaslak(''); konuSec(seciliKonu)
+      await metaApi.mesajCevapla({ id: songelen.id, metin, kullanici })
+      toast.success('Mesaj gönderildi')
+      mesajlariTazele(hedefKonu)
       // Yanıt konuşmanın okunmamışlarını kapattı → rozet ve sol liste ANINDA tazelensin
       // (eskiden konuyu açmak okundu yapıp tazeliyordu; artık yanıt anı tetikler).
       sayaclariYukle(); listeYukle()
-    } catch (e) { toast.error('Gönderilemedi: ' + e.message) }
+    } catch (e) {
+      toast.error('Gönderilemedi: ' + e.message)
+      taslagiGeriKoy(hedefKonu, metin, setTaslak)
+    }
     finally { setMesgul(false) }
   }
 
   async function yorumCevapla(yorumId) {
     if (!taslak.trim()) return
+    const hedefKonu = seciliKonu?.konu_id
+    const metin = taslak
+    setTaslak('')
     setMesgul(true)
     try {
-      await metaApi.yorumCevapla({ id: yorumId, metin: taslak, kullanici })
-      toast.success('Yoruma yanıt verildi'); setTaslak(''); konuSec(seciliKonu)
+      await metaApi.yorumCevapla({ id: yorumId, metin, kullanici })
+      toast.success('Yoruma yanıt verildi')
+      mesajlariTazele(hedefKonu)
       sayaclariYukle(); listeYukle()
-    } catch (e) { toast.error('Gönderilemedi: ' + e.message) }
+    } catch (e) {
+      toast.error('Gönderilemedi: ' + e.message)
+      taslagiGeriKoy(hedefKonu, metin, setTaslak)
+    }
     finally { setMesgul(false) }
   }
 
   async function ozelMesajGonder() {
     if (!ozelTaslak.trim() || !ozelMesaj) return
+    const hedefKonu = seciliKonu?.konu_id
+    const metin = ozelTaslak
+    const hedefYorum = ozelMesaj
+    setOzelMesaj(null); setOzelTaslak('')
     setMesgul(true)
     try {
-      const r = await metaApi.yorumdanMesaj({ id: ozelMesaj, metin: ozelTaslak, kullanici })
+      const r = await metaApi.yorumdanMesaj({ id: hedefYorum, metin, kullanici })
       // konusmaId dolduysa mesaj DM sekmesindeki konuşmaya da işlendi; boşsa konuşma
       // çözülemedi (mesaj yine de gitti) → polling sonra yakalar, kullanıcıyı yanıltma.
       toast.success(r?.konusmaId
         ? 'Özel mesaj gönderildi (konuşma Instagram sekmesine eklendi)'
         : 'Özel mesaj gönderildi (konuşma birazdan Instagram sekmesine düşecek)')
-      setOzelMesaj(null); setOzelTaslak('')
-      konuSec(seciliKonu) // "Mesaj gönderildi" işareti hemen görünsün
+      mesajlariTazele(hedefKonu) // "Mesaj gönderildi" işareti hemen görünsün
       sayaclariYukle(); listeYukle()
-    } catch (e) { toast.error('Gönderilemedi: ' + e.message) }
+    } catch (e) {
+      toast.error('Gönderilemedi: ' + e.message)
+      if (acikKonuRef.current === hedefKonu) { setOzelMesaj(hedefYorum); setOzelTaslak(metin) }
+    }
     finally { setMesgul(false) }
   }
 
@@ -305,6 +403,32 @@ export default function SosyalMedya() {
                 <button onClick={() => { setTarihBas(''); setTarihBit('') }} className="px-2 py-0.5 text-red-500 hover:underline">✕ Temizle</button>
               )}
             </div>
+
+            {/* Durum süzgeçleri: "cevapsız" günlük iş listesi, "okunmamış" ise henüz
+                bakılmamışlar. Aynı veriden gelmezler (durum üç değerli). */}
+            <div className="flex flex-wrap gap-1">
+              {CEVAP_SECENEK.map(o => (
+                <FiltreCip key={o.kod} secili={cevapDurumu === o.kod}
+                  onClick={() => setCevapDurumu(o.kod)} renk="amber">{o.ad}</FiltreCip>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {OKUNMA_SECENEK.map(o => (
+                <FiltreCip key={o.kod} secili={okunma === o.kod}
+                  onClick={() => setOkunma(o.kod)} renk="blue">{o.ad}</FiltreCip>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {ATAMA_SECENEK.map(o => (
+                <FiltreCip key={o.kod} secili={atama === o.kod}
+                  onClick={() => setAtama(o.kod)} renk="emerald"
+                  pasif={o.kod === 'bana' && !kullanici}>{o.ad}</FiltreCip>
+              ))}
+            </div>
+            {(cevapDurumu !== 'hepsi' || okunma !== 'hepsi' || atama !== 'hepsi') && (
+              <button onClick={() => { setCevapDurumu('hepsi'); setOkunma('hepsi'); setAtama('hepsi') }}
+                className="text-[11px] text-red-500 hover:underline">✕ Süzgeçleri temizle</button>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {liste.length === 0 && (
@@ -329,9 +453,10 @@ export default function SosyalMedya() {
               return (
                 <button key={satir.kind + satir.konu_id} onClick={() => konuSec(satir)}
                   className={`w-full text-left px-3 py-2.5 flex gap-3 items-start border-l-2 ${secili ? 'bg-blue-50 border-blue-500' : 'border-transparent hover:bg-gray-50'}`}>
-                  {satir.kind === 'yorum' && satir.konu_gorsel
-                    ? <img src={satir.konu_gorsel} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0 bg-gray-100" />
-                    : <Avatar ad={baslik} platform={satir.platform} />}
+                  {satir.kind === 'yorum'
+                    ? <SosyalGorsel konuId={satir.konu_id} className="w-10 h-10 rounded object-cover flex-shrink-0 bg-gray-100"
+                        yedek={<Avatar ad={baslik} platform={satir.platform} />} />
+                    : <Avatar ad={baslik} platform={satir.platform} konuId={satir.konu_id} />}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1">
                       <span className={`text-sm truncate flex-1 ${satir.okunmamis ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{baslik}</span>
@@ -536,7 +661,7 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
   return (
     <div className="flex-1 flex flex-col min-w-0">
       <div className="flex items-center gap-3 px-5 py-3 border-b">
-        <Avatar ad={kisi} platform={konu.platform} boyut={38} />
+        <Avatar ad={kisi} platform={konu.platform} boyut={38} konuId={konu.konu_id} />
         <div className="font-semibold text-gray-800 truncate">{kisi}</div>
         <AtamaButonu konu={konu} banaAta={banaAta} kullanici={kullanici} />
         {okunduIsaretle && (
@@ -601,7 +726,7 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
       <div className="flex-1 flex flex-col min-w-0 border-r">
         {/* Gönderi başlığı */}
         <div className="flex items-center gap-3 px-5 py-3 border-b">
-          {konu.konu_gorsel && <img src={konu.konu_gorsel} alt="" className="w-11 h-11 rounded object-cover bg-gray-100" />}
+          <SosyalGorsel konuId={konu.konu_id} className="w-11 h-11 rounded object-cover bg-gray-100" />
           <div className="min-w-0">
             <p className="font-semibold text-gray-800 truncate">{konu.konu_baslik || 'Gönderi'}</p>
             <p className="text-xs text-gray-400">{konu.yorum_sayisi} yorum{konu.konu_link ? '' : ''}</p>
@@ -709,9 +834,8 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
       {/* SAĞ: gönderi önizleme + otomasyon */}
       <div className="w-[340px] flex-shrink-0 p-4 bg-gray-50 overflow-y-auto hidden lg:block space-y-3">
         <div>
-          {konu.konu_gorsel
-            ? <img src={konu.konu_gorsel} alt="" className="w-full rounded-lg object-cover mb-3" />
-            : <div className="w-full aspect-square rounded-lg bg-gray-200 flex items-center justify-center text-gray-400 mb-3">Görsel yok</div>}
+          <SosyalGorsel konuId={konu.konu_id} className="w-full rounded-lg object-cover mb-3"
+            yedek={<div className="w-full aspect-square rounded-lg bg-gray-200 flex items-center justify-center text-gray-400 mb-3">Görsel yok</div>} />
           <p className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-4">{konu.konu_baslik}</p>
           <p className="text-xs text-gray-400 mt-2">{konu.yorum_sayisi} yorum</p>
           {konu.konu_link && <a href={konu.konu_link} target="_blank" rel="noopener noreferrer"

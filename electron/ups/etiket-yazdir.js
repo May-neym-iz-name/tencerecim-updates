@@ -61,12 +61,23 @@ function etiketHtml(pngler, duzen, { onizleme = false } = {}) {
 
 // Etiketleri görünür bir pencerede önizler (yazdırma butonlu). Yazdırma seçilince
 // pencere içinden window.print() ile @page ölçüsünde basılır.
+// Önizleme penceresi TEK tutulur: her etikette yenisi açılınca arkada pencere yığılıyordu.
+// Açık olan varsa içeriği değiştirilir (konum/boyut korunur), yenisi açılmaz.
+let onizlemePenceresi = null
+
 async function etiketOnizle({ pngler, sayfaBasina = 1 }) {
   if (!pngler || !pngler.length) throw new Error('Önizlenecek etiket bulunamadı')
   const duzen = DUZENLER[sayfaBasina] || DUZENLER[1]
   const html = etiketHtml(pngler, duzen, { onizleme: true })
-  const win = new BrowserWindow({ width: 560, height: 800, title: 'Kargo Etiketi Önizleme', autoHideMenuBar: true })
-  await htmlYukle(win, html)
+  if (onizlemePenceresi && !onizlemePenceresi.isDestroyed()) {
+    await htmlYukle(onizlemePenceresi, html)
+    if (onizlemePenceresi.isMinimized()) onizlemePenceresi.restore()
+    onizlemePenceresi.focus()
+    return { acildi: true, yenidenKullanildi: true }
+  }
+  onizlemePenceresi = new BrowserWindow({ width: 560, height: 800, title: 'Kargo Etiketi Önizleme', autoHideMenuBar: true })
+  onizlemePenceresi.on('closed', () => { onizlemePenceresi = null })
+  await htmlYukle(onizlemePenceresi, html)
   return { acildi: true }
 }
 

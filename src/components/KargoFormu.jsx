@@ -32,6 +32,15 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
     }
   }, [acik, baslangic])
 
+  // Esc ile kapat. Dış alana tek tık artık kapatmadığı için (yanlışlıkla kapanıp
+  // doldurulan form siliniyordu) klavyeyle hızlı çıkış yolu şart.
+  useEffect(() => {
+    if (!acik) return
+    const tus = (e) => { if (e.key === 'Escape') kapat() }
+    window.addEventListener('keydown', tus)
+    return () => window.removeEventListener('keydown', tus)
+  }, [acik, kapat])
+
   // Alıcı adı yazıldıkça kayıtlı müşterileri ara (debounce). Sadece kullanıcı
   // yazarken (oneriGoster) çalışır; müşteri seçilince tekrar tetiklenmez.
   useEffect(() => {
@@ -113,11 +122,18 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={kapat}>
-      <div className="bg-white rounded-xl w-full max-w-xl max-h-[90vh] overflow-auto p-5" onClick={e => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-gray-800 mb-4">
-          {form.iade ? '↩ UPS İade Gönderisi' : '📦 UPS Kargo Gönderisi'}
-        </h3>
+    // Dış alana TEK tık kapatmaz: uzun kargo formu doldurulurken yanlışlıkla dışarı
+    // tıklamak girilen her şeyi siliyordu. Kapatmak için çift tık (ya da ✕ / Esc).
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onDoubleClick={kapat}>
+      <div className="bg-white rounded-xl w-full max-w-xl max-h-[90vh] overflow-auto p-5" onDoubleClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-4 gap-3">
+          <h3 className="text-lg font-bold text-gray-800">
+            {form.iade ? '↩ UPS İade Gönderisi' : '📦 UPS Kargo Gönderisi'}
+          </h3>
+          <button type="button" onClick={kapat} title="Kapat (Esc)"
+            className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+        <p className="text-[11px] text-gray-400 -mt-2 mb-3">Kapatmak için ✕, Esc ya da dışarıya çift tıklayın.</p>
         <form onSubmit={gonder} className="space-y-3">
           {/* İade modu: taraflar ters çevrilir — paket müşteriden alınıp mağazaya gelir. */}
           <label className={`flex items-center gap-2 text-sm rounded-lg border px-3 py-2 cursor-pointer

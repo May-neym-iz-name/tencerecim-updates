@@ -185,6 +185,10 @@ export const metaApi = {
   yorumCevapla: (veri) => invoke('meta:yorumCevapla', veri),
   mesajCevapla: (veri) => invoke('meta:mesajCevapla', veri),
   yorumdanMesaj: (veri) => invoke('meta:yorumdanMesaj', veri),
+  // Görseller yerel önbellekten data URI olarak gelir (Meta URL'leri süreli).
+  gonderiGorsel: (konu_id) => invoke('meta:gonderiGorsel', { konu_id }),
+  profilFoto: (konu_id) => invoke('meta:profilFoto', { konu_id }),
+  gorselOnbellek: () => invoke('meta:gorselOnbellek'),
 }
 
 // Sosyal medya gelen kutusu (yerel önbellek + personel takibi).

@@ -4,6 +4,7 @@
 const client = require('./client')
 const { getDb } = require('../db/database')
 const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat } = require('../db/sosyal-mesajlar')
+const { gorselGetir, onbellekDurum } = require('./gorsel-onbellek')
 
 // Son çekme turunun özeti (arka plan polling + manuel). UI "sessiz hata göstergesi"
 // bunu okur: arka planda 120 sn'de bir çalışan senkron hataları console'a yutuyordu;
@@ -522,6 +523,57 @@ async function yorumdanMesaj({ id, metin, kullanici }) {
   return { ok: true, konusmaId, aliciId }
 }
 
+// --- Görseller ---------------------------------------------------------------
+// Meta'nın görsel adresleri imzalı ve süreli (eski kayıtlar 403 döner), bu yüzden
+// görsel bir kez diske indirilip oradan servis edilir. Bkz. gorsel-onbellek.js.
+
+// Bir gönderinin kayıtlı görsel URL'i ölmüşse Meta'dan taze adres ister ve DB'yi tazeler.
+// Gönderi Meta'da silinmişse null döner — o zaman yalnız yerel kopya (varsa) kalır.
+async function _gonderiUrlTazele(konuId, platform) {
+  const alanlar = platform === 'instagram' ? 'thumbnail_url,media_url' : 'full_picture,picture'
+  let yeni = null
+  try {
+    const d = await client.get(konuId, { fields: alanlar })
+    yeni = platform === 'instagram'
+      ? (d.thumbnail_url || d.media_url || null)
+      : (d.full_picture || d.picture || null)
+  } catch { return null }
+  if (yeni) {
+    getDb().prepare('UPDATE sosyal_mesajlar SET konu_gorsel = ? WHERE konu_id = ?').run(yeni, konuId)
+  }
+  return yeni
+}
+
+async function gonderiGorseli(konuId) {
+  if (!konuId) return null
+  const satir = getDb().prepare(
+    'SELECT platform, MAX(konu_gorsel) konu_gorsel FROM sosyal_mesajlar WHERE konu_id = ?'
+  ).get(konuId)
+  if (!satir) return null
+  return gorselGetir(`gonderi:${konuId}`, satir.konu_gorsel, () => _gonderiUrlTazele(konuId, satir.platform))
+}
+
+// DM'de müşterinin profil fotoğrafı.
+// CANLI ÖLÇÜM (2026-08-03): Instagram'da {kullanıcı_id}?fields=profile_pic ÇALIŞIYOR
+// (participants{profile_pic} ise sessizce boş döner — alan istenmiş gibi davranıp atlar).
+// Messenger'da aynı çağrı "(#3) Application does not have the capability" veriyor →
+// Facebook DM'lerinde profil fotoğrafı App Review olmadan alınamaz, harf-avatar kalır.
+// URL'in kendisi de süreli olduğu için sonuç yine yerel önbelleğe indirilir.
+async function profilFotografi(konuId) {
+  if (!konuId) return null
+  const satir = getDb().prepare(`
+    SELECT platform, gonderen_id FROM sosyal_mesajlar
+    WHERE konu_id = ? AND tur = 'dm' AND gonderen_id IS NOT NULL
+    ORDER BY id DESC LIMIT 1`).get(konuId)
+  if (!satir || satir.platform !== 'instagram' || !satir.gonderen_id) return null
+  return gorselGetir(`profil:${satir.gonderen_id}`, null, async () => {
+    try {
+      const d = await client.get(satir.gonderen_id, { fields: 'profile_pic' })
+      return d.profile_pic || null
+    } catch { return null }
+  })
+}
+
 module.exports = {
   // Polling için (main.js) — private, main.js '_' öneki ile IPC'ye kaydetmez.
   _tumunuCek: tumunuCek,
@@ -533,4 +585,11 @@ module.exports = {
   'meta:yorumCevapla': (arg) => yorumCevapla(arg),
   'meta:mesajCevapla': (arg) => mesajCevapla(arg),
   'meta:yorumdanMesaj': (arg) => yorumdanMesaj(arg),
+
+  // Gönderi görseli — yerel önbellekten (yoksa indirip saklayarak). Meta URL'leri
+  // süreli olduğu için UI artık ham URL'i DEĞİL bunu kullanır.
+  'meta:gonderiGorsel': (arg) => gonderiGorseli(arg && arg.konu_id),
+  // DM'deki müşterinin profil fotoğrafı (yalnız Instagram — Messenger'da Meta izin vermiyor).
+  'meta:profilFoto': (arg) => profilFotografi(arg && arg.konu_id),
+  'meta:gorselOnbellek': () => onbellekDurum(),
 }
