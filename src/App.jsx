@@ -12,22 +12,36 @@ import { useGorunurAralik } from './hooks/useGorunurAralik'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import HataSiniri from './components/HataSiniri'
 import logo from './assets/logo.png'
+// SAYFA YÜKLEME STRATEJİSİ (2026-08-04).
+//
+// Mağaza bilgisayarında yalnız 7 sekme kullanılıyor: Satış, Satış & Kasa, Stok,
+// Siparişler, Bildirimler, Müşteriler, Kargo. Geri kalan sayfalar oraya hiç
+// açılmıyor — ama STATİK import edildikleri sürece kodları ana pakete girer,
+// açılışta ayrıştırılır ve bellekte durur. Yetki kontrolü sekmeyi gizler,
+// KODU YÜKLEMEYİ ENGELLEMEZ. (Sosyal Medya 48 KB, Ayarlar 41 KB kaynak.)
+//
+// Bu yüzden ikiye ayrıldı:
+//   STATİK  — mağaza PC'sinde günlük kullanılanlar: anında açılsın, bekleme olmasın.
+//   TEMBEL  — yalnız yönetici PC'sinde kullanılanlar: gerektiğinde indirilir.
+// Mağaza PC'si bu dosyaların koduna hiç dokunmaz.
 import Giris from './pages/Giris.jsx'
-import Panel from './pages/Panel.jsx'
 import Satis from './pages/Satis.jsx'
-import Urunler from './pages/Urunler.jsx'
 import StokYonetim from './pages/StokYonetim.jsx'
 import Musteriler from './pages/Musteriler.jsx'
 import Kargo from './pages/Kargo.jsx'
-import Ayarlar from './pages/Ayarlar.jsx'
 import SatisFinans from './pages/SatisFinans.jsx'
 import SiparisMerkezi from './pages/SiparisMerkezi.jsx'
 import Bildirimler from './pages/Bildirimler.jsx'
-import SosyalMedya from './pages/SosyalMedya.jsx'
-import Kullanicilar from './pages/Kullanicilar.jsx'
 
-// Raporlar ağır recharts kütüphanesini içerir → tembel yükle (yalnızca sekme açılınca).
-const Raporlar = lazy(() => import('./pages/Raporlar.jsx'))
+// TEMBEL SAYFALAR — kodları yalnızca sekme gerçekten açılınca indirilir.
+// Yetkisi olmayan bilgisayar (mağaza PC'si) bu dosyaların koduna hiç dokunmaz:
+// ne ayrıştırma maliyeti öder, ne bellekte tutar.
+const Raporlar = lazy(() => import('./pages/Raporlar.jsx'))       // ağır recharts kütüphanesi
+const SosyalMedya = lazy(() => import('./pages/SosyalMedya.jsx')) // en büyük sayfa (48 KB kaynak)
+const Ayarlar = lazy(() => import('./pages/Ayarlar.jsx'))         // 41 KB, günde bir kez bile açılmaz
+const Kullanicilar = lazy(() => import('./pages/Kullanicilar.jsx'))
+const Urunler = lazy(() => import('./pages/Urunler.jsx'))
+const Panel = lazy(() => import('./pages/Panel.jsx'))             // Ana Ekran: rapor_goruntule ister
 
 const navItems = [
   { to: '/panel', label: '🏠 Ana Ekran', yetki: 'rapor_goruntule', el: <Panel /> },

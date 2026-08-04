@@ -1,9 +1,22 @@
-const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu, shell, protocol } = require('electron')
 const path = require('path')
 const { autoUpdater } = require('electron-updater')
 
 const isDev = !app.isPackaged
 let mainWindow
+
+// SOSYAL MEDYA GÖRSEL PROTOKOLÜ
+// <img src="sosyal-gorsel://img/?t=gonderi&b=kucuk&id=..."> ile görseller doğrudan
+// diskten okunur. Eskiden her görsel IPC'den base64 olarak geçiyordu; liste 700 satıra
+// kadar çıktığı için sekme açılışta donuyordu (ölçüm 2026-08-04: 1.072 görsel / 89 MB,
+// ortalama 85 KB, hepsi 40x40 gösteriliyor). Bkz. meta/gorsel-onbellek.js.
+//
+// registerSchemesAsPrivileged app hazır OLMADAN çağrılmalıdır — sonrası etkisizdir.
+// Kimlik değerleri sorgu dizesinde taşınır (yol normalleştirmesine takılmasın diye).
+const GORSEL_SEMA = 'sosyal-gorsel'
+protocol.registerSchemesAsPrivileged([
+  { scheme: GORSEL_SEMA, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+])
 
 // TEK ÖRNEK KİLİDİ — ikinci kez açılırsa yeni pencere AÇILMAZ, mevcut pencere öne getirilir.
 // Neden şart: her örnek kendi polling turunu ve sosyal otomasyonunu çalıştırır. İki örnek =
@@ -352,6 +365,27 @@ if (tekOrnekKilidi) {
   // senkron olarak çözüyor ve bu iş pencerenin ilk boyanmasıyla aynı ana yığılıyordu.
   // v1.2.140'taki açılış takılmasının dersi buydu: açılışı bloklayan her şey ertelenir.
   let arkaPlanKuruldu = false
+  // Görsel protokolünü bağlar. İşleyici SADECE önbellek klasöründeki dosyaları döndürür
+  // (yol dışarıdan gelmez, anahtar sha1'lenerek üretilir) → yol geçişi riski yok.
+  // Dosya yoksa hata döndürülür; arayüz onError ile harf-avatara düşer.
+  function gorselProtokolunuKur() {
+    const meta = require('./meta')
+    protocol.registerFileProtocol(GORSEL_SEMA, async (istek, cevap) => {
+      try {
+        const u = new URL(istek.url)
+        const tur = u.searchParams.get('t') || 'gonderi'
+        const boyut = u.searchParams.get('b') === 'tam' ? 'tam' : 'kucuk'
+        const id = u.searchParams.get('id')
+        const yol = id ? await meta._gorselYolu(tur, id, boyut) : null
+        if (!yol) return cevap({ error: -6 }) // FILE_NOT_FOUND
+        cevap({ path: yol })
+      } catch (e) {
+        console.error('[gorsel] protokol hatası:', e.message)
+        cevap({ error: -2 }) // FAILED
+      }
+    })
+  }
+
   const arkaPlanIslerBaslat = () => {
     if (arkaPlanKuruldu) return
     arkaPlanKuruldu = true
@@ -363,6 +397,7 @@ if (tekOrnekKilidi) {
 
   app.whenReady().then(() => {
     require('./db/database').init()
+    gorselProtokolunuKur()
     createWindow()
     // Normal yol: arayüz yüklendi, artık arka plan işleri açılışı yavaşlatamaz.
     mainWindow.webContents.once('did-finish-load', arkaPlanIslerBaslat)

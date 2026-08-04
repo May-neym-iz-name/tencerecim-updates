@@ -4,7 +4,7 @@
 const client = require('./client')
 const { getDb } = require('../db/database')
 const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat } = require('../db/sosyal-mesajlar')
-const { gorselGetir, onbellekDurum } = require('./gorsel-onbellek')
+const { gorselDosyasi, onbellekDurum } = require('./gorsel-onbellek')
 
 // Son çekme turunun özeti (arka plan polling + manuel). UI "sessiz hata göstergesi"
 // bunu okur: arka planda 120 sn'de bir çalışan senkron hataları console'a yutuyordu;
@@ -579,13 +579,13 @@ async function _gonderiUrlTazele(konuId, platform) {
   return yeni
 }
 
-async function gonderiGorseli(konuId) {
+async function gonderiGorseli(konuId, boyut) {
   if (!konuId) return null
   const satir = getDb().prepare(
     'SELECT platform, MAX(konu_gorsel) konu_gorsel FROM sosyal_mesajlar WHERE konu_id = ?'
   ).get(konuId)
   if (!satir) return null
-  return gorselGetir(`gonderi:${konuId}`, satir.konu_gorsel, () => _gonderiUrlTazele(konuId, satir.platform))
+  return gorselDosyasi(`gonderi:${konuId}`, satir.konu_gorsel, () => _gonderiUrlTazele(konuId, satir.platform), boyut)
 }
 
 // DM'de müşterinin profil fotoğrafı.
@@ -594,19 +594,19 @@ async function gonderiGorseli(konuId) {
 // Messenger'da aynı çağrı "(#3) Application does not have the capability" veriyor →
 // Facebook DM'lerinde profil fotoğrafı App Review olmadan alınamaz, harf-avatar kalır.
 // URL'in kendisi de süreli olduğu için sonuç yine yerel önbelleğe indirilir.
-async function profilFotografi(konuId) {
+async function profilFotografi(konuId, boyut) {
   if (!konuId) return null
   const satir = getDb().prepare(`
     SELECT platform, gonderen_id FROM sosyal_mesajlar
     WHERE konu_id = ? AND tur = 'dm' AND gonderen_id IS NOT NULL
     ORDER BY id DESC LIMIT 1`).get(konuId)
   if (!satir || satir.platform !== 'instagram' || !satir.gonderen_id) return null
-  return gorselGetir(`profil:${satir.gonderen_id}`, null, async () => {
+  return gorselDosyasi(`profil:${satir.gonderen_id}`, null, async () => {
     try {
       const d = await client.get(satir.gonderen_id, { fields: 'profile_pic' })
       return d.profile_pic || null
     } catch { return null }
-  })
+  }, boyut)
 }
 
 module.exports = {
@@ -621,10 +621,14 @@ module.exports = {
   'meta:mesajCevapla': (arg) => mesajCevapla(arg),
   'meta:yorumdanMesaj': (arg) => yorumdanMesaj(arg),
 
-  // Gönderi görseli — yerel önbellekten (yoksa indirip saklayarak). Meta URL'leri
-  // süreli olduğu için UI artık ham URL'i DEĞİL bunu kullanır.
-  'meta:gonderiGorsel': (arg) => gonderiGorseli(arg && arg.konu_id),
-  // DM'deki müşterinin profil fotoğrafı (yalnız Instagram — Messenger'da Meta izin vermiyor).
-  'meta:profilFoto': (arg) => profilFotografi(arg && arg.konu_id),
+  // Görseller artık IPC ile DEĞİL, `sosyal-gorsel://` protokolüyle servis edilir
+  // (bkz. main.js). Buradaki çözücü yalnız protokol işleyicisinin çağırdığı iç yoldur:
+  // tur+konu_id → yerel dosya yolu. '_' öneki main.js'in IPC'ye kaydetmesini engeller.
+  //
+  // tur: 'gonderi' (gönderi görseli) | 'profil' (Instagram DM profil fotoğrafı;
+  // Messenger'da Meta izin vermiyor, orada null döner ve harf-avatar kalır).
+  _gorselYolu: (tur, konuId, boyut) => (
+    tur === 'profil' ? profilFotografi(konuId, boyut) : gonderiGorseli(konuId, boyut)
+  ),
   'meta:gorselOnbellek': () => onbellekDurum(),
 }

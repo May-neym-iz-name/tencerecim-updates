@@ -4,7 +4,7 @@ import { sosyalApi, metaApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
 import OtomasyonPaneli from '../components/OtomasyonPaneli'
-import SosyalGorsel, { useSosyalGorsel } from '../components/SosyalGorsel'
+import SosyalGorsel from '../components/SosyalGorsel'
 import { useGorunurAralik } from '../hooks/useGorunurAralik'
 
 // Üst sekmeler — Meta Business Suite düzeni. mod: 'karma'|'dm'|'yorum'
@@ -138,19 +138,22 @@ function FiltreCip({ secili, onClick, renk, pasif, children }) {
 // orada harf-avatar kalır — bu bir eksiklik değil, platform kısıtı.
 function Avatar({ ad, platform, boyut = 40, konuId }) {
   const harf = (ad || '?').trim().charAt(0).toUpperCase()
-  const foto = useSosyalGorsel(platform === 'instagram' && konuId ? konuId : null, 'profil')
+  const harfAvatar = (
+    <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white font-semibold"
+      style={{ fontSize: boyut * 0.4 }}>{harf}</div>
+  )
+  const rozet = { width: boyut * 0.36, height: boyut * 0.36 }
   return (
     <div className="relative flex-shrink-0" style={{ width: boyut, height: boyut }}>
-      {foto ? (
-        <img src={foto} alt="" className="w-full h-full rounded-full object-cover bg-gray-100" />
-      ) : (
-        <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white font-semibold"
-          style={{ fontSize: boyut * 0.4 }}>{harf}</div>
+      <SosyalGorsel konuId={platform === 'instagram' ? konuId : null} tur="profil"
+        className="w-full h-full rounded-full object-cover bg-gray-100" yedek={harfAvatar} />
+      {/* Messenger rozetinde eskiden src="" olan bir <img> vardı; boş src tarayıcıyı
+          sayfanın kendisine istek atmaya zorluyordu (her satırda bir kez). Düz div yeter. */}
+      {platform === 'instagram' && (
+        <img src={IG_IKON} alt="" className="absolute -bottom-0.5 -right-0.5 rounded" style={rozet} />
       )}
-      {platform && (
-        <img src={platform === 'instagram' ? IG_IKON : ''} alt=""
-          className="absolute -bottom-0.5 -right-0.5 rounded"
-          style={{ width: boyut * 0.36, height: boyut * 0.36, background: platform === 'facebook' ? '#1877f2' : 'transparent' }} />
+      {platform === 'facebook' && (
+        <div className="absolute -bottom-0.5 -right-0.5 rounded" style={{ ...rozet, background: '#1877f2' }} />
       )}
     </div>
   )
@@ -164,6 +167,14 @@ export default function SosyalMedya() {
   const sekme = SEKMELER.find(s => s.kod === sekmeKod)
   const [sayaclar, setSayaclar] = useState({})
   const [arama, setArama] = useState('')
+  // Arama kutusu her tuş vuruşunda 500 gönderi + 200 konuşma sorgusunu baştan
+  // çalıştırıyordu (ilişkili alt sorgularla birlikte) → yazarken gözle görülür takılma.
+  // Kutu anında yanıt vermeye devam eder, sorgu yalnız yazma durunca çalışır.
+  const [aramaGec, setAramaGec] = useState('')
+  useEffect(() => {
+    const z = setTimeout(() => setAramaGec(arama), 300)
+    return () => clearTimeout(z)
+  }, [arama])
   const [tarihBas, setTarihBas] = useState('') // tarih filtresi (YYYY-MM-DD)
   const [tarihBit, setTarihBit] = useState('')
   const [cevapDurumu, setCevapDurumu] = useState('hepsi')
@@ -225,20 +236,20 @@ export default function SosyalMedya() {
       }
       let sonuc = []
       if (sekme.mod === 'yorum') {
-        sonuc = (await sosyalApi.gonderiler({ platform: pf, arama, ...tf })).map(x => ({ ...x, kind: 'yorum' }))
+        sonuc = (await sosyalApi.gonderiler({ platform: pf, arama: aramaGec, ...tf })).map(x => ({ ...x, kind: 'yorum' }))
       } else if (sekme.mod === 'dm') {
-        sonuc = (await sosyalApi.konusmalar({ platform: pf, arama, ...tf })).map(x => ({ ...x, kind: 'dm' }))
+        sonuc = (await sosyalApi.konusmalar({ platform: pf, arama: aramaGec, ...tf })).map(x => ({ ...x, kind: 'dm' }))
       } else {
         const [g, k] = await Promise.all([
-          sosyalApi.gonderiler({ platform: 'hepsi', arama, ...tf }),
-          sosyalApi.konusmalar({ platform: 'hepsi', arama, ...tf }),
+          sosyalApi.gonderiler({ platform: 'hepsi', arama: aramaGec, ...tf }),
+          sosyalApi.konusmalar({ platform: 'hepsi', arama: aramaGec, ...tf }),
         ])
         sonuc = [...g.map(x => ({ ...x, kind: 'yorum' })), ...k.map(x => ({ ...x, kind: 'dm' }))]
           .sort((a, b) => String(b.son_zaman || '').localeCompare(String(a.son_zaman || '')))
       }
       setListe(sonuc)
     } catch (e) { toast.error('Liste yüklenemedi: ' + e.message) }
-  }, [sekme, arama, tarihBas, tarihBit, cevapDurumu, okunma, atama, kullanici])
+  }, [sekme, aramaGec, tarihBas, tarihBit, cevapDurumu, okunma, atama, kullanici])
 
   useEffect(() => { listeYukle(); sayaclariYukle() }, [listeYukle, sayaclariYukle])
   useEffect(() => { setSeciliKonu(null); setMesajlar([]) }, [sekmeKod])
@@ -881,7 +892,8 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
       {/* SAĞ: gönderi önizleme + otomasyon */}
       <div className="w-[340px] flex-shrink-0 p-4 bg-gray-50 overflow-y-auto hidden lg:block space-y-3">
         <div>
-          <SosyalGorsel konuId={konu.konu_id} className="w-full rounded-lg object-cover mb-3"
+          {/* Tek görsel ve tam genişlikte gösteriliyor → küçültülmüş sürüm bulanık kalır. */}
+          <SosyalGorsel konuId={konu.konu_id} boyut="tam" className="w-full rounded-lg object-cover mb-3"
             yedek={<div className="w-full aspect-square rounded-lg bg-gray-200 flex items-center justify-center text-gray-400 mb-3">Görsel yok</div>} />
           <p className="text-sm text-gray-700 whitespace-pre-wrap line-clamp-4">{konu.konu_baslik}</p>
           <p className="text-xs text-gray-400 mt-2">{konu.yorum_sayisi} yorum</p>

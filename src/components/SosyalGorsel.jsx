@@ -1,92 +1,49 @@
-import { useEffect, useState } from 'react'
-import { metaApi } from '../api/ipc'
+import { useState } from 'react'
 
 // Sosyal medya görselleri için ortak yükleyici.
 //
 // Meta'nın görsel adresleri süreli olduğundan <img src={ham_url}> eski gönderilerde
-// kırık çıkıyordu (ölçüm: 2022-2025 kayıtları HTTP 403). Görseller artık ana süreçte
-// bir kez diske indirilir; buradan data URI olarak gelir.
+// kırık çıkıyordu (ölçüm: 2022-2025 kayıtları HTTP 403). Görseller ana süreçte bir kez
+// diske indirilir; buradan `sosyal-gorsel://` protokolüyle DOĞRUDAN diskten okunur.
 //
-// BELLEK SINIRI (2026-08-04 ölçümü): burası eskiden sınırsız bir Map'ti ve hiç
-// boşaltılmıyordu. Renderer süreci 229 MB özel bellek tutuyordu (tepe 498 MB), GPU
-// süreci ayrıca 118 MB — kullanıcı gezindikçe her görsel base64 string olarak
-// oturum sonuna kadar kalıyordu. İki düzeltme birlikte gelir:
+// NEDEN PROTOKOL (2026-08-04 performans ölçümü): burası eskiden her görseli IPC ile
+// base64 olarak alıp `atob` + bayt bayt döngüyle blob'a çeviriyordu. Sol liste 700
+// satıra kadar çıktığı ve her satır bir görsel istediği için sekmeye tıklamak
+// uygulamayı donduruyordu — tek açılışta ~42 MB senkron disk okuması, ~57 MB base64
+// IPC trafiği ve renderer'da ~42 milyon döngü adımı. Üstelik elde tutulan LRU tavanı
+// (150) listedeki satır sayısının ALTINDA kaldığı için hâlâ ekranda duran görsellerin
+// blob adresleri iptal ediliyor, aşağı inildikçe görseller kırılıyordu.
 //
-//   1. data URI yerine BLOB URL: base64 ikili veriden %33 büyüktür ve JS string'i
-//      olarak heap'te durur; blob ise tarayıcının kendi deposunda tutulur.
-//   2. LRU tavanı: en son kullanılan SINIR kadar görsel tutulur, taşan blob
-//      revokeObjectURL ile GERÇEKTEN serbest bırakılır (revoke edilmeyen blob
-//      sayfa ömrü boyunca sızar — data URI'dan farkı kalmazdı).
-const SINIR = 150 // ~150 küçük görsel; liste ekranında aynı anda görünenin çok üstü
-const bellek = new Map() // anahtar -> blob URL | null (null = bulunamadı, tekrar deneme)
+// Protokole geçince base64, IPC yükü, çözme döngüsü ve blob ömrü yönetimi birden
+// ortadan kalktı: Chromium dosyayı kendisi okur ve kendi önbelleğinde tutar.
+const SEMA = 'sosyal-gorsel://img/'
 
-function anahtarla(tur, konuId) { return `${tur}:${konuId}` }
-
-// Map ekleme sırasını korur → ilk anahtar en eski kullanılandır.
-function tahliyeEt() {
-  while (bellek.size > SINIR) {
-    const enEski = bellek.keys().next().value
-    const deger = bellek.get(enEski)
-    if (deger) URL.revokeObjectURL(deger)
-    bellek.delete(enEski)
-  }
+// tur: 'gonderi' | 'profil'   boyut: 'kucuk' (liste/avatar) | 'tam' (detay görseli)
+function adres(konuId, tur, boyut) {
+  return `${SEMA}?t=${tur}&b=${boyut}&id=${encodeURIComponent(konuId)}`
 }
 
-// Kullanılanı sona taşı (LRU): sil-yeniden ekle, Map'te sırayı güncellemenin tek yolu.
-function tazele(k) {
-  if (!bellek.has(k)) return undefined
-  const v = bellek.get(k)
-  bellek.delete(k)
-  bellek.set(k, v)
-  return v
-}
+// Görsel yoksa (silinmiş gönderi, indirilemedi, Messenger profil fotoğrafı izni yok)
+// protokol hata döner → onError ile `yedek` içeriğe düşülür.
+//
+// Yükleme `loading="lazy"` ile ertelenir: Chromium yalnız görünüm alanına yaklaşan
+// satırların görselini ister, 700 satırlık listede ~700 değil ~30 istek olur.
+// Elle IntersectionObserver yazmaya gerek yok (kapsayıcı içi kaydırmada da çalışır).
+export default function SosyalGorsel({ konuId, tur = 'gonderi', boyut = 'kucuk', className, yedek = null }) {
+  // Hatayı konuId ile birlikte tut: satır geri dönüştürülüp başka konuya bağlanınca
+  // eski hatanın yeni görseli gizlemesini engeller (effect'e gerek kalmadan sıfırlanır).
+  const [hataliKonu, setHataliKonu] = useState(null)
 
-// Ana süreç data URI döndürüyor; blob'a çevir ki base64 string'i heap'te tutmayalım.
-function blobaCevir(dataUri) {
-  if (!dataUri || typeof dataUri !== 'string' || !dataUri.startsWith('data:')) return null
-  try {
-    const [bas, veri] = dataUri.split(',')
-    const tip = (bas.match(/^data:([^;]+)/) || [])[1] || 'image/jpeg'
-    const ikili = atob(veri)
-    const bayt = new Uint8Array(ikili.length)
-    for (let i = 0; i < ikili.length; i++) bayt[i] = ikili.charCodeAt(i)
-    return URL.createObjectURL(new Blob([bayt], { type: tip }))
-  } catch {
-    return null // bozuk veri → görselsiz devam et, ekranı kırma
-  }
-}
+  if (!konuId || hataliKonu === konuId) return yedek
 
-function getir(tur, konuId) {
-  const k = anahtarla(tur, konuId)
-  if (bellek.has(k)) return Promise.resolve(tazele(k))
-  const istek = (tur === 'profil' ? metaApi.profilFoto(konuId) : metaApi.gonderiGorsel(konuId))
-    .then(v => {
-      const url = blobaCevir(v)
-      bellek.set(k, url)
-      tahliyeEt()
-      return url
-    })
-    .catch(() => { bellek.set(k, null); return null })
-  return istek
-}
-
-// tur: 'gonderi' | 'profil'. Dönüş: data URI ya da null (henüz yüklenmedi / yok).
-export function useSosyalGorsel(konuId, tur = 'gonderi') {
-  const [kaynak, setKaynak] = useState(() => bellek.get(anahtarla(tur, konuId)) || null)
-
-  useEffect(() => {
-    if (!konuId) { setKaynak(null); return }
-    let iptal = false
-    getir(tur, konuId).then(v => { if (!iptal) setKaynak(v) })
-    return () => { iptal = true }
-  }, [konuId, tur])
-
-  return kaynak
-}
-
-// Gönderi küçük görseli. Görsel yoksa (silinmiş gönderi / indirilemedi) yedek içerik gösterilir.
-export default function SosyalGorsel({ konuId, className, yedek = null }) {
-  const kaynak = useSosyalGorsel(konuId, 'gonderi')
-  if (!kaynak) return yedek
-  return <img src={kaynak} alt="" className={className} />
+  return (
+    <img
+      src={adres(konuId, tur, boyut)}
+      alt=""
+      className={className}
+      loading="lazy"
+      decoding="async"
+      onError={() => setHataliKonu(konuId)}
+    />
+  )
 }
