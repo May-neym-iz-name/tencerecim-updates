@@ -397,6 +397,41 @@ async function yorumCevapla({ id, metin, kullanici }) {
   return { ok: true }
 }
 
+// 24 saat penceresi dışında kalan DM için DOĞRU teşhisi ve YAPILABİLECEK şeyi söyler.
+//
+// NEDEN AYRI FONKSİYON VE NEDEN BU KADAR AÇIK (2026-08-04): eski mesaj "insan temsilci
+// etiketiyle 7 gün" diyordu ve bu, uygulamanın sahip OLMADIĞI bir yeteneği varmış gibi
+// gösteriyordu. Ölçüldü (debug_token): sayfa token'ında 14 izin var, `human_agent` YOK.
+// Yani HUMAN_AGENT denemesi her seferinde "(#10) İnsan Aracısı Etiket Erişimi yok" ile
+// düşüyor — pencere 7 güne hiç uzamıyor. Bu izin App Review onayı ister; kodla açılamaz.
+//
+// Aynı hatayı bir kez daha yapmamak için: teşhis hata metnine GÖMÜLMEZ, ölçülen gerçek
+// yazılır. (Yorumdan mesaj uç noktasında hata metnine gömülen yanlış teşhis aylarca
+// gereksiz App Review beklemesine yol açmıştı.)
+//
+// Personelin bugün yapabileceği tek şey Meta'nın KENDİ arayüzünden yanıtlamak:
+// Business Suite / Instagram uygulaması 24 saat API penceresine tabi değildir.
+function _pencereHatasi(ilkHata, etiketHatasi, row) {
+  const izinYok = /İnsan Aracısı|Human Agent|human_agent/i.test(etiketHatasi.message || '')
+  const kim = row.platform === 'instagram' && row.gonderen_ad
+    ? ` (@${row.gonderen_ad})` : ''
+  const bas = izinYok
+    ? `Bu müşteriye uygulamadan yanıt verilemiyor: son mesajının üzerinden 24 saat geçmiş ve `
+      + `uygulamanın "İnsan Temsilci" (human_agent) izni YOK — bu izin Meta App Review onayı ister.`
+    : `Mesaj gönderilemedi: müşterinin son mesajından 24 saat geçmiş.`
+  const ne = row.platform === 'instagram'
+    ? `\n\nŞimdi ne yapmalı: Instagram uygulamasından ya da Meta Business Suite gelen kutusundan${kim} `
+      + `elle yanıtlayın — Meta'nın kendi arayüzleri bu 24 saat sınırına tabi değildir.`
+    : `\n\nŞimdi ne yapmalı: Meta Business Suite gelen kutusundan elle yanıtlayın.`
+  // Her iki hata da taşınır: ilk deneme farklı bir sebeple düşmüş olabilir ve onu
+  // yutmak teşhisi imkânsızlaştırır.
+  const ayrinti = `\n\nAyrıntı — 1. deneme: ${ilkHata.message} | 2. deneme: ${etiketHatasi.message}`
+  const hata = new Error(bas + ne + ayrinti)
+  hata.pencereDisi = true      // UI bu bayrakla "Instagram'da Aç" düğmesi gösterir
+  hata.kullaniciAdi = row.platform === 'instagram' ? row.gonderen_ad || null : null
+  return hata
+}
+
 // DM cevabı: {page_id}/messages ile alıcıya (gonderen_id) mesaj gönderir.
 async function mesajCevapla({ id, metin, kullanici }) {
   const row = getDb().prepare('SELECT * FROM sosyal_mesajlar WHERE id = ?').get(id)
@@ -418,7 +453,7 @@ async function mesajCevapla({ id, metin, kullanici }) {
       try {
         await client.post(`${sayfaId}/messages`, { ...govde, messaging_type: 'MESSAGE_TAG', tag: 'HUMAN_AGENT' })
       } catch (e2) {
-        throw new Error('Mesaj gönderilemedi: müşterinin son mesajından 24 saat (insan temsilci etiketiyle 7 gün) geçmiş. Müşteri yeni bir mesaj atınca yanıtlanabilir. Ayrıntı: ' + e2.message)
+        throw _pencereHatasi(e, e2, row)
       }
     } else throw e
   }

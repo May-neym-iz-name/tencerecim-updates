@@ -71,6 +71,52 @@ function zaman(t) {
   return d.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' })
 }
 
+// META 24 SAAT YANIT PENCERESİ.
+//
+// Müşterinin son mesajından itibaren 24 saat içinde DM ile yanıt verilebilir. Süre
+// dolduktan sonra uygulamadan yanıt GÖNDERİLEMEZ — Meta API "(#10)" ile reddeder.
+// 7 güne uzatan HUMAN_AGENT etiketi `human_agent` iznine bağlı ve bu uygulamada YOK
+// (ölçüldü: token'da 14 izin var, o yok); izin App Review onayı ister.
+//
+// Bu yüzden tek savunma ERKEN UYARI: personel süre dolmadan görsün. Ölçüm (2026-08-04):
+// 125 konuşma yanıtsız kalmıştı ve bir kısmı pencereyi 30 dakikayla kaçırmıştı.
+const PENCERE_SAAT = 24
+// 8 saat: mağazanın vardiya düzenine göre seçildi (kullanıcı kararı, 2026-08-04).
+// Kırmızıya döndüğünde aynı vardiya içinde yetişilebilecek kadar süre kalmış olur.
+const UYARI_SAAT = 8
+
+// Kalan süreyi döndürür. null = rozet gösterme (yanıtlanmış ya da gelen mesaj yok).
+function yanitSuresi(satir) {
+  // Yalnız DM: yorumlarda böyle bir pencere yok, orada her zaman yanıt verilebilir.
+  if (satir.kind !== 'dm' || !satir.son_gelen) return null
+  if (!satir.cevapsiz) return null // yanıtlanmışsa geri sayıma gerek yok
+  const gecen = (Date.now() - new Date(satir.son_gelen).getTime()) / 3600000
+  const kalan = PENCERE_SAAT - gecen
+  if (kalan <= 0) return { doldu: true }
+  return { doldu: false, kalan, acil: kalan <= UYARI_SAAT }
+}
+
+function YanitSuresi({ satir }) {
+  const s = yanitSuresi(satir)
+  if (!s) return null
+  if (s.doldu) {
+    return (
+      <span title="24 saatlik yanıt penceresi doldu — uygulamadan yanıt gönderilemez. Instagram uygulamasından veya Meta Business Suite'ten elle yanıtlayın."
+        className="inline-flex items-center gap-1 mt-1 text-[10px] text-gray-600 bg-gray-100 rounded-full px-1.5 py-0.5">
+        ⌛ süre doldu
+      </span>
+    )
+  }
+  const metin = s.kalan >= 1 ? `${Math.floor(s.kalan)} saat kaldı` : `${Math.ceil(s.kalan * 60)} dk kaldı`
+  return (
+    <span title="Meta'nın 24 saatlik yanıt penceresinde kalan süre. Dolduktan sonra uygulamadan yanıt gönderilemez."
+      className={`inline-flex items-center gap-1 mt-1 text-[10px] rounded-full px-1.5 py-0.5 ${
+        s.acil ? 'text-red-700 bg-red-50 font-semibold' : 'text-amber-700 bg-amber-50'}`}>
+      {s.acil ? '⏰' : '⏳'} {metin}
+    </span>
+  )
+}
+
 // Süzgeç çipi — seçili durumda dolu, değilken sade. Renk süzgeç grubunu ayırt ettirir.
 const CIP_RENK = {
   amber: 'bg-amber-500 border-amber-500',
@@ -461,11 +507,14 @@ export default function SosyalMedya() {
                       <span className="text-[11px] text-gray-400 flex-shrink-0">{zaman(satir.son_zaman)}</span>
                     </div>
                     <p className={`text-xs truncate ${satir.okunmamis ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>{altYazi}</p>
-                    {satir.atanan && (
-                      <span className="inline-flex items-center gap-1 mt-1 text-[10px] text-emerald-700 bg-emerald-50 rounded-full px-1.5 py-0.5">
-                        👤 {satir.atanan}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <YanitSuresi satir={satir} />
+                      {satir.atanan && (
+                        <span className="inline-flex items-center gap-1 mt-1 text-[10px] text-emerald-700 bg-emerald-50 rounded-full px-1.5 py-0.5">
+                          👤 {satir.atanan}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   {satir.okunmamis > 0 && <span className="w-2 h-2 rounded-full bg-blue-600 mt-1.5 flex-shrink-0" />}
                 </button>

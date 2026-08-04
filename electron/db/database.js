@@ -452,6 +452,26 @@ function createTables() {
     );
     CREATE INDEX IF NOT EXISTS idx_sosyal_konu ON sosyal_mesajlar(konu_id);
     CREATE INDEX IF NOT EXISTS idx_sosyal_durum ON sosyal_mesajlar(durum);
+
+    -- Gönderi (konu) meta verisi: başlık, görsel adresi, link. konu_id başına TEK satır.
+    --
+    -- NEDEN AYRI TABLO (2026-08-04 ölçümü): bu üç alan eskiden her mesaj satırına
+    -- kopyalanıyordu. 97.973 mesaj / yalnız 1.983 farklı gönderi → her gönderinin
+    -- başlığı ve görsel adresi ortalama 49 KEZ tekrarlanıyordu. Ölçülen maliyet:
+    -- konu_gorsel 51 MB + konu_baslik 49 MB = 100.3 MB; tekrarsız saklandığında 1.5 MB.
+    -- 198 MB'lık veritabanının yarısı buydu ve ana sürecin belleğe eşlediği dosya da bu.
+    --
+    -- SENKRONLANMAZ (bilerek): sosyal_mesajlar da senkronlanmıyor (bkz. senk-sema.js SIRA).
+    -- Bu tablo tamamen ondan türetilir; her PC Meta'dan kendi çekimini yapıp kendi
+    -- kopyasını doldurur. Senkrona eklemek aynı veriyi ikinci kez taşımak olurdu.
+    CREATE TABLE IF NOT EXISTS sosyal_gonderiler (
+      konu_id TEXT PRIMARY KEY,
+      platform TEXT,
+      baslik TEXT,
+      gorsel TEXT,
+      link TEXT,
+      guncelleme TEXT DEFAULT (datetime('now','localtime'))
+    );
   `)
 }
 
@@ -680,6 +700,42 @@ function migrate() {
   // arama yapar. İndekssiz 66k okunmamış × 90k satır = saatlerce süren tam tarama →
   // v1.2.140 açılışta ASILI KALIYORDU (2026-07-28). Onarımlardan ÖNCE oluşturulmalı.
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sosyal_ust ON sosyal_mesajlar(ust_id)") } catch {}
+
+  // Sosyal liste sıralama indeksi. ÖLÇÜLDÜ (gerçek 98k satırlık veritabanı kopyası):
+  // sayfa açılışındaki liste sorgusu 161-238 ms sürüyordu çünkü sıralama ifadesi
+  // indekssizdi ve her seferinde 98.000 satır baştan sıralanıyordu. İndeksle 1 ms.
+  //
+  // İFADE İNDEKSİ: sorgudaki COALESCE(...) ifadesinin BİREBİR aynısı yazılmalı.
+  // Sadece mesaj_tarihi'ne indeks koysaydık planlayıcı bu sorguda kullanmazdı.
+  try { db.exec('CREATE INDEX IF NOT EXISTS idx_sosyal_zaman ON sosyal_mesajlar(COALESCE(mesaj_tarihi, cekilme_tarihi) DESC)') } catch {}
+
+  // sosyal_gonderiler geri doldurma: mevcut mesajlardaki gönderi bilgisini yeni tabloya
+  // TEK KOPYA hâlinde taşır. Mesaj satırlarına DOKUNMAZ (eski kayıtlar okunurken hâlâ
+  // kendi kolonlarından okunabilsin; eski satırların temizliği ayrı bir çalışma).
+  //
+  // TEK SEFERLİK ve ÖLÇÜMLÜ: v1.2.140 dersi — migrate açılışı BLOKLAR. Burası 98k satırı
+  // konu_id'ye göre gruplar; idx_sosyal_konu indeksi var ama yine de her açılışta
+  // çalıştırmanın anlamı yok, çünkü yeni gönderiler zaten yazım anında ekleniyor.
+  try {
+    db.exec("CREATE TABLE IF NOT EXISTS yerel_onarimlar (ad TEXT PRIMARY KEY, tarih TEXT)")
+    const yapildi = db.prepare('SELECT 1 FROM yerel_onarimlar WHERE ad = ?').get('sosyal_gonderiler_dolum_2026_08')
+    if (!yapildi) {
+      const basla = Date.now()
+      // MAX(): mevcut liste sorgularının gönderi bilgisini seçme biçimiyle birebir aynı,
+      // yani görüntüde hiçbir şey değişmez. NULL'lar MAX tarafından zaten atlanır.
+      db.exec(`
+        INSERT OR REPLACE INTO sosyal_gonderiler (konu_id, platform, baslik, gorsel, link)
+        SELECT konu_id, MAX(platform), MAX(konu_baslik), MAX(konu_gorsel), MAX(konu_link)
+        FROM sosyal_mesajlar
+        WHERE konu_id IS NOT NULL
+          AND (konu_baslik IS NOT NULL OR konu_gorsel IS NOT NULL OR konu_link IS NOT NULL)
+        GROUP BY konu_id`)
+      const adet = db.prepare('SELECT COUNT(*) n FROM sosyal_gonderiler').get().n
+      db.prepare("INSERT INTO yerel_onarimlar (ad, tarih) VALUES (?, datetime('now','localtime'))")
+        .run('sosyal_gonderiler_dolum_2026_08')
+      console.log(`[migrate] sosyal_gonderiler dolduruldu: ${adet} gönderi, ${Date.now() - basla} ms`)
+    }
+  } catch (e) { console.error('sosyal_gonderiler dolumu:', e.message) }
   // KENDİ yorumlarımız 'gelen' yazılmıştı → okunmamış sayılıp rozeti şişiriyordu (5000+ satır).
   // Geriye dönük onarım: sayfa adı/kimliğiyle eşleşenler 'giden' yapılır. İdempotent.
   try {

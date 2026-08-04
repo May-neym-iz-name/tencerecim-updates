@@ -1,13 +1,58 @@
 // Sosyal medya gelen kutusu — DB katmanı (yerel önbellek + personel takibi).
 // Meta'dan çekilen yorum/DM'ler buraya idempotent (harici_id UNIQUE) yazılır.
 // Ağ çağrıları electron/meta/index.js'te; bu dosya yalnızca yerel okuma/yazma yapar.
-const { getDb } = require('./database')
+const database = require('./database')
 const { listeFiltreleri: _listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC } = require('./sosyal-filtre')
+
+// TEST DİKİŞİ — üretimde her zaman gerçek veritabanı döner.
+//
+// Neden gerekli: bu dosyadaki SQL'in kendisi test edilecek (sosyal_gonderiler JOIN'i,
+// belirsiz sütun adları, geriye dönük okuma). better-sqlite3 Electron ABI'sine derli
+// olduğu için vitest'te açılamıyor; node:sqlite ile bellek içi bir DB kullanılıyor.
+// vi.mock BU DOSYADA İŞE YARAMAZ: CommonJS require'ı yakalamıyor (aynı tuzak
+// kargo-durum köprüsü testlerinde de yaşandı) — bu yüzden açık bir setter var.
+// senk-veri.js'teki "db'yi parametre olarak geçir" desenine göre daha küçük bir
+// değişiklik: burada 15 fonksiyon getDb() çağırıyor, hepsinin imzasını değiştirmek
+// üretim kodunu test uğruna bozardı.
+let _testDb = null
+function getDb() { return _testDb || database.getDb() }
+function _dbAyarla(db) { _testDb = db } // YALNIZ TEST
+
+// Gönderi (konu) meta verisini sosyal_gonderiler'e TEK KOPYA olarak yazar.
+//
+// Eskiden bu üç alan her mesaj satırına kopyalanıyordu; 1.983 gönderinin bilgisi 97.973
+// kez tekrarlanıp veritabanına 100 MB ekliyordu (2026-08-04 ölçümü, bkz. database.js).
+//
+// Görsel adresinde YENİ değer kazanır (COALESCE ters yönde): Meta görsel adresleri
+// SÜRELİ, eskisini korumak ölü adresi kalıcılaştırırdı. Başlık/link ise ilk öğrenilen
+// değerde kalır — onlar değişmez ve sonraki çekimlerde boş gelebilir.
+function _gonderiKaydet(m) {
+  if (!m.konu_id) return
+  if (!m.konu_baslik && !m.konu_gorsel && !m.konu_link) return
+  getDb().prepare(`
+    INSERT INTO sosyal_gonderiler (konu_id, platform, baslik, gorsel, link)
+    VALUES (@konu_id, @platform, @baslik, @gorsel, @link)
+    ON CONFLICT(konu_id) DO UPDATE SET
+      platform   = COALESCE(sosyal_gonderiler.platform, excluded.platform),
+      baslik     = COALESCE(sosyal_gonderiler.baslik, excluded.baslik),
+      gorsel     = COALESCE(excluded.gorsel, sosyal_gonderiler.gorsel),
+      link       = COALESCE(sosyal_gonderiler.link, excluded.link),
+      guncelleme = datetime('now','localtime')
+  `).run({
+    konu_id: m.konu_id,
+    platform: m.platform || null,
+    baslik: m.konu_baslik || null,
+    gorsel: m.konu_gorsel || null,
+    link: m.konu_link || null,
+  })
+}
 
 // Çekilen bir öğeyi ekler/günceller. harici_id çakışırsa metin/durum korunur (idempotent).
 // Yeni gelen 'gelen' mesajları 'yeni' durumda kalır; giden (bizim gönderdiğimiz) 'giden'.
 function _upsertMesaj(m) {
   const db = getDb()
+  // Gönderi bilgisi mesaj satırına DEĞİL, kendi tablosuna yazılır.
+  _gonderiKaydet(m)
   const mevcut = db.prepare('SELECT id FROM sosyal_mesajlar WHERE harici_id = ?').get(m.harici_id)
   if (mevcut) {
     // Gerçek ad öğrenildiyse yer tutucu 'Müşteri' adını düzelt (geriye dönük onarım).
@@ -18,22 +63,20 @@ function _upsertMesaj(m) {
         id: mevcut.id, gonderen_ad: m.gonderen_ad, gonderen_id: m.gonderen_id || null,
       })
     }
-    // Mevcut satırda gönderi bağlamı / mesaj eki eksikse doldur (eski kayıtlar için geriye dönük).
-    if (m.konu_baslik || m.konu_gorsel || m.konu_link || m.ek_tur) {
+    // Mesaj EKİ eksikse doldur (eski kayıtlar için geriye dönük).
+    // konu_baslik/konu_gorsel/konu_link ARTIK YAZILMAZ — yukarıdaki _gonderiKaydet
+    // onları sosyal_gonderiler'e tek kopya olarak aldı. Buraya yazmaya devam etseydik
+    // tekrar birikmesi durmazdı (asıl sorun buydu).
+    // ek_* alanları MESAJA aittir (hikaye yanıtı, paylaşılan gönderi, medya) —
+    // gönderi meta verisi değil, bu yüzden mesaj satırında kalır.
+    if (m.ek_tur) {
       db.prepare(`UPDATE sosyal_mesajlar SET
-        konu_baslik = COALESCE(konu_baslik, @konu_baslik),
-        -- Görsel adresi TERS yönde birleştirilir (yeni değer kazanır): Meta URL'leri
-        -- süreli, eskisini korumak ölü adresi kalıcılaştırırdı. Kalıcılık artık
-        -- meta/gorsel-onbellek.js'teki yerel dosyada.
-        konu_gorsel = COALESCE(@konu_gorsel, konu_gorsel),
-        konu_link   = COALESCE(konu_link, @konu_link),
         ek_tur      = COALESCE(ek_tur, @ek_tur),
         ek_baslik   = COALESCE(ek_baslik, @ek_baslik),
         ek_gorsel   = COALESCE(ek_gorsel, @ek_gorsel),
         ek_link     = COALESCE(ek_link, @ek_link)
         WHERE id = @id`).run({
-        id: mevcut.id, konu_baslik: m.konu_baslik || null,
-        konu_gorsel: m.konu_gorsel || null, konu_link: m.konu_link || null,
+        id: mevcut.id,
         ek_tur: m.ek_tur || null, ek_baslik: m.ek_baslik || null,
         ek_gorsel: m.ek_gorsel || null, ek_link: m.ek_link || null,
       })
@@ -58,8 +101,10 @@ function _upsertMesaj(m) {
   }
   const bilgi = db.prepare(`
     INSERT INTO sosyal_mesajlar
-      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, konu_baslik, konu_gorsel, konu_link, ek_tur, ek_baslik, ek_gorsel, ek_link)
-    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @konu_baslik, @konu_gorsel, @konu_link, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link)
+      -- konu_baslik/konu_gorsel/konu_link BİLEREK YOK: gönderi meta verisi
+      -- sosyal_gonderiler tablosunda tek kopya durur (_gonderiKaydet).
+      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, ek_tur, ek_baslik, ek_gorsel, ek_link)
+    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link)
   `).run({
     platform: m.platform,
     tur: m.tur,
@@ -72,9 +117,6 @@ function _upsertMesaj(m) {
     yon: m.yon || 'gelen',
     durum: m.yon === 'giden' ? 'cevaplandi' : 'yeni',
     mesaj_tarihi: m.mesaj_tarihi || null,
-    konu_baslik: m.konu_baslik || null,
-    konu_gorsel: m.konu_gorsel || null,
-    konu_link: m.konu_link || null,
     ek_tur: m.ek_tur || null,
     ek_baslik: m.ek_baslik || null,
     ek_gorsel: m.ek_gorsel || null,
@@ -126,19 +168,34 @@ const SAYFA_BOYUT = 50
 
 // Filtreli + sayfalı liste. Konu bazlı en son mesajı temsilen düz liste döner.
 function liste({ platform, tur, durum, arama, sayfa = 1 } = {}) {
+  // Koşullar BAŞTAN 's.' önekiyle kurulur: liste sorgusu sosyal_gonderiler ile JOIN
+  // yaptığı için öneksiz kolon adları belirsiz kalırdı. Sonradan metin değiştirerek
+  // önek eklemek denendi ve HATALIYDI — '\bplatform\b' deseni '@platform' parametre
+  // adının içindeki kelimeyi de yakalayıp '@s.platform' üretiyordu.
   const kosul = []
   const p = {}
-  if (platform && platform !== 'hepsi') { kosul.push('platform = @platform'); p.platform = platform }
-  if (tur && tur !== 'hepsi') { kosul.push('tur = @tur'); p.tur = tur }
-  if (durum && durum !== 'hepsi') { kosul.push('durum = @durum'); p.durum = durum }
-  if (arama) { kosul.push('(metin LIKE @ara OR gonderen_ad LIKE @ara)'); p.ara = `%${arama}%` }
+  if (platform && platform !== 'hepsi') { kosul.push('s.platform = @platform'); p.platform = platform }
+  if (tur && tur !== 'hepsi') { kosul.push('s.tur = @tur'); p.tur = tur }
+  if (durum && durum !== 'hepsi') { kosul.push('s.durum = @durum'); p.durum = durum }
+  if (arama) { kosul.push('(s.metin LIKE @ara OR s.gonderen_ad LIKE @ara)'); p.ara = `%${arama}%` }
   const where = kosul.length ? `WHERE ${kosul.join(' AND ')}` : ''
   const db = getDb()
-  const toplam = db.prepare(`SELECT COUNT(*) n FROM sosyal_mesajlar ${where}`).get(p).n
+  const toplam = db.prepare(`SELECT COUNT(*) n FROM sosyal_mesajlar s ${where}`).get(p).n
   const offset = (Math.max(1, sayfa) - 1) * SAYFA_BOYUT
+  // GÖNDERİ BİLGİSİ İKİ KAYNAKLI: yeni mesajlar konu_* kolonlarını taşımaz (tekrar
+  // birikmesin diye), bilgi sosyal_gonderiler'den gelir. ESKİ satırlar hâlâ kendi
+  // kolonlarını taşıdığı için önce onlara bakılır → hiçbir eski kayıt boş görünmez.
+  // Sıralama önemli: s.* içindeki konu_baslik'i sonraki aynı adlı sütun geçersiz kılar
+  // (sosyal-mesajlar.test.js bunu doğruluyor — varsayıma bırakılmadı).
   const satirlar = db.prepare(`
-    SELECT * FROM sosyal_mesajlar ${where}
-    ORDER BY COALESCE(mesaj_tarihi, cekilme_tarihi) DESC
+    SELECT s.*,
+           COALESCE(s.konu_baslik, g.baslik) konu_baslik,
+           COALESCE(s.konu_gorsel, g.gorsel) konu_gorsel,
+           COALESCE(s.konu_link,   g.link)   konu_link
+    FROM sosyal_mesajlar s
+    LEFT JOIN sosyal_gonderiler g ON g.konu_id = s.konu_id
+    ${where}
+    ORDER BY COALESCE(s.mesaj_tarihi, s.cekilme_tarihi) DESC
     LIMIT ${SAYFA_BOYUT} OFFSET ${offset}
   `).all(p)
   return { satirlar, toplam, sayfa: Math.max(1, sayfa), sayfaBoyut: SAYFA_BOYUT }
@@ -147,8 +204,15 @@ function liste({ platform, tur, durum, arama, sayfa = 1 } = {}) {
 // Bir konunun (gönderi/konuşma) tüm mesajları — kronolojik (sohbet görünümü).
 function konu(konu_id) {
   // tur='gonderi' = gönderi işaretçisi (yorum değil) → yorum/mesaj listesinde gösterme.
-  return getDb().prepare(
-    "SELECT * FROM sosyal_mesajlar WHERE konu_id = ? AND tur != 'gonderi' ORDER BY COALESCE(mesaj_tarihi, cekilme_tarihi) ASC"
+  return getDb().prepare(`
+    SELECT s.*,
+           COALESCE(s.konu_baslik, g.baslik) konu_baslik,
+           COALESCE(s.konu_gorsel, g.gorsel) konu_gorsel,
+           COALESCE(s.konu_link,   g.link)   konu_link
+    FROM sosyal_mesajlar s
+    LEFT JOIN sosyal_gonderiler g ON g.konu_id = s.konu_id
+    WHERE s.konu_id = ? AND s.tur != 'gonderi'
+    ORDER BY COALESCE(s.mesaj_tarihi, s.cekilme_tarihi) ASC`
   ).all(konu_id)
 }
 
@@ -200,10 +264,17 @@ function sayaclar() {
 // Her gönderi: başlık, görsel, yorum sayısı, okunmamış, son yorum zamanı.
 function gonderiler({ platform, arama, baslangic, bitis, cevapDurumu, okunma, atama, kullanici } = {}) {
   // 'gonderi' = gönderinin kendisi (yorumu olmasa bile listede görünsün); 'yorum' = yorumlar.
-  const kosul = ["tur IN ('yorum','gonderi')"]
+  // JOIN sonrası konu_id ve platform İKİ tabloda birden var → 's.' öneki ŞART,
+  // yoksa SQLite "ambiguous column name" ile sorguyu tümden reddeder.
+  const kosul = ["s.tur IN ('yorum','gonderi')"]
   const p = {}
-  if (platform && platform !== 'hepsi') { kosul.push('platform=@platform'); p.platform = platform }
-  if (arama) { kosul.push('(konu_baslik LIKE @ara OR metin LIKE @ara OR gonderen_ad LIKE @ara)'); p.ara = `%${arama}%` }
+  if (platform && platform !== 'hepsi') { kosul.push('s.platform=@platform'); p.platform = platform }
+  // Başlık araması iki kaynağa da bakmalı: yeni gönderilerde başlık artık yalnız
+  // sosyal_gonderiler'de, eskilerde hâlâ mesaj satırında.
+  if (arama) {
+    kosul.push('(COALESCE(s.konu_baslik, g.baslik) LIKE @ara OR s.metin LIKE @ara OR s.gonderen_ad LIKE @ara)')
+    p.ara = `%${arama}%`
+  }
   // Tarih filtresi: gönderi yayın tarihine göre (gonderi işaretçisi yoksa son aktiviteye).
   const having = []
   const tarihExpr = "substr(COALESCE(MAX(CASE WHEN tur='gonderi' THEN mesaj_tarihi END), MAX(COALESCE(mesaj_tarihi, cekilme_tarihi))),1,10)"
@@ -211,8 +282,12 @@ function gonderiler({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
   if (bitis) { having.push(`${tarihExpr} <= @bit`); p.bit = bitis }
   _listeFiltreleri({ cevapDurumu, okunma, atama, kullanici }, having, p)
   return getDb().prepare(`
-    SELECT konu_id, platform,
-      MAX(konu_baslik) konu_baslik, MAX(konu_gorsel) konu_gorsel, MAX(konu_link) konu_link,
+    SELECT s.konu_id konu_id, s.platform platform,
+      -- Gönderi bilgisi: yeni satırlarda kolon boş, sosyal_gonderiler'den gelir;
+      -- eski satırlarda hâlâ kolonda duruyor → MAX(kolon) önce, tablo yedek.
+      COALESCE(MAX(s.konu_baslik), MAX(g.baslik)) konu_baslik,
+      COALESCE(MAX(s.konu_gorsel), MAX(g.gorsel)) konu_gorsel,
+      COALESCE(MAX(s.konu_link),   MAX(g.link))   konu_link,
       COUNT(CASE WHEN tur='yorum' THEN 1 END) yorum_sayisi,
       ${OKUNMAMIS_SAYAC} okunmamis,
       ${CEVAPSIZ_SAYAC} cevapsiz,
@@ -222,10 +297,11 @@ function gonderiler({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
       (SELECT gonderen_ad FROM sosyal_mesajlar s2 WHERE s2.konu_id = s.konu_id AND s2.yon='gelen'
          ORDER BY COALESCE(s2.mesaj_tarihi, s2.cekilme_tarihi) DESC LIMIT 1) son_yorumcu
     FROM sosyal_mesajlar s
-    WHERE ${kosul.join(' AND ')} AND konu_id IS NOT NULL
+    LEFT JOIN sosyal_gonderiler g ON g.konu_id = s.konu_id
+    WHERE ${kosul.join(' AND ')} AND s.konu_id IS NOT NULL
       -- Meta'da silinmiş gönderiler listelenmez (yorumları da anlamını yitirir).
-      AND konu_id NOT IN (SELECT konu_id FROM sosyal_mesajlar WHERE tur = 'gonderi' AND silindi = 1)
-    GROUP BY konu_id, platform
+      AND s.konu_id NOT IN (SELECT konu_id FROM sosyal_mesajlar WHERE tur = 'gonderi' AND silindi = 1)
+    GROUP BY s.konu_id, s.platform
     ${having.length ? 'HAVING ' + having.join(' AND ') : ''}
     ORDER BY COALESCE(gonderi_tarihi, son_zaman) DESC
     LIMIT 500
@@ -249,6 +325,11 @@ function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
       ${CEVAPSIZ_SAYAC} cevapsiz,
       MAX(atanan_kullanici) atanan,
       MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)) son_zaman,
+      -- SON GELEN mesajın zamanı — Meta'nın 24 saatlik yanıt penceresi BUNDAN başlar,
+      -- son_zaman'dan DEĞİL. Aradaki fark kritik: son_zaman bizim giden yanıtımızı da
+      -- kapsar, onu kullansaydık pencere kendi mesajımızla "uzamış" görünür ve personel
+      -- süre dolduğunu geç fark ederdi. (2026-08-04: 125 konuşma bu yüzden yanıtsız kaldı.)
+      MAX(CASE WHEN yon='gelen' THEN COALESCE(mesaj_tarihi, cekilme_tarihi) END) son_gelen,
       -- kisi = MÜŞTERİ: konuşmanın son GELEN mesajının göndereni. Son mesaj bizim
       -- yanıtımızsa (yon='giden') adımızı göstermemeli. Gelen yoksa (biz başlattıysak)
       -- son herhangi bir göndereni yedek al.
@@ -275,6 +356,8 @@ function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
 
 module.exports = {
   _upsertMesaj,
+  _gonderiKaydet,
+  _dbAyarla, // YALNIZ TEST — bkz. dosya başındaki test dikişi notu
   _silinenGonderileriIsaretle,
   _yanitlananlariKapat,
   'sosyal:liste': (arg) => liste(arg),
