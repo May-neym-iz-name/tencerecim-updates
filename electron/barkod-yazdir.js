@@ -62,13 +62,31 @@ async function barkodYazdir({ html, yazici, genislikMm, yukseklikMm }) {
 
 // Verilen HTML'i görünür bir pencerede açar (kargo etiketi önizleme + yazdırma).
 // Pencere içindeki "Yazdır" butonu window.print() çağırır.
+//
+// TEK PENCERE YENİDEN KULLANILIR (2026-08-04). Eskiden her çağrı YENİ bir pencere
+// açıyordu ve pencere kullanıcı elle kapatana kadar duruyordu — arka arkaya 5 etiket
+// önizleyen personelde 5 renderer süreci birikiyordu (ölçülen maliyet pencere başına
+// ~50 MB). main.js'teki dış bağlantı penceresiyle aynı desen: yenisini açmak
+// öncekinin yerine geçer.
+let onizlemePencere = null
+
 async function onizlemeAc({ html, baslik }) {
   if (!html) throw new Error('Önizlenecek içerik boş')
-  const win = new BrowserWindow({
+  if (onizlemePencere && !onizlemePencere.isDestroyed()) {
+    await htmlYukle(onizlemePencere, html)
+    // Başlık yüklemeden SONRA: HTML'in kendi <title>'ı varsa yükleme sırasında
+    // pencere başlığını ezer, önce yazsaydık kaybolurdu.
+    onizlemePencere.setTitle(baslik || 'Önizleme')
+    if (onizlemePencere.isMinimized()) onizlemePencere.restore()
+    onizlemePencere.focus()
+    return { acildi: true }
+  }
+  onizlemePencere = new BrowserWindow({
     width: 820, height: 1000, title: baslik || 'Önizleme',
     autoHideMenuBar: true, webPreferences: { offscreen: false },
   })
-  await htmlYukle(win, html)
+  onizlemePencere.on('closed', () => { onizlemePencere = null })
+  await htmlYukle(onizlemePencere, html)
   return { acildi: true }
 }
 

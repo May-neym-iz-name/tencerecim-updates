@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron')
 const path = require('path')
 const { autoUpdater } = require('electron-updater')
 
@@ -126,11 +126,11 @@ function createWindow() {
     }
   })
 
-  // DIŞ BAĞLANTILAR TEK PENCEREDE.
+  // DIŞ BAĞLANTILAR: varsayılan olarak TARAYICIYA, sadece kargo takibi içeride.
   // Electron varsayılanında target="_blank" olan HER bağlantı yeni bir pencere açar ve
   // hiçbiri kapanmaz → birkaç Instagram gönderisine / kargo takibine bakınca arkada
-  // pencere yığılıyordu. Artık tek bir "dış içerik" penceresi yeniden kullanılır:
-  // yenisini açmak öncekinin yerine geçer.
+  // pencere yığılıyordu. Yönlendirme kararı disLinkAc + dis-link.js'te; içeride açılan
+  // (yalnız UPS) tek bir pencereyi yeniden kullanır, gerisi shell.openExternal ile gider.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     disLinkAc(url)
     return { action: 'deny' } // pencereyi Electron değil biz yönetiyoruz
@@ -146,12 +146,22 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
-// Dış bağlantılar için tekrar kullanılan tek pencere (Instagram gönderisi, UPS takip...).
+// Dış bağlantılar için tekrar kullanılan tek pencere (UPS takip...).
 let disPencere = null
+
+// Hangi adresin içeride, hangisinin tarayıcıda açılacağı: electron/dis-link.js
+// (ayrı dosya çünkü main.js modül seviyesinde Electron API çağırdığı için test edilemiyor)
+const { icerideAcilirMi } = require('./dis-link')
 
 function disLinkAc(url) {
   // Yalnız http(s): file://, javascript: gibi şemalar uygulama içine sızmamalı.
   if (!/^https?:\/\//i.test(String(url || ''))) return
+  // Listede olmayan her şey varsayılan tarayıcıda. Hem bellek kazancı hem de
+  // güvenlik açısından doğrusu: dış site Electron sürecinin içinde hiç çalışmaz.
+  if (!icerideAcilirMi(url)) {
+    shell.openExternal(url).catch(err => console.error('Dış bağlantı açılamadı:', err.message))
+    return
+  }
   if (disPencere && !disPencere.isDestroyed()) {
     disPencere.loadURL(url)
     if (disPencere.isMinimized()) disPencere.restore()
@@ -212,7 +222,20 @@ function ikasSiparisSenkBaslat() {
 //
 // İMLEÇ EN SONDA İLERLER: tur ortasında hata olursa aynı olaylar tekrar okunur.
 // _pullSiparisler idempotent olduğu için tekrar zararsız; kaçırmak telafi edilemez.
-const IKAS_OLAY_ARALIGI_MS = 5 * 1000
+// AKILLI YAVAŞLAMA (2026-08-04): aralık sabit 5 sn değil, olay akışına göre esner.
+//
+// Neden değişti: süreç örneklemesinde uygulamanın BOŞTAKİ CPU'sunun tamamının tek
+// kaynağı bu döngü çıktı (main süreci sürekli %2 tek çekirdek; diğer 8 sürecin hepsi
+// tam %0). Sabit 5 sn = günde ~17.000 HTTPS isteği + her turda SQLite imleç okuması;
+// ekran görüntüsündeki sürekli disk hareketinin de kaynağı buydu.
+//
+// Davranış: olay geldiği sürece 5 sn'de kalır (yoğun saatte hız AYNI). Boş dönen her
+// turda aralık ikiye katlanır, 30 sn'de durur. Yeni olay gelir gelmez ANINDA 5 sn'ye
+// döner — yani ilk sipariş en geç 30 sn içinde yakalanır, ondan sonraki her sipariş
+// yine 5 sn'de. Kaçırma riski yok: 5 dk'lık mutabakat turu (ikasSiparisSenkBaslat)
+// arkada duruyor ve _pullSiparisler idempotent.
+const IKAS_OLAY_ARALIGI_MS = 5 * 1000   // taban: olay akarken
+const IKAS_OLAY_TAVAN_MS = 30 * 1000    // tavan: sessizlikte
 const IKAS_OLAY_IMLECI = 'ikas_bulut_imlec'
 function ikasOlayYoklayiciBaslat() {
   const { _pullSiparisler } = require('./ikas')
@@ -220,17 +243,21 @@ function ikasOlayYoklayiciBaslat() {
   const { _olaylariCek, _yeniImlec } = require('./ikas/bulut')
   const upsBulut = require('./ups/bulut')
   const yerelAyar = require('./db/yerel-ayarlar')
-  let calisiyor = false
   let susturmaBitis = 0 // hata günlüğünü 5 dk sustur (5 sn'de bir konsolu doldurmasın)
+  let aralik = IKAS_OLAY_ARALIGI_MS
+
+  // setInterval DEĞİL, kendini yeniden planlayan zincir: aralığın tur tur değişmesini
+  // sağlar ve bir tur bitmeden sonraki başlayamadığı için üst üste binme koruması
+  // (eski `calisiyor` bayrağı) yapının kendisinden gelir.
   const calistir = async () => {
-    if (calisiyor) return
+    let olayVar = false
     try {
       if (!upsBulut._ayar().acik) return          // köprü kapalı → eski davranış
       if (!_ayarlariGetir().otomatik_senk) return
-      calisiyor = true
       const imlec = yerelAyar._getir(IKAS_OLAY_IMLECI, '1970-01-01T00:00:00.000Z')
       const { kayitlar } = await _olaylariCek(imlec)
       if (!kayitlar.length) return
+      olayVar = true
       const r = await _pullSiparisler()
       if (r?.kaydedilen || r?.guncellenen) siparisDegisti(r)
       yerelAyar._yaz(IKAS_OLAY_IMLECI, _yeniImlec(kayitlar, imlec))
@@ -242,11 +269,13 @@ function ikasOlayYoklayiciBaslat() {
         susturmaBitis = Date.now() + 5 * 60 * 1000
       }
     } finally {
-      calisiyor = false
+      // Hata durumu da "boş tur" sayılır: Worker erişilemezken 5 sn'de bir denemenin
+      // faydası yok, yavaşlayıp erişim dönünce hızlanmak daha doğru.
+      aralik = olayVar ? IKAS_OLAY_ARALIGI_MS : Math.min(aralik * 2, IKAS_OLAY_TAVAN_MS)
+      setTimeout(calistir, aralik)
     }
   }
   setTimeout(calistir, 15 * 1000)
-  setInterval(calistir, IKAS_OLAY_ARALIGI_MS)
 }
 
 // UPS takip yoklayıcısı: gönderi ağa okutulunca "Gönderildi", teslim edilince "Teslim Edildi"
@@ -316,13 +345,30 @@ function metaSosyalSenkBaslat() {
 // Kilit alınamadıysa (zaten bir örnek açık) HİÇBİR ŞEY başlatma — ne pencere, ne DB, ne polling.
 // app.quit() tek başına yeterli görünse de whenReady ile yarışabilir; açık koruma daha güvenli.
 if (tekOrnekKilidi) {
-  app.whenReady().then(() => {
-    require('./db/database').init()
-    createWindow()
+  // Arka plan yoklayıcıları PENCERE ÇİZİLDİKTEN SONRA kurulur.
+  //
+  // Eskiden dördü de whenReady içinde, pencere daha yüklenmeden kuruluyordu; her biri
+  // açılış anında `require` ile kendi modül ağacını (ikas, meta, ups, supabase istemcisi)
+  // senkron olarak çözüyor ve bu iş pencerenin ilk boyanmasıyla aynı ana yığılıyordu.
+  // v1.2.140'taki açılış takılmasının dersi buydu: açılışı bloklayan her şey ertelenir.
+  let arkaPlanKuruldu = false
+  const arkaPlanIslerBaslat = () => {
+    if (arkaPlanKuruldu) return
+    arkaPlanKuruldu = true
     ikasSiparisSenkBaslat()
     ikasOlayYoklayiciBaslat()
     upsTakipBaslat()
     metaSosyalSenkBaslat()
+  }
+
+  app.whenReady().then(() => {
+    require('./db/database').init()
+    createWindow()
+    // Normal yol: arayüz yüklendi, artık arka plan işleri açılışı yavaşlatamaz.
+    mainWindow.webContents.once('did-finish-load', arkaPlanIslerBaslat)
+    // EMNİYET AĞI: yükleme hata alır ya da hiç bitmezse did-finish-load ATEŞLENMEZ ve
+    // sipariş çekme sessizce hiç başlamazdı. 20 sn sonra ne olursa olsun başlat.
+    setTimeout(arkaPlanIslerBaslat, 20 * 1000)
     // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
   })
 }

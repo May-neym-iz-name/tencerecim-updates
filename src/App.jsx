@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import toast, { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './auth/AuthContext'
@@ -8,6 +8,7 @@ import { veriSenk } from './lib/veriSenk'
 import { eskiEtiketleriTemizle } from './lib/etiketDepo'
 import { bildirimSesiCal } from './lib/bildirimSes'
 import { AyarlarProvider, useAyarlar } from './ayarlar/AyarlarContext'
+import { useGorunurAralik } from './hooks/useGorunurAralik'
 import GuncellemeKapisi from './guncelleme/GuncellemeKapisi'
 import HataSiniri from './components/HataSiniri'
 import logo from './assets/logo.png'
@@ -57,14 +58,12 @@ function Uygulama() {
 
   // Sosyal medya okunmamış rozeti: yetki varsa 30 sn'de bir yeni yorum/DM sayısını
   // çeker. Personel sekmeyi açmadan da bekleyen mesaj olduğunu görür.
+  // useGorunurAralik: uygulama arka plandayken tur atlanır, öne gelince anında tazelenir.
   const [sosyalRozet, setSosyalRozet] = useState(0)
-  useEffect(() => {
-    if (!yetkiVar('sosyal_medya_yonet')) return
-    const yukle = () => sosyalApi.sayac().then(setSosyalRozet).catch(() => {})
-    yukle()
-    const i = setInterval(yukle, 30 * 1000)
-    return () => clearInterval(i)
-  }, [yetkiVar])
+  const sosyalRozetYukle = useCallback(() => {
+    sosyalApi.sayac().then(setSosyalRozet).catch(() => {})
+  }, [])
+  useGorunurAralik(sosyalRozetYukle, 30 * 1000, yetkiVar('sosyal_medya_yonet'))
 
   // Bildirim okunmamış rozeti: 30 sn'de bir sayaç (emniyet ağı) + yoklayıcıdan gelen
   // 'bildirim:yeni' olayıyla ANINDA tazeleme ve köşe kutusu. Ses YALNIZ yüksek önemli
@@ -72,18 +71,23 @@ function Uygulama() {
   // sessiz rozet. İlk yüklemede çalmaz.
   const [bildirimRozet, setBildirimRozet] = useState(0)
   const oncekiBildirimSayac = useRef(null)
+  const bildirimYetkisi = yetkiVar('bildirim_goruntule')
+  const bildirimYukle = useCallback(() => bildirimApi.sayac().then(s => {
+    setBildirimRozet(s?.toplam || 0)
+    const yuksek = s?.yuksek || 0
+    const onceki = oncekiBildirimSayac.current
+    if (onceki !== null && yuksek > onceki) bildirimSesiCal()
+    oncekiBildirimSayac.current = yuksek
+  }).catch(() => {}), [])
+  // Emniyet ağı sayacı: arka planda dururken atlanır, öne gelince anında çalışır.
+  useGorunurAralik(bildirimYukle, 30 * 1000, bildirimYetkisi)
+
   useEffect(() => {
-    if (!yetkiVar('bildirim_goruntule')) return
-    const yukle = () => bildirimApi.sayac().then(s => {
-      setBildirimRozet(s?.toplam || 0)
-      const yuksek = s?.yuksek || 0
-      const onceki = oncekiBildirimSayac.current
-      if (onceki !== null && yuksek > onceki) bildirimSesiCal()
-      oncekiBildirimSayac.current = yuksek
-    }).catch(() => {})
-    yukle()
-    const i = setInterval(yukle, 30 * 1000)
+    if (!bildirimYetkisi) return
+    const yukle = bildirimYukle
     // Yoklayıcı yeni bildirim yazdığı anda: rozet/ses tazele + köşede kutu göster.
+    // Bu YOL GÖRÜNÜRLÜKTEN BAĞIMSIZ: itme (push) olayı, arka planda da işlenmeli —
+    // aksi hâlde önemli bir kargo sorunu sesi uygulama simge durumundayken kaçardı.
     window.api.on('bildirim:yeni', (veri) => {
       yukle()
       const ilk = veri?.ornekler?.[0]
@@ -105,8 +109,8 @@ function Uygulama() {
         </div>
       ), { duration: 8000, position: 'top-right' })
     })
-    return () => { clearInterval(i); window.api.removeAllListeners('bildirim:yeni') }
-  }, [yetkiVar])
+    return () => window.api.removeAllListeners('bildirim:yeni')
+  }, [bildirimYetkisi, bildirimYukle])
   // Girişten sonra ayarları buluttan çek (PC'ler arası senkron) ve state'i tazele
   // ki senkronlanan ayarlar (ödeme oranı, kasa zorunlu vb.) anında etkili olsun.
   useEffect(() => {
@@ -117,12 +121,12 @@ function Uygulama() {
 
   // Çok-PC veri senkronu: girişten ~15 sn sonra ve her 60 sn'de bir (ürün,
   // müşteri, stok, kategori, marka, tedarikçi). Hata olursa sessizce yeniden dener.
-  useEffect(() => {
-    const calistir = () => veriSenk().catch(err => console.error('Veri senkron:', err.message))
-    const t = setTimeout(calistir, 15 * 1000)
-    const i = setInterval(calistir, 60 * 1000)
-    return () => { clearTimeout(t); clearInterval(i) }
+  // Arka planda atlanır: kimsenin bakmadığı ekran için Supabase'e gitmenin anlamı yok,
+  // kullanıcı uygulamaya döndüğü an zaten anında bir senkron turu çalışıyor.
+  const veriSenkCalistir = useCallback(() => {
+    veriSenk().catch(err => console.error('Veri senkron:', err.message))
   }, [])
+  useGorunurAralik(veriSenkCalistir, 60 * 1000, true, 15 * 1000)
 
   // Etiket deposu bakımı: açılıştan 40 sn sonra 5 aydan eski etiketleri Storage'dan
   // siler (depoyu ~725MB bandında tutar). Oturum başına bir kez yeterli.

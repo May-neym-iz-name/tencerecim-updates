@@ -5,6 +5,7 @@ import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
 import OtomasyonPaneli from '../components/OtomasyonPaneli'
 import SosyalGorsel, { useSosyalGorsel } from '../components/SosyalGorsel'
+import { useGorunurAralik } from '../hooks/useGorunurAralik'
 
 // Üst sekmeler — Meta Business Suite düzeni. mod: 'karma'|'dm'|'yorum'
 const SEKMELER = [
@@ -165,11 +166,8 @@ export default function SosyalMedya() {
     metaApi.durum().then(setDurum).catch(() => {})
     metaApi.sonDurum().then(setSonDurum).catch(() => {})
   }, [])
-  useEffect(() => {
-    durumYukle()
-    const i = setInterval(durumYukle, 60 * 1000)
-    return () => clearInterval(i)
-  }, [durumYukle])
+  // Arka planda tur atlanır, öne gelince anında tazelenir (useGorunurAralik).
+  useGorunurAralik(durumYukle, 60 * 1000)
 
   // Sol liste: sekme moduna göre gönderiler / konuşmalar / karma.
   const listeYukle = useCallback(async () => {
