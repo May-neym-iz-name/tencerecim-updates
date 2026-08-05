@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { sosyalApi, metaApi } from '../api/ipc'
+import { eslesirMi } from '../utils/arama'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
 import OtomasyonPaneli from '../components/OtomasyonPaneli'
@@ -581,10 +582,24 @@ function AtamaButonu({ konu, banaAta, kullanici }) {
 function SablonSecici({ onSec }) {
   const [acik, setAcik] = useState(false)
   const [sablonlar, setSablonlar] = useState(null) // null = henüz yüklenmedi
+  const [arama, setArama] = useState('')
+  const aramaRef = useRef(null)
   const ac = () => {
     setAcik(a => !a)
     if (sablonlar === null) sosyalApi.sablonlar().then(setSablonlar).catch(() => setSablonlar([]))
   }
+  // Kutu açılınca imleç doğrudan aramaya gitsin — personel yazmaya başlayabilsin.
+  useEffect(() => { if (acik) aramaRef.current?.focus() }, [acik])
+  // Kapanışta aramayı temizle: bir sonraki açılışta eski süzgeç kalmasın.
+  useEffect(() => { if (!acik) setArama('') }, [acik])
+
+  // Arama ŞABLON ADI + ÜRÜN ADI üzerinde çalışır: personel bazen şablonu adıyla
+  // ("kargo bilgisi"), bazen içindeki ürünle ("granit tencere") arıyor.
+  // eslesirMi ortak Türkçe aramadır — harfleri KATLAR, yani "celik" yazan
+  // "ÇELİK"i bulur ve kelime sırası önemsizdir (bkz. src/utils/arama.js).
+  const suzulmus = (sablonlar || []).filter(
+    s => !arama.trim() || eslesirMi(`${s.ad || ''} ${s.urun_adi || ''}`, arama)
+  )
   const sec = async (s) => {
     try {
       const r = await sosyalApi.sablonMetin(s.id)
@@ -599,13 +614,33 @@ function SablonSecici({ onSec }) {
         📦 Şablonlar
       </button>
       {acik && (
-        <div className="absolute bottom-full mb-1 left-0 z-10 w-80 bg-white border rounded-lg shadow-lg p-1 max-h-72 overflow-y-auto">
-          <div className="px-1.5 py-1 text-[11px] font-semibold text-gray-500">Otomasyon şablonları</div>
+        <div className="absolute bottom-full mb-1 left-0 z-10 w-80 bg-white border rounded-lg shadow-lg p-1 max-h-72 flex flex-col">
+          <div className="px-1.5 py-1 text-[11px] font-semibold text-gray-500 flex-shrink-0">
+            Otomasyon şablonları
+            {sablonlar?.length > 0 && (
+              <span className="font-normal text-gray-400"> · {suzulmus.length}/{sablonlar.length}</span>
+            )}
+          </div>
+          {/* Arama kutusu listenin ÜSTÜNDE sabit kalır (flex-shrink-0), liste kayar. */}
+          {sablonlar?.length > 0 && (
+            <input
+              ref={aramaRef}
+              value={arama}
+              onChange={e => setArama(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setAcik(false) } }}
+              placeholder="Şablon veya ürün ara…"
+              className="flex-shrink-0 mx-1 mb-1 px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-violet-400"
+            />
+          )}
+          <div className="overflow-y-auto">
           {sablonlar === null && <p className="text-[11px] text-gray-400 px-2 py-1.5">Yükleniyor…</p>}
           {sablonlar?.length === 0 && (
             <p className="text-[11px] text-gray-400 px-2 py-1.5">Şablon yok. Otomasyon panelinden ekleyebilirsiniz.</p>
           )}
-          {(sablonlar || []).map(s => (
+          {sablonlar?.length > 0 && suzulmus.length === 0 && (
+            <p className="text-[11px] text-gray-400 px-2 py-1.5">"{arama}" ile eşleşen şablon yok.</p>
+          )}
+          {suzulmus.map(s => (
             <button key={s.id} type="button" onClick={() => sec(s)}
               className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-violet-50 text-gray-700">
               <span className="font-medium">{s.ad}</span>
@@ -614,6 +649,7 @@ function SablonSecici({ onSec }) {
                 : <span className="text-gray-400"> · {s.urun_adi}{(s.fiyat ?? s.kaynak_fiyati) ? ` · ${Number(s.fiyat ?? s.kaynak_fiyati).toLocaleString('tr-TR')} TL` : ''}</span>}
             </button>
           ))}
+          </div>
         </div>
       )}
     </div>
