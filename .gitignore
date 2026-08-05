@@ -23,6 +23,10 @@ bizimhesap-ugyulama-ikas-ürünler/
 # REPO PUBLIC: buraya giren her sey internete acilir, gecmisten silmek de zordur.
 URUN-ESLESTIRME/
 
+# Yeni urun giris calismasi: her urun icin bir alt klasor (gorseller + ozellik dosyalari).
+# Ozellik dosyalari alis fiyati/maliyet icerebilir ve REPO PUBLIC.
+ÜRÜN GİRİŞİ/
+
 # Tedarikci kataloglari (fiyat listesi icerir)
 KATALOG*.pdf
 *KATALOG*.pdf

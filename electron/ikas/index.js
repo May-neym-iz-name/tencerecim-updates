@@ -114,13 +114,26 @@ async function merchantIdAl() {
   return _merchantIdCache
 }
 
-// Kalem birim fiyatı: finalUnitPrice bazen null gelir → price, yoksa finalPrice/adet.
-// İptal/iade ikas'a gerçek fiyatı göndermek zorunda (fiyat uyuşmazlığı reddedilir).
+// Kalem birim fiyatı — MÜŞTERİNİN ÖDEDİĞİ tutar, liste fiyatı DEĞİL.
+//
+// SIRA KRİTİK (2026-08-05'te canlı siparişte yakalandı): `price` ikas'ta LİSTE fiyatıdır
+// (indirimsiz sellPrice), `finalPrice` ise gerçekte tahsil edilen tutardır. Eskiden sıra
+// finalUnitPrice → price → finalPrice idi; `price` önce geldiği için indirimli siparişlerde
+// liste fiyatı kaydediliyordu.
+//
+// Sipariş 8461469470'te ölçülen: price=2100, finalUnitPrice=null, finalPrice=1890.
+// Müşteri 1890 ödedi, kayda 2100 yazıldı → kargo etiketine yanlış tutar basıldı.
+//
+// Bu hata iki yıl görünmedi çünkü katalogda hiç indirimli ürün yoktu (price === finalPrice).
+// İlk indirim uygulandığı gün ilk siparişte ortaya çıktı.
+//
+// İade/iptal açısından da kritik: ikas'a gerçek fiyat gönderilmek zorunda, uyuşmazlıkta
+// işlem REDDEDİLİR. Liste fiyatı gönderilseydi indirimli siparişler iade edilemezdi.
 function birimFiyatHesapla(kalem) {
   const adet = Number(kalem?.quantity) || 1
   if (kalem?.finalUnitPrice != null) return Number(kalem.finalUnitPrice) || 0
-  if (kalem?.price != null) return Number(kalem.price) || 0
   if (kalem?.finalPrice != null) return (Number(kalem.finalPrice) || 0) / adet
+  if (kalem?.price != null) return Number(kalem.price) || 0 // son çare: liste fiyatı
   return 0
 }
 
@@ -549,6 +562,8 @@ function kalemIkasLokId(db, kalem) {
 // --- IPC handler'ları -------------------------------------------------------
 
 module.exports = {
+  // Kalem fiyat seçimi — sırası indirimli siparişlerde kritik, testle sabitlendi.
+  _birimFiyatHesapla: birimFiyatHesapla,
   // satislar.js / stok.js arka plan push için kullanır (main.js _ önekini atlar).
   _pushArkaPlan: pushArkaPlan,
   _pullSiparisler: pullSiparisler,
