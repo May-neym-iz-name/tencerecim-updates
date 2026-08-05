@@ -14,6 +14,10 @@ import { DatabaseSync } from 'node:sqlite'
 // node:sqlite üstüne üretim kodunun kullandığı yüzeyi veren ince adaptör konur.
 function bellekDb() {
   const d = new DatabaseSync(':memory:')
+  // tr_ara: üretimde database.js kaydeder (Türkçe harf katlama). Arama SQL'i buna
+  // dayandığı için test veritabanına da AYNI gerçek uygulamayı tanıtıyoruz —
+  // taklit yazsaydık test geçer ama üretim davranışı doğrulanmamış olurdu.
+  d.function('tr_ara', (s) => require('./tr-arama.js').trNormal(s))
   return {
     exec: (sql) => d.exec(sql),
     prepare: (sql) => {
@@ -168,6 +172,69 @@ describe('konusmalar() — yanıt penceresi zamanı', () => {
   test('yalnız giden mesaj varsa son_gelen boş kalır (geri sayım gösterilmez)', () => {
     _upsertMesaj(dm({ harici_id: 'd1', yon: 'giden', gonderen_id: 'u1', mesaj_tarihi: '2026-08-01T08:00:00+0000' }))
     expect(sosyal['sosyal:konusmalar']({})[0].son_gelen).toBeNull()
+  })
+})
+
+// Mesaj araması 2026-08-05'e kadar ham SQL LIKE idi. SQLite LIKE yalnız ASCII'de
+// büyük/küçük duyarsız olduğu için "celik" yazan "ÇELİK"i, "lines" yazan "LİNES"i
+// BULAMIYORDU; ayrıca tek parça arandığından kelime sırası bağlayıcıydı.
+describe('arama — Türkçe duyarsız ve kelime bazlı', () => {
+  const yaz = (metin, gonderen = 'Ayşe', f = {}) =>
+    _upsertMesaj(mesaj({ harici_id: 'h' + Math.random(), metin, gonderen_ad: gonderen, ...f }))
+
+  test('ASCII klavye Türkçe metni bulur: "celik" → "ÇELİK"', () => {
+    yaz('ÇELİK TENCERE fiyatı nedir')
+    expect(sosyal['sosyal:liste']({ arama: 'celik' }).satirlar).toHaveLength(1)
+  })
+
+  test('noktasız/noktalı I tuzağı: "lines" → "LİNES"', () => {
+    yaz('LİNES OSCAR seti var mı')
+    expect(sosyal['sosyal:liste']({ arama: 'lines' }).satirlar).toHaveLength(1)
+    expect(sosyal['sosyal:liste']({ arama: 'LINES' }).satirlar).toHaveLength(1)
+  })
+
+  test('kelime SIRASI önemsiz', () => {
+    yaz('GRANİT TENCERE SETİ stokta mı')
+    expect(sosyal['sosyal:liste']({ arama: 'tencere granit' }).satirlar).toHaveLength(1)
+  })
+
+  test('TÜM kelimeler geçmeli (AND) — biri yoksa eşleşmez', () => {
+    yaz('granit tencere')
+    expect(sosyal['sosyal:liste']({ arama: 'granit tava' }).satirlar).toHaveLength(0)
+  })
+
+  test('gönderen adında da arar', () => {
+    yaz('merhaba', 'Şükrü Çelik')
+    expect(sosyal['sosyal:liste']({ arama: 'sukru' }).satirlar).toHaveLength(1)
+  })
+
+  test('boş arama her şeyi döndürür', () => {
+    yaz('bir'); yaz('iki')
+    expect(sosyal['sosyal:liste']({ arama: '' }).satirlar).toHaveLength(2)
+    expect(sosyal['sosyal:liste']({}).satirlar).toHaveLength(2)
+  })
+
+  test('toplam sayacı da süzgeçle tutarlı', () => {
+    yaz('ÇELİK tencere'); yaz('granit tava')
+    expect(sosyal['sosyal:liste']({ arama: 'celik' }).toplam).toBe(1)
+  })
+
+  test('LIKE joker karakterleri düz metin sayılır (% ile her şey gelmez)', () => {
+    yaz('merhaba'); yaz('selam')
+    expect(sosyal['sosyal:liste']({ arama: '%' }).satirlar).toHaveLength(0)
+  })
+
+  test('konuşma aramasında da Türkçe çalışır', () => {
+    _upsertMesaj(mesaj({ tur: 'dm', harici_id: 'd1', yon: 'gelen', gonderen_id: 'u1',
+      metin: 'ÇELİK tencere', konu_baslik: null, konu_gorsel: null, konu_link: null }))
+    expect(sosyal['sosyal:konusmalar']({ arama: 'celik' })).toHaveLength(1)
+  })
+
+  test('gönderi aramasında başlık + metin birlikte aranır', () => {
+    _upsertMesaj(mesaj({ tur: 'gonderi', harici_id: 'g1', metin: '' }))  // konu_baslik: Granit Tencere Seti
+    _upsertMesaj(mesaj({ harici_id: 'y1', metin: 'ÇELİK sorusu' }))
+    expect(sosyal['sosyal:gonderiler']({ arama: 'granit' })).toHaveLength(1)
+    expect(sosyal['sosyal:gonderiler']({ arama: 'celik' })).toHaveLength(1)
   })
 })
 

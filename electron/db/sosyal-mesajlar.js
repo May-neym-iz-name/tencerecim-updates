@@ -3,6 +3,26 @@
 // Ağ çağrıları electron/meta/index.js'te; bu dosya yalnızca yerel okuma/yazma yapar.
 const database = require('./database')
 const { listeFiltreleri: _listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC } = require('./sosyal-filtre')
+const { kelimeler, likeDeseni } = require('./tr-arama')
+
+// Türkçe duyarsız, kelime bazlı arama koşulları — ADLI parametrelerle.
+//
+// NEDEN tr-arama.js'teki kelimeKosulu KULLANILMIYOR: o KONUMSAL (?) parametre üretir,
+// bu dosyadaki sorgular ise baştan sona ADLI (@platform, @bas, @bit...) kullanıyor.
+// better-sqlite3'te ikisini aynı sorguda karıştırmak bağlama sırasını kırılgan hale
+// getirir. Mantık aynı, yalnız parametre biçimi farklı.
+//
+// Neden ham LIKE yetmiyordu (2026-08-05'e kadar öyleydi): SQLite LIKE yalnız ASCII'de
+// büyük/küçük duyarsız — "celik" yazan "ÇELİK"i, "lines" yazan "LİNES"i BULAMIYORDU.
+// Ayrıca tek parça arandığı için "tencere granit" ancak bitişik geçerse eşleşiyordu.
+// tr_ara() harfleri katlar (i/ı/İ/I → i, ş→s, ğ→g, ü→u, ö→o, ç→c); kelimelere bölüp
+// her birini AND'lemek de sırayı önemsiz kılar.
+function aramaKosullari(alanIfadesi, arama, p, onek = 'ara') {
+  return kelimeler(arama).map((k, i) => {
+    p[`${onek}${i}`] = likeDeseni(k)
+    return `tr_ara(${alanIfadesi}) LIKE @${onek}${i} ESCAPE '\\'`
+  })
+}
 
 // TEST DİKİŞİ — üretimde her zaman gerçek veritabanı döner.
 //
@@ -177,7 +197,8 @@ function liste({ platform, tur, durum, arama, sayfa = 1 } = {}) {
   if (platform && platform !== 'hepsi') { kosul.push('s.platform = @platform'); p.platform = platform }
   if (tur && tur !== 'hepsi') { kosul.push('s.tur = @tur'); p.tur = tur }
   if (durum && durum !== 'hepsi') { kosul.push('s.durum = @durum'); p.durum = durum }
-  if (arama) { kosul.push('(s.metin LIKE @ara OR s.gonderen_ad LIKE @ara)'); p.ara = `%${arama}%` }
+  // Mesaj metni + gönderen adı tek alanda birleştirilip aranır.
+  if (arama) kosul.push(...aramaKosullari("COALESCE(s.metin,'') || ' ' || COALESCE(s.gonderen_ad,'')", arama, p))
   const where = kosul.length ? `WHERE ${kosul.join(' AND ')}` : ''
   const db = getDb()
   const toplam = db.prepare(`SELECT COUNT(*) n FROM sosyal_mesajlar s ${where}`).get(p).n
@@ -272,8 +293,7 @@ function gonderiler({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
   // Başlık araması iki kaynağa da bakmalı: yeni gönderilerde başlık artık yalnız
   // sosyal_gonderiler'de, eskilerde hâlâ mesaj satırında.
   if (arama) {
-    kosul.push('(COALESCE(s.konu_baslik, g.baslik) LIKE @ara OR s.metin LIKE @ara OR s.gonderen_ad LIKE @ara)')
-    p.ara = `%${arama}%`
+    kosul.push(...aramaKosullari("COALESCE(s.konu_baslik, g.baslik, '') || ' ' || COALESCE(s.metin,'') || ' ' || COALESCE(s.gonderen_ad,'')", arama, p))
   }
   // Tarih filtresi: gönderi yayın tarihine göre (gonderi işaretçisi yoksa son aktiviteye).
   const having = []
@@ -313,7 +333,7 @@ function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
   const kosul = ["tur='dm'"]
   const p = {}
   if (platform && platform !== 'hepsi') { kosul.push('platform=@platform'); p.platform = platform }
-  if (arama) { kosul.push('(metin LIKE @ara OR gonderen_ad LIKE @ara)'); p.ara = `%${arama}%` }
+  if (arama) kosul.push(...aramaKosullari("COALESCE(metin,'') || ' ' || COALESCE(gonderen_ad,'')", arama, p))
   // Tarih filtresi: konuşmanın son mesaj tarihine göre.
   const having = []
   if (baslangic) { having.push("substr(MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)),1,10) >= @bas"); p.bas = baslangic }
