@@ -3,7 +3,55 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol, _lokasyonKontrol: lokasyonKontrol } = require('../yetki')
 
+// Bir listenin kalemlerini KİMLİK KORUYARAK yazar (sil-yeniden-yaz DEĞİL).
+//
+// Sil-yeniden-yaz her kaydetmede tüm kalemlere yeni senk_id verdiği için senkron bunları
+// "yepyeni satır" sanıyordu; silme yayılmadığından karşı PC eskileri tutup yenileri de
+// ekliyor, liste her turda şişiyordu (27.07 Sofram listesi: 40 kalem → 182 satır).
+// Burada mevcut satır yerinde güncellenir → senk_id sabit kalır, bulut aynı kaydı günceller.
+//
+// db PARAMETRE: getDb() içeriden çağrılmaz ki bellek-içi DB ile test edilebilsin
+// (senk-veri.js'deki _uygula emsali). Çağıran bir transaction içinde olmalıdır.
+function _kalemleriYaz(db, istekId, hazir) {
+  // Aynı ürün birden fazla kez eklenmişse tek satırda topla: (liste, ürün) çifti tekil
+  // olmazsa senkronun dogalCift dedup'ı hangi satırı eşleyeceğini bilemez.
+  const urunlu = new Map()
+  const serbest = []
+  for (const k of hazir) {
+    if (k.urun_id == null) { serbest.push(k); continue }
+    const v = urunlu.get(k.urun_id)
+    if (v) v.miktar += k.miktar
+    else urunlu.set(k.urun_id, { ...k })
+  }
+
+  // Mevcut satırlar: ürün başına ilki korunur; kopyalar ve serbest metinler silinir
+  // (serbest metin kalemlerinin kalıcı kimliği yok, her kayıtta yeniden yazılırlar).
+  const mevcutUrun = new Map()
+  const silinecek = []
+  for (const m of db.prepare('SELECT id, urun_id, urun_adi, miktar FROM istek_listesi_kalemleri WHERE istek_id = ? ORDER BY id').all(istekId)) {
+    if (m.urun_id != null && !mevcutUrun.has(m.urun_id)) mevcutUrun.set(m.urun_id, m)
+    else silinecek.push(m.id)
+  }
+
+  const guncelle = db.prepare('UPDATE istek_listesi_kalemleri SET urun_adi = ?, miktar = ? WHERE id = ?')
+  const ekle = db.prepare('INSERT INTO istek_listesi_kalemleri (istek_id, urun_id, urun_adi, miktar) VALUES (?, ?, ?, ?)')
+  const sil = db.prepare('DELETE FROM istek_listesi_kalemleri WHERE id = ?')
+
+  for (const k of urunlu.values()) {
+    const m = mevcutUrun.get(k.urun_id)
+    if (!m) { ekle.run(istekId, k.urun_id, k.urun_adi, k.miktar); continue }
+    mevcutUrun.delete(k.urun_id)
+    // Değişmediyse dokunma: gereksiz UPDATE senk_guncelleme'yi tazeleyip boşuna push üretir.
+    if (m.miktar !== k.miktar || m.urun_adi !== k.urun_adi) guncelle.run(k.urun_adi, k.miktar, m.id)
+  }
+  for (const m of mevcutUrun.values()) silinecek.push(m.id)  // listeden çıkarılanlar
+  for (const id of silinecek) sil.run(id)
+  for (const k of serbest) ekle.run(istekId, null, k.urun_adi, k.miktar)
+}
+
 module.exports = {
+  _kalemleriYaz,
+
   'istek:listele': () => {
     const db = getDb()
     return db.prepare(`
@@ -66,14 +114,12 @@ module.exports = {
       if (istekId) {
         db.prepare('UPDATE istek_listeleri SET lokasyon_id=?, tedarikci_id=?, baslik=?, tarih=? WHERE id=?')
           .run(lokasyon_id, tedarikci_id, baslik || null, tarih || null, istekId)
-        db.prepare('DELETE FROM istek_listesi_kalemleri WHERE istek_id = ?').run(istekId)
       } else {
         const r = db.prepare('INSERT INTO istek_listeleri (lokasyon_id, tedarikci_id, baslik, tarih) VALUES (?, ?, ?, ?)')
           .run(lokasyon_id, tedarikci_id, baslik || null, tarih || null)
         istekId = r.lastInsertRowid
       }
-      const kalemEkle = db.prepare('INSERT INTO istek_listesi_kalemleri (istek_id, urun_id, urun_adi, miktar) VALUES (?, ?, ?, ?)')
-      for (const k of hazir) kalemEkle.run(istekId, k.urun_id, k.urun_adi, k.miktar)
+      _kalemleriYaz(db, istekId, hazir)
       return istekId
     })
     return { id: tx() }

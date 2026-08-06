@@ -79,9 +79,17 @@ const TABLOLAR = {
   // lokasyon_id düz kolon (her PC aynı seed, satislar emsali).
   istek_listeleri: { kolonlar: ['lokasyon_id', 'baslik', 'tarih', 'olusturma_tarihi'],
                      fk: { tedarikci_id: 'tedarikciler' }, dogal: [], sonradanEklendi: true },
+  // dogalCift ŞART: bir listede bir ürün tek satırdır. Doğal anahtar olmadığı sürece pull
+  // yalnız senk_id'ye bakıyordu; karşı PC listeyi her kaydettiğinde kalemler silinip yeni
+  // senk_id'lerle yeniden yazıldığı ve SİLME senkronda yayılmadığı için eski satırlar
+  // yerelde kalıp yenileri de ekleniyordu. 27.07 Sofram listesi böyle 40 kalemden 182
+  // satıra çıktı (2030 adetlik hayalî sipariş). Çift sayesinde ikinci kopya INSERT
+  // edilmez, mevcut satır güncellenir. urun_id null (serbest metin) kalemlerde eşleşme
+  // olmaz — SQL'de NULL = NULL yanlıştır — ama onların da kalıcı kimliği yoktur.
   istek_listesi_kalemleri: { kolonlar: ['urun_adi', 'miktar'],
                              fk: { istek_id: 'istek_listeleri', urun_id: 'urunler' },
-                             zorunluFk: ['istek_id'], dogal: [], sonradanEklendi: true },
+                             zorunluFk: ['istek_id'], dogalCift: ['istek_id', 'urun_id'],
+                             sonradanEklendi: true },
 }
 
 // Tablolar bağımlılık (FK) sırasında uygulanmalı: referanslar önce.
@@ -153,6 +161,28 @@ function kur(db) {
       db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('kargolar_iptal_retouch', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
     }
   } catch (e) { console.error('kargolar iptal retouch:', e.message) }
+
+  // Bir kerelik: istek listesi kalemlerindeki birikmiş kopyaları temizle.
+  // (liste, ürün) başına EN ESKİ satır tutulur — 27.07 Sofram listesinde bu kural
+  // tedarikçiye giden asıl PDF ile birebir doğrulandı (40 kalem / 430 adet; kopyalarla
+  // 182 satır / 2030 adet görünüyordu). Kalan satırlar taze damgalanır ki doğru sürüm
+  // buluta çıkıp diğer PC'lerdeki bayat kopyaları yensin — yoksa en son yazılan (yanlış)
+  // kopya son-yazan-kazanır ile geri gelirdi.
+  try {
+    if (!db.prepare("SELECT deger FROM senk_durum WHERE anahtar = 'istek_kalem_kopya_temizlik'").get()) {
+      // urun_id IS NULL satırları DIŞARIDA: SQLite GROUP BY tüm NULL'ları TEK grup sayar,
+      // filtre olmasa bir listedeki serbest metin kalemlerinin hepsi birden silinirdi.
+      const { changes } = db.prepare(`DELETE FROM istek_listesi_kalemleri
+        WHERE urun_id IS NOT NULL AND id NOT IN (
+          SELECT MIN(id) FROM istek_listesi_kalemleri WHERE urun_id IS NOT NULL
+          GROUP BY istek_id, urun_id)`).run()
+      if (changes) {
+        db.exec(`UPDATE istek_listesi_kalemleri SET senk_guncelleme = ${NOWMS}`)
+        console.log(`istek listesi kopya temizliği: ${changes} satır silindi`)
+      }
+      db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('istek_kalem_kopya_temizlik', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
+    }
+  } catch (e) { console.error('istek kalem kopya temizlik:', e.message) }
 }
 
 module.exports = { kur, TABLOLAR, SIRA }
