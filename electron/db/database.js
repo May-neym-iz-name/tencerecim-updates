@@ -736,6 +736,23 @@ function migrate() {
       console.log(`[migrate] sosyal_gonderiler dolduruldu: ${adet} gönderi, ${Date.now() - basla} ms`)
     }
   } catch (e) { console.error('sosyal_gonderiler dolumu:', e.message) }
+
+  // Yukarıdaki dolumun ERTELENEN yarısı ("eski satırların temizliği ayrı bir çalışma").
+  // Gönderi bilgisi sosyal_gonderiler'e taşındıktan sonra mesaj satırlarındaki kopyalar
+  // ÖLÜ VERİ olarak kaldı: ölçüm 2026-08-10 → konu_gorsel 53.5 MB (206 MB'lık dosyanın
+  // dörtte biri), tüm mesaj METİNLERİ ise yalnız 3.5 MB.
+  //
+  // Silmek güvenli, çünkü bu kolonları HİÇBİR YER OKUMUYOR: `konu_gorsel` arayüzde hiç
+  // geçmiyor, arka uçta yalnız yukarıdaki dolum sorgusunda okunuyor. Yine de koruma
+  // olarak yalnız konusu sosyal_gonderiler'de BULUNAN satırlar boşaltılır.
+  //
+  // Not: mesajdaki adres ile gönderideki adres 93219 satırın 59415'inde farklı görünür —
+  // bu bozulma DEĞİL, Meta imzalı görsel adresleri SÜRELİdir ve her çekimde yenilenir
+  // (bkz. sosyal-gorsel:// yerel önbelleği). Aynı görselin farklı anlık kopyalarıdır.
+  //
+  // BURADA YAPILMIYOR: ölçüldü, temizlik 4.1 sn + VACUUM 2.2 sn sürüyor. migrate()
+  // pencereden ÖNCE koşar → açılış 6 sn boyunca boş ekranda kalırdı (v1.2.140 dersi).
+  // Bu iş main.js'te arayüz çizildikten SONRA agirBakim() ile yapılır.
   // KENDİ yorumlarımız 'gelen' yazılmıştı → okunmamış sayılıp rozeti şişiriyordu (5000+ satır).
   // Geriye dönük onarım: sayfa adı/kimliğiyle eşleşenler 'giden' yapılır. İdempotent.
   try {
@@ -859,4 +876,36 @@ function seedUpsSehirIlce() {
   toplu(kayitlar)
 }
 
-module.exports = { init, getDb }
+// Ağır, tek seferlik bakım. migrate() İÇİNDE DEĞİL, çünkü migrate pencereden önce koşar
+// ve bu iş ~6 sn sürer (v1.2.140: açılışı bloklayan her şey ertelenir). main.js bunu
+// arayüz çizildikten sonra, arka plan yoklayıcıları BAŞLAMADAN önce çağırır — o an DB'ye
+// eşzamanlı erişen başka iş yoktur, VACUUM'un ihtiyacı olan tekel erişim güvendedir.
+//
+// Yaptığı iş: gönderi bilgisi sosyal_gonderiler'e taşındıktan sonra mesaj satırlarında
+// kalan konu_baslik/konu_gorsel/konu_link kopyalarını boşaltmak. Bu kolonları HİÇBİR YER
+// OKUMUYOR (arayüzde hiç geçmiyor); yeni satırlara zaten yazılmıyor — bkz. sosyal-mesajlar.js.
+// Ölçüm 2026-08-10: 93219 satır / 109 MB ölü veri; VACUUM sonrası dosya 206 MB → 56.6 MB.
+// Koruma: yalnız konusu sosyal_gonderiler'de BULUNAN satırlar boşaltılır.
+function agirBakim() {
+  const db = getDb()
+  try {
+    db.exec("CREATE TABLE IF NOT EXISTS yerel_onarimlar (ad TEXT PRIMARY KEY, tarih TEXT)")
+    if (db.prepare('SELECT 1 FROM yerel_onarimlar WHERE ad = ?').get('sosyal_konu_kopya_temizlik_2026_08')) return
+    const basla = Date.now()
+    const { changes } = db.prepare(`
+      UPDATE sosyal_mesajlar SET konu_baslik = NULL, konu_gorsel = NULL, konu_link = NULL
+      WHERE (konu_baslik IS NOT NULL OR konu_gorsel IS NOT NULL OR konu_link IS NOT NULL)
+        AND EXISTS (SELECT 1 FROM sosyal_gonderiler g WHERE g.konu_id = sosyal_mesajlar.konu_id)`).run()
+    // Bayrak VACUUM'dan ÖNCE yazılır: VACUUM yarıda kalırsa (kapatma/çökme) veri zaten
+    // güvende, tekrar açılışta 93k satır boşuna yeniden taranmasın. Kaybedilen tek şey
+    // dosya küçültme olur, o da bir sonraki bakımda telafi edilebilir.
+    db.prepare("INSERT INTO yerel_onarimlar (ad, tarih) VALUES (?, datetime('now','localtime'))")
+      .run('sosyal_konu_kopya_temizlik_2026_08')
+    const temizSure = Date.now() - basla
+    const v0 = Date.now()
+    if (changes) db.exec('VACUUM')
+    console.log(`[bakım] sosyal konu kopyaları: ${changes} satır ${temizSure} ms, VACUUM ${Date.now() - v0} ms`)
+  } catch (e) { console.error('ağır bakım:', e.message) }
+}
+
+module.exports = { init, getDb, agirBakim }

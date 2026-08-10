@@ -389,6 +389,10 @@ if (tekOrnekKilidi) {
   const arkaPlanIslerBaslat = () => {
     if (arkaPlanKuruldu) return
     arkaPlanKuruldu = true
+    // Tek seferlik ağır bakım — yoklayıcılardan ÖNCE: VACUUM tekel erişim ister, arka
+    // plan işleri başladıktan sonra çalıştırılsa SQLITE_BUSY ile çakışırdı. Arayüz bu
+    // noktada çizilmiş durumda, yani açılış bloklanmıyor.
+    require('./db/database').agirBakim()
     ikasSiparisSenkBaslat()
     ikasOlayYoklayiciBaslat()
     upsTakipBaslat()
