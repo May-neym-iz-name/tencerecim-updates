@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink } from '../api/ipc'
 import { useSearchParams } from 'react-router-dom'
+import { useAuth } from '../auth/AuthContext'
 import { bekleyenTalepMi, urunBekleniyorMu } from '../utils/talep'
 import TalepModal from '../components/TalepModal'
 import { takipUrl } from '../lib/kargo'
@@ -77,6 +78,9 @@ function kargoGoster(s) {
 }
 
 export default function OnlineSiparisler() {
+  // Talep onay/kapatma iz kaydı için işlemi yapan kişi (emsal: MalKabul.jsx, Giderler.jsx).
+  const { profil } = useAuth()
+  const kullanici = profil?.ad || profil?.email || ''
   const [siparisler, setSiparisler] = useState([])
   const [toplam, setToplam] = useState(0)
   const [arama, setArama] = useState('')
@@ -334,7 +338,7 @@ export default function OnlineSiparisler() {
   async function talepOnayla() {
     setIslemMesgul('talep-onay')
     try {
-      await ikasApi.talepOnayla({ id: talepModal.siparis.id })
+      await ikasApi.talepOnayla({ id: talepModal.siparis.id, kullanici })
       toast.success('Talep onaylandı — ürün bekleniyor')
       asamalariYukle(); setTalepModal(null)
     } catch (e) { toast.error('Onay başarısız: ' + e.message) }
@@ -344,7 +348,7 @@ export default function OnlineSiparisler() {
   async function talepKapatIslemi(not) {
     setIslemMesgul('talep-kapat')
     try {
-      await ikasApi.talepKapat({ id: talepModal.siparis.id, not })
+      await ikasApi.talepKapat({ id: talepModal.siparis.id, not, kullanici })
       toast.success('Talep kapatıldı — ikas panelinden de reddetmeyi unutmayın')
       asamalariYukle(); setTalepModal(null)
     } catch (e) { toast.error('Kapatma başarısız: ' + e.message) }

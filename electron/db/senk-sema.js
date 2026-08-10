@@ -183,6 +183,32 @@ function kur(db) {
       db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('istek_kalem_kopya_temizlik', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
     }
   } catch (e) { console.error('istek kalem kopya temizlik:', e.message) }
+
+  // Bir kerelik: 2026-07 öncesi yüklenmiş ÖKSÜZ urun_stoklar satırlarını kuyruktan düşür.
+  //
+  // Doğrulama (2026-08-10, yerel DB + Supabase birlikte sorgulandı): buluttaki 19098
+  // urun_stoklar satırının 4590'ının ebeveyn ürünü BULUTTA DA YOK (2295 farklı senk_id).
+  // Ebeveyn hiçbir PC'ye gelemez → satırlar her senkron turunda yeniden denenip yeniden
+  // kuyruğa yazılıyor, sonsuza kadar. Zarar veri kaybı değil, GÖRÜNÜRLÜK: 4590 ölü satırın
+  // içinde gerçekten takılmış bir kayıt fark edilmez.
+  //
+  // Aşağıdaki üç koşul birlikte daraltır — yalnız bu vakayı siler, başkasına dokunmaz:
+  //   1. yalnız urun_stoklar (öksüzlüğü ölçülen tek tablo)
+  //   2. ebeveyn ürün YERELDE de yok (varsa satır zaten uygulanır, kuyrukta durmaz)
+  //   3. guncelleme < 2026-07-08 (ölçülen en yeni öksüz damga 2026-07-07T10:13)
+  // Üçüncü koşul olmasa, yeni kuyruklanmış meşru satırlar da silinebilirdi.
+  // Kalıcı koruma senk-veri.js'teki 30 günlük ilk_deneme temizliğidir; bu yalnız
+  // ilk_deneme'si her turda sıfırlanmış olan MEVCUT birikimi kapatır.
+  try {
+    if (!db.prepare("SELECT deger FROM senk_durum WHERE anahtar = 'oksuz_stok_kuyruk_temizlik'").get()) {
+      const { changes } = db.prepare(`DELETE FROM senk_bekleyen
+        WHERE tablo = 'urun_stoklar'
+          AND guncelleme < '2026-07-08'
+          AND json_extract(veri, '$._fk.urun_id') NOT IN (SELECT senk_id FROM urunler WHERE senk_id IS NOT NULL)`).run()
+      if (changes) console.log(`öksüz stok kuyruk temizliği: ${changes} satır düşürüldü`)
+      db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('oksuz_stok_kuyruk_temizlik', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
+    }
+  } catch (e) { console.error('öksüz stok kuyruk temizlik:', e.message) }
 }
 
 module.exports = { kur, TABLOLAR, SIRA }

@@ -159,3 +159,61 @@ describe('FK bekleme kuyruğu', () => {
     expect(sonuc.bekleyen).toBe(0)
   })
 })
+
+// Kuyruk YAŞI ve ölü satır temizliği. Gerçek vaka (2026-08-10): 4590 satır 6 haftadır
+// takılıydı ama ilk_deneme her turda sıfırlandığı için hepsi "az önce geldi" görünüyordu;
+// ölü satır canlıdan ayırt edilemediği için birikim aylarca fark edilmedi.
+describe('kuyruk yaşı ve ölü satır temizliği', () => {
+  const ilkDeneme = () =>
+    db.prepare('SELECT ilk_deneme FROM senk_bekleyen WHERE senk_id = ?').get(STOK_SENK)?.ilk_deneme
+
+  // Kuyruktaki satırı N gün öncesinden bekliyormuş gibi geriye damgalar.
+  const yaslandir = (gun) =>
+    db.prepare(`UPDATE senk_bekleyen SET ilk_deneme = datetime('now','-${gun} days','localtime')`).run()
+
+  test('ilk_deneme tur tur SIFIRLANMAZ (satırın yaşı korunur)', () => {
+    uygula({ tablo: 'urun_stoklar', kayitlar: [stokKaydi()] })
+    yaslandir(5)
+    const beklenen = ilkDeneme()
+
+    // Ebeveyn hâlâ yok → satır yeniden kuyruğa yazılır. Sil-yeniden-yaz deseni
+    // ilk_deneme'yi taşımazsa bu damga "şimdi" olur ve yaş bilgisi kaybolur.
+    uygula({ tablo: 'urun_stoklar', kayitlar: [] })
+
+    expect(ilkDeneme()).toBe(beklenen)
+  })
+
+  test('uzak sürüm kuyruktakini tazelese de bekleme süresi korunur', () => {
+    uygula({ tablo: 'urun_stoklar', kayitlar: [stokKaydi(7, '2026-07-06T11:19:43.282Z')] })
+    yaslandir(5)
+    const beklenen = ilkDeneme()
+
+    uygula({ tablo: 'urun_stoklar', kayitlar: [stokKaydi(12, '2026-07-20T09:00:00.000Z')] })
+
+    expect(ilkDeneme()).toBe(beklenen)
+  })
+
+  test('30 günden uzun süredir bekleyen satır düşürülür', () => {
+    uygula({ tablo: 'urun_stoklar', kayitlar: [stokKaydi()] })
+    yaslandir(31)
+
+    const sonuc = uygula({ tablo: 'urun_stoklar', kayitlar: [] })
+
+    expect(sonuc.bekleyen).toBe(0)
+    expect(db.prepare('SELECT COUNT(*) AS n FROM senk_bekleyen').get().n).toBe(0)
+  })
+
+  test('yeni kuyruklanmış satır ESKİ VERİ TARİHLİ olsa da korunur', () => {
+    // Uzun süre kapalı kalmış PC açılınca aylık eski `guncelleme` damgalı ama YENİ
+    // kuyruklanmış satırlar gelir. Ölçüt guncelleme olsaydı bunlar silinir, ebeveyn
+    // birkaç saniye sonra geldiğinde uygulanacak veri çoktan yok olurdu.
+    uygula({ tablo: 'urun_stoklar', kayitlar: [stokKaydi(7, '2025-01-01T00:00:00.000Z')] })
+
+    expect(uygula({ tablo: 'urun_stoklar', kayitlar: [] }).bekleyen).toBe(1)
+
+    // Ebeveyn gelince normal şekilde uygulanır — veri kaybı yok.
+    urunuEkle()
+    expect(uygula({ tablo: 'urun_stoklar', kayitlar: [] }).uygulanan).toBe(1)
+    expect(stokSatiri().miktar).toBe(7)
+  })
+})

@@ -74,11 +74,22 @@ module.exports = {
     const cfg = TABLOLAR[tablo]
     if (!cfg || !Array.isArray(kayitlar)) return { uygulanan: 0, atlanan: 0, bekleyen: 0 }
     bekleyenKur(db)
+    // Ölü satırları düşür. Ölçüt ilk_deneme (KUYRUKTA bekleme süresi), guncelleme DEĞİL:
+    // guncelleme satırın VERİ tarihidir ve uzun süre kapalı kalmış bir PC açıldığında
+    // aylık eski tarihli ama YENİ kuyruklanmış satırlar gelir — onları silmek gerçek
+    // veri kaybı olurdu. 30 gün boyunca ebeveyni gelmemiş satırın gelme ihtimali yok:
+    // pull imleci yuklenme üzerinde yalnız ileri gider, satır bir daha çekilmez.
+    db.prepare(`DELETE FROM senk_bekleyen WHERE tablo = ? AND ilk_deneme < datetime('now','-30 days','localtime')`).run(tablo)
     // rowid kullanılır, id DEĞİL: sosyal_otomasyon_sablonlar gibi bileşik anahtarlı
     // tablolarda id kolonu yoktur ("no such column: id" pull'u komple kilitliyordu);
     // id INTEGER PRIMARY KEY olan tablolarda rowid zaten id'nin takma adıdır.
     const bulSenk = db.prepare(`SELECT rowid AS id, senk_guncelleme FROM ${tablo} WHERE senk_id = ?`)
-    const bekleyenYaz = db.prepare(`INSERT INTO senk_bekleyen (tablo, senk_id, guncelleme, veri) VALUES (?, ?, ?, ?)
+    // ilk_deneme AKTARILIR: aşağıdaki döngü her satırı önce siler sonra yeniden yazar,
+    // sütun taşınmazsa "kuyrukta ne kadardır bekliyor" bilgisi HER TURDA sıfırlanır ve
+    // 6 haftadır takılı satır "az önce geldi" görünür (ölçüm 2026-08-10: 4599 satırın
+    // tamamı aynı dakikayı gösteriyordu). Yaş, ölü satırı canlıdan ayıran tek ölçüt.
+    const bekleyenYaz = db.prepare(`INSERT INTO senk_bekleyen (tablo, senk_id, guncelleme, veri, ilk_deneme)
+      VALUES (?, ?, ?, ?, COALESCE(?, datetime('now','localtime')))
       ON CONFLICT(tablo, senk_id) DO UPDATE SET guncelleme = excluded.guncelleme, veri = excluded.veri`)
     const bekleyenSil = db.prepare('DELETE FROM senk_bekleyen WHERE tablo = ? AND senk_id = ?')
     let uygulanan = 0, atlanan = 0
@@ -86,13 +97,15 @@ module.exports = {
     // Bu turun uzak deltası + önceki turlardan bekleyenler birlikte denenir. Aynı senk_id
     // her ikisinde de varsa taze olan (daha büyük guncelleme) kazanır.
     const birlesik = new Map()
-    for (const b of db.prepare('SELECT senk_id, guncelleme, veri FROM senk_bekleyen WHERE tablo = ?').all(tablo)) {
-      try { birlesik.set(b.senk_id, { senk_id: b.senk_id, guncelleme: b.guncelleme, veri: JSON.parse(b.veri) }) }
+    for (const b of db.prepare('SELECT senk_id, guncelleme, veri, ilk_deneme FROM senk_bekleyen WHERE tablo = ?').all(tablo)) {
+      try { birlesik.set(b.senk_id, { senk_id: b.senk_id, guncelleme: b.guncelleme, veri: JSON.parse(b.veri), ilkDeneme: b.ilk_deneme }) }
       catch { bekleyenSil.run(tablo, b.senk_id) } // bozuk JSON → kuyruğu tıkamasın
     }
     for (const k of kayitlar) {
       const v = birlesik.get(k.senk_id)
-      if (!v || k.guncelleme >= v.guncelleme) birlesik.set(k.senk_id, k)
+      // Uzak sürüm kuyruktakini ezerse ilk_deneme YİNE de taşınır: satırın içeriği
+      // tazelenmiş olabilir ama BEKLEME süresi devam ediyordur.
+      if (!v || k.guncelleme >= v.guncelleme) birlesik.set(k.senk_id, { ...k, ilkDeneme: v?.ilkDeneme ?? null })
     }
 
     const tx = db.transaction(() => {
@@ -121,7 +134,7 @@ module.exports = {
           fkLocal[kolon] = refRow.id
         }
         if (eksikFk) {
-          bekleyenYaz.run(tablo, k.senk_id, k.guncelleme, JSON.stringify(k.veri))
+          bekleyenYaz.run(tablo, k.senk_id, k.guncelleme, JSON.stringify(k.veri), k.ilkDeneme ?? null)
           atlanan++; continue
         }
 
