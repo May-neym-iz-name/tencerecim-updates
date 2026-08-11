@@ -171,9 +171,9 @@ function ModSecimi({ lokasyonlar, onBaslat }) {
   }, [])
 
   const KARTLAR = [
-    { tip: 'hizli', baslik: '⚡ Hızlı Sayım', aciklama: 'Boş başlar; okuttuğunuz ürünler listeye eklenir. Bir raf, bir koli, birkaç ürün — küçük kapsam için en pratik yol.' },
-    { tip: 'kapsamli', baslik: '🎯 Kapsamlı Sayım', aciklama: 'Marka ve/veya kategori seçin; yalnız o ürünler listelenir. "Bu markayı bitirdim mi" takibi kolay.' },
-    { tip: 'tam', baslik: '🏪 Tam Sayım', aciklama: 'Mağazadaki tüm ürünler. Dönemsel genel sayım için.' },
+    { tip: 'hizli', baslik: '⚡ Hızlı Sayım', aciklama: 'Sadece okuttuğunuz ürünleri sayar.' },
+    { tip: 'kapsamli', baslik: '🎯 Kapsamlı Sayım', aciklama: 'Seçtiğiniz marka veya kategoriyi sayar.' },
+    { tip: 'tam', baslik: '🏪 Tam Sayım', aciklama: 'Mağazadaki tüm ürünleri sayar.' },
   ]
 
   return (
