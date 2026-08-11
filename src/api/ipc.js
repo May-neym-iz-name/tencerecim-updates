@@ -60,8 +60,12 @@ export const stokApi = {
   minimumGuncelle: (veri) => invoke('stok:minimum-guncelle', veri),
   sayimBaslat: (veri) => invoke('sayim:baslat', veri),
   sayimKalem: (sayim_id, veri) => invoke('sayim:kalem-gir', { sayim_id, ...veri }),
+  sayimKalemEkle: (sayim_id, urun_id) => invoke('sayim:kalem-ekle', { sayim_id, urun_id }),
+  sayimKalemSifirla: (sayim_id, urun_id) => invoke('sayim:kalem-sifirla', { sayim_id, urun_id }),
   sayimGetir: (sayim_id) => invoke('sayim:getir', sayim_id),
+  sayimListele: (p) => invoke('sayim:listele', p),
   sayimTamamla: (sayim_id, stogu_guncelle) => invoke('sayim:tamamla', { sayim_id, stogu_guncelle }),
+  sayimIptal: (sayim_id) => invoke('sayim:iptal', sayim_id),
 }
 
 export const lokasyonApi = {

@@ -476,6 +476,10 @@ function createTables() {
 }
 
 function migrate() {
+  // Stok sayımı modları (2026-08-11): tip 'tam'|'kapsamli'|'hizli', kapsam JSON metni.
+  // Sayımlar YEREL — senk-sema'ya bilerek eklenmedi.
+  try { db.exec("ALTER TABLE stok_sayimlar ADD COLUMN tip TEXT DEFAULT 'tam'") } catch {}
+  try { db.exec("ALTER TABLE stok_sayimlar ADD COLUMN kapsam TEXT") } catch {}
   // iskonto_orani kolonu musteriler tablosuna yoksa ekle
   try { db.exec("ALTER TABLE musteriler ADD COLUMN iskonto_orani REAL DEFAULT 0") } catch {}
   try { db.exec("ALTER TABLE satislar ADD COLUMN iskonto_toplam REAL DEFAULT 0") } catch {}

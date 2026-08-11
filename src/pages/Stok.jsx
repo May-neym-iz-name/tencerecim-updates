@@ -1,127 +1,44 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { stokApi, lokasyonApi, urunlerApi } from '../api/ipc'
+import { stokApi, lokasyonApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { eslesirMi } from '../utils/arama'
-import { useBarkodTarama } from '../hooks/useBarkodTarama'
 import { useSiralama } from '../hooks/useSiralama'
 import SiraliBaslik from '../components/SiraliBaslik'
+import StokSayim from '../components/StokSayim'
 import { usePersistentState } from '../hooks/usePersistentState'
 
+// Stok sayfası: 2026-08-11 yeniden tasarımıyla iki alt sekmeye ayrıldı —
+// 📋 Stok Durumu (görüntüleme/düzeltme) ve 🔢 Sayım (StokSayim.jsx).
+// Gerekçe + kararlar: docs/superpowers/specs/2026-08-11-stok-sayim-design.md
 export default function Stok() {
   const { erisilebilirLokasyonlar, yetkiVar } = useAuth()
   const duzenleYetkisi = yetkiVar('stok_duzenle')
   const sayimYetkisi = yetkiVar('stok_sayim')
 
+  const [sekme, setSekme] = usePersistentState('stok_sekme', 'durum')
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [stoklar, setStoklar] = useState([])
   // Arama/filtre KALICI: sekmeler arasında gezinince sıfırlanmaz (cihaza özel).
   const [arama, setArama] = usePersistentState('stok_arama', '')
   const [dusukStok, setDusukStok] = usePersistentState('stok_dusuk_filtre', false)
   const [duzenleModal, setDuzenleModal] = useState(null)
-  const [acikLokasyonlar, setAcikLokasyonlar] = useState([]) // tıklanınca açılan mağaza id'leri
-
-  // Aktif sayım (aynı anda tek mağaza): { lokasyon_id, id, kalemler:[{...,_girilen}] }
-  // Kalıcı: başka sekmeye geçilse de devam eden sayım kaybolmaz.
-  const [aktifSayim, setAktifSayim] = usePersistentState('stok_aktif_sayim', null)
-  const [barkodInput, setBarkodInput] = useState('')
-  const [vurgulanan, setVurgulanan] = useState(null) // okutulan ürün id (kaydır+vurgula)
-  // Son okutulan ürün, üstteki sabit kartta gösterilir. Sadece id tutulur; sayı/fark
-  // aktifSayim'dan TÜRETİLİR ki elle düzeltme yapılınca kart da anında güncellensin.
-  const [sonOkutulanId, setSonOkutulanId] = useState(null)
-  // "Sayılanlar üstte" tercihi cihazda kalıcı — her sayımda yeniden açmaya gerek yok.
-  const [sayilanlarUstte, setSayilanlarUstte] = usePersistentState('stok_sayim_sayilanlar_ustte', false)
-  const barkodRef = useRef(null)
-
-  // ---- Sayım → veritabanı senkronu ----
-  // ESKİ HATA: barkod okutmada kaydedilecek değer setState güncelleyicisinin
-  // İÇİNDE hesaplanıp hemen dışında okunuyordu. React güncelleyiciyi çoğu kez
-  // sonraki render'da çalıştırır → değer null kalır → DB yazımı HİÇ yapılmazdı.
-  // Ekran (localStorage) doğru görünürken DB'de sayım NULL kalıyor, "Tamamla"
-  // yalnız NULL olmayanları işlediği için okutulan sayımlar kayboluyordu.
-  // YENİ YAKLAŞIM: UI iyimser güncellenir; DB yazımı bu effect'te yapılır.
-  // Effect her state değişiminde ekrandaki değerle DB'ye yazılmış değeri
-  // karşılaştırır, farklı olanları yazar; hata olursa kullanıcıya söyler ve
-  // 3 sn'de bir yeniden dener. Uygulama yeniden açılırsa (kalıcı sayım) tüm
-  // değerler yeniden yazılır — geçmişte düşen kayıtlar da böylece onarılır.
-  const aktifSayimRef = useRef(aktifSayim)
-  aktifSayimRef.current = aktifSayim
-  const senkRef = useRef({ sayimId: null, yazilan: new Map(), calisiyor: false, zamanlayici: null, hataToast: false })
-
-  const senkronla = useCallback(async () => {
-    const s = senkRef.current
-    if (s.calisiyor) return
-    s.calisiyor = true
-    try {
-      for (;;) {
-        const sayim = aktifSayimRef.current
-        if (!sayim || sayim.id !== s.sayimId) return
-        const bekleyen = sayim.kalemler.find(k =>
-          k.sayilan_miktar != null && s.yazilan.get(k.urun_id) !== k.sayilan_miktar)
-        if (!bekleyen) { s.hataToast = false; return }
-        const deger = bekleyen.sayilan_miktar
-        try {
-          await stokApi.sayimKalem(sayim.id, { urun_id: bekleyen.urun_id, sayilan_miktar: deger })
-          s.yazilan.set(bekleyen.urun_id, deger)
-        } catch (e) {
-          if (!s.hataToast) {
-            s.hataToast = true
-            toast.error('Sayım kaydedilemedi, yeniden denenecek: ' + e.message, { duration: 6000 })
-          }
-          clearTimeout(s.zamanlayici)
-          s.zamanlayici = setTimeout(() => senkronla(), 3000)
-          return
-        }
-      }
-    } finally { s.calisiyor = false }
-  }, [])
-
-  useEffect(() => {
-    const s = senkRef.current
-    if (!aktifSayim) {
-      s.sayimId = null; s.yazilan = new Map(); clearTimeout(s.zamanlayici)
-      return
-    }
-    if (s.sayimId !== aktifSayim.id) { s.sayimId = aktifSayim.id; s.yazilan = new Map() }
-    senkronla()
-  }, [aktifSayim, senkronla])
-
-  // Ekrandaki tüm sayımları DB'ye garanti yazar (Tamamla öncesi son kontrol).
-  async function tumunuDByeYaz() {
-    const sayim = aktifSayimRef.current
-    if (!sayim) return
-    const s = senkRef.current
-    for (const k of sayim.kalemler) {
-      if (k.sayilan_miktar == null) continue
-      if (s.yazilan.get(k.urun_id) === k.sayilan_miktar) continue
-      await stokApi.sayimKalem(sayim.id, { urun_id: k.urun_id, sayilan_miktar: k.sayilan_miktar })
-      s.yazilan.set(k.urun_id, k.sayilan_miktar)
-    }
-  }
+  const [acikLokasyonlar, setAcikLokasyonlar] = useState([])
 
   const yukle = useCallback(async () => {
-    try {
-      const r = await stokApi.listele({})
-      setStoklar(r)
-    } catch (e) { toast.error(e.message) }
+    try { setStoklar(await stokApi.listele({})) } catch (e) { toast.error(e.message) }
   }, [])
 
-  useEffect(() => { yukle() }, [yukle])
+  useEffect(() => { yukle() }, [yukle, sekme]) // sayımdan dönünce güncel stok görünsün
   useEffect(() => { lokasyonApi.listele().then(lok => setLokasyonlar(erisilebilirLokasyonlar(lok))) }, [])
-
-  // Sayım başlayınca barkod alanına odaklan
-  useEffect(() => { if (aktifSayim) setTimeout(() => barkodRef.current?.focus(), 100) }, [aktifSayim?.id])
 
   function lokasyonAcKapat(lokId) {
     setAcikLokasyonlar(prev => prev.includes(lokId) ? prev.filter(id => id !== lokId) : [...prev, lokId])
   }
 
   function magazaStoklari(lokId) {
-    // Kelime bazlı + Türkçe duyarsız (bkz. src/utils/arama.js). Eskiden locale'siz
-    // toLowerCase() vardı: "ÇELİK" aranınca bulunmuyordu, kelime sırası da zorunluydu.
-    // SKU de kapsama alındı — Ürünler/Satış ekranlarıyla aynı davransın.
     return stoklar.filter(s => s.lokasyon_id === lokId).filter(s =>
       eslesirMi([s.urun_adi, s.barkod, s.sku].filter(Boolean).join(' '), arama)
     ).filter(s => !dusukStok || s.miktar <= s.minimum_stok)
@@ -137,118 +54,31 @@ export default function Stok() {
     } catch (e) { toast.error(e.message) }
   }
 
-  async function baslatSayim(lokId) {
-    if (aktifSayim) { toast.error('Önce aktif sayımı tamamlayın veya iptal edin'); return }
-    try {
-      const r = await stokApi.sayimBaslat({ lokasyon_id: lokId })
-      const sayim = await stokApi.sayimGetir(r.sayim_id)
-      setAktifSayim({ lokasyon_id: lokId, id: sayim.id, kalemler: sayim.kalemler.map(k => ({ ...k, _girilen: '' })) })
-      toast.success(`Sayım başladı — ${sayim.kalemler.length} ürün. Barkod okutarak sayabilirsiniz.`)
-    } catch (e) { toast.error(e.message) }
-  }
+  const sekmeler = (
+    <div className="flex gap-1 mb-4 border-b">
+      {[['durum', '📋 Stok Durumu'], ...(sayimYetkisi ? [['sayim', '🔢 Sayım']] : [])].map(([k, l]) => (
+        <button key={k} onClick={() => setSekme(k)}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${sekme === k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          {l}
+        </button>
+      ))}
+    </div>
+  )
 
-  // Sayım sırası damgası: "Sayılanlar üstte" sıralaması ve son okutulan kartı bunu kullanır.
-  // Saat yerine artan sayaç: cihaz saati değişse de sıra bozulmaz.
-  function sonrakiSira(kalemler) {
-    return Math.max(0, ...kalemler.map(k => Number(k._sira) || 0)) + 1
-  }
-
-  function kalemGir(urun_id, deger) {
-    const sayi = parseInt(deger)
-    // Tek state güncellemesi: giriş metni + (geçerliyse) sayım ve fark birlikte.
-    // DB yazımı yukarıdaki senkron effect'inde — burada await/catch yok.
-    setAktifSayim(prev => prev && ({
-      ...prev,
-      kalemler: prev.kalemler.map(k => {
-        if (k.urun_id !== urun_id) return k
-        const guncel = { ...k, _girilen: deger, _sira: deger === '' ? k._sira : sonrakiSira(prev.kalemler) }
-        if (deger !== '' && !isNaN(sayi)) {
-          guncel.sayilan_miktar = sayi
-          guncel.fark = sayi - k.beklenen_miktar
-        }
-        return guncel
-      }),
-    }))
-    if (deger !== '') setSonOkutulanId(urun_id)
-  }
-
-  // Okutulan ürünü görünür yap ve kısa süre vurgula
-  function vurgula(urun_id) {
-    setVurgulanan(urun_id)
-    setTimeout(() => { document.getElementById('sayim-' + urun_id)?.scrollIntoView({ block: 'center', behavior: 'smooth' }) }, 50)
-    setTimeout(() => setVurgulanan(v => (v === urun_id ? null : v)), 1600)
-  }
-
-  // Barkod okutma → ilgili ürünün sayımını otomatik +1.
-  // Form gönderimi (Enter) VE barkod okuyucu kancası aynı yere düşsün diye kod
-  // parametreye alındı: kanca taramayı algılayınca Enter'ı yutar, form tetiklenmez.
-  function barkodOkut(e) {
-    e.preventDefault()
-    kodIsle(barkodInput)
-  }
-
-  async function kodIsle(ham) {
-    const kod = String(ham || '').trim()
-    setBarkodInput('')
-    if (!kod || !aktifSayim) return
-    // Ürün, güncelleyici DIŞINDA bulunur (barkod/urun_id sabittir, bayat state
-    // sorun olmaz). ESKİ HATA: hedef güncelleyicinin içinde hesaplanıp dışarıda
-    // senkron okunuyordu; React güncelleyiciyi genelde sonra çalıştırdığı için
-    // null kalıyor ve DB yazımı atlanıyordu. Artık DB yazımı senkron effect'inde.
-    // Hızlı yol: ana barkodla tam eşleşme, sunucuya gitmeden anında çalışır
-    // (art arda hızlı okutmada ağ/IPC turu yaşanmaz).
-    let kalem = aktifSayim.kalemler.find(k => String(k.barkod || '').trim() === kod)
-    // Takma ad barkod: sayım kalemlerinde ana barkodla eşleşme yoksa kodu sunucuya
-    // sor (urunler:barkodla takma adları da çözer) ve dönen ürün id'siyle kalemi bul.
-    if (!kalem) {
-      try {
-        const urun = await urunlerApi.barkodla(kod)
-        if (urun) kalem = aktifSayim.kalemler.find(k => k.urun_id === urun.id)
-      } catch { /* çözülemezse aşağıdaki "bulunamadı" akışı devreye girer */ }
-    }
-    if (!kalem) { toast.error('Bu sayımda ürün bulunamadı: ' + kod); return }
-    setAktifSayim(prev => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        kalemler: prev.kalemler.map(k => {
-          if (k.urun_id !== kalem.urun_id) return k
-          // +1 daima EN GÜNCEL değere (prev) uygulanır — art arda hızlı
-          // okutmalarda sayaç kaybolmaz.
-          const yeni = (parseInt(k.sayilan_miktar ?? 0) || 0) + 1
-          return { ...k, _girilen: String(yeni), sayilan_miktar: yeni, fark: yeni - k.beklenen_miktar,
-            _sira: sonrakiSira(prev.kalemler) }
-        }),
-      }
-    })
-    setSonOkutulanId(kalem.urun_id)   // üstteki sabit kart
-    vurgula(kalem.urun_id)
-  }
-
-  // Barkod okuyucu: kutu seçili olmasa da (ör. bir sayı alanına tıkladıktan sonra)
-  // okutma çalışsın. Yalnız sayım açıkken dinlenir.
-  useBarkodTarama({ ref: barkodRef, aktif: !!aktifSayim, onKod: kodIsle })
-
-  async function tamamlaSayim() {
-    if (!confirm('Sayımı tamamlayıp stokları güncellemek istiyor musunuz?')) return
-    try {
-      // Ekrandaki HER sayım DB'ye yazılmadan tamamlamaya geçilmez — yazım
-      // başarısızsa hata gösterilir ve sayım açık kalır (veri kaybı olmaz).
-      await tumunuDByeYaz()
-      await stokApi.sayimTamamla(aktifSayim.id, true)
-      toast.success('Sayım tamamlandı, stoklar güncellendi!')
-      setAktifSayim(null)
-      yukle()
-    } catch (e) { toast.error(e.message) }
-  }
-
-  function iptalSayim() {
-    if (confirm('Sayımı iptal etmek istiyor musunuz? Girilen sayımlar stoğa işlenmez.')) setAktifSayim(null)
+  if (sekme === 'sayim' && sayimYetkisi) {
+    return (
+      <div className="p-5">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Stok</h2>
+        {sekmeler}
+        <StokSayim lokasyonlar={lokasyonlar} />
+      </div>
+    )
   }
 
   return (
     <div className="p-5">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">Stok</h2>
+      {sekmeler}
 
       {/* Genel arama + düşük stok filtresi */}
       <div className="flex gap-3 mb-5 flex-wrap">
@@ -263,51 +93,24 @@ export default function Stok() {
       {/* Her mağaza ayrı bölüm */}
       <div className="space-y-6">
         {lokasyonlar.map(lok => {
-          const sayimAktif = aktifSayim?.lokasyon_id === lok.id
-          // Sayım aktifse veya arama yapılıyorsa içerik her zaman açık; aksi halde tıklanınca açılır
-          const acik = sayimAktif || arama.trim() !== '' || acikLokasyonlar.includes(lok.id)
+          const acik = arama.trim() !== '' || acikLokasyonlar.includes(lok.id)
           const adet = magazaStoklari(lok.id).length
           return (
             <section key={lok.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-              {/* Mağaza kutucuğu başlığı */}
               <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 border-b flex-wrap">
                 <h3 className="flex items-center gap-2 font-bold text-gray-800">
                   🏪 {lok.ad}
                   <span className="text-xs font-normal text-gray-400">({adet} ürün)</span>
                 </h3>
-                {sayimAktif ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500">
-                      {aktifSayim.kalemler.filter(k => k.sayilan_miktar !== null && k.sayilan_miktar !== undefined).length}/{aktifSayim.kalemler.length} sayıldı
-                    </span>
-                    <button onClick={iptalSayim} className="border border-red-200 text-red-600 px-3 py-1.5 rounded-lg text-xs hover:bg-red-50">İptal</button>
-                    <button onClick={tamamlaSayim} className="bg-green-600 text-white px-4 py-1.5 rounded-lg text-xs hover:bg-green-700 font-medium">✓ Tamamla & Güncelle</button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => lokasyonAcKapat(lok.id)}
-                      className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                        acik ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
-                             : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
-                      📋 Stok Durumu
-                    </button>
-                    {sayimYetkisi && (
-                      <button onClick={() => baslatSayim(lok.id)} disabled={!!aktifSayim}
-                        className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-40 font-medium">
-                        🔢 Stok Sayımı
-                      </button>
-                    )}
-                  </div>
-                )}
+                <button type="button" onClick={() => lokasyonAcKapat(lok.id)}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                    acik ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+                         : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}>
+                  📋 Stok Durumu
+                </button>
               </div>
-
-              {acik && (sayimAktif
-                ? <SayimTablosu aktifSayim={aktifSayim} arama={arama} vurgulanan={vurgulanan}
-                    barkodInput={barkodInput} setBarkodInput={setBarkodInput} barkodOkut={barkodOkut} barkodRef={barkodRef}
-                    kalemGir={kalemGir} sonOkutulanId={sonOkutulanId}
-                    sayilanlarUstte={sayilanlarUstte} setSayilanlarUstte={setSayilanlarUstte} />
-                : <StokTablosu satirlar={magazaStoklari(lok.id)} duzenleYetkisi={duzenleYetkisi}
-                    onDuzenle={s => setDuzenleModal({ ...s, yeni_miktar: s.miktar })} />)}
+              {acik && <StokTablosu satirlar={magazaStoklari(lok.id)} duzenleYetkisi={duzenleYetkisi}
+                onDuzenle={s => setDuzenleModal({ ...s, yeni_miktar: s.miktar })} />}
             </section>
           )
         })}
@@ -391,90 +194,5 @@ function StokTablosu({ satirlar, duzenleYetkisi, onDuzenle }) {
     </table>
     <div className="px-2"><Sayfalama {...sayfalama} /></div>
     </>
-  )
-}
-
-// Aktif sayım tablosu (barkod okutma + manuel giriş)
-function SayimTablosu({ aktifSayim, arama, vurgulanan, barkodInput, setBarkodInput, barkodOkut, barkodRef, kalemGir,
-  sonOkutulanId, sayilanlarUstte, setSayilanlarUstte }) {
-  const suzulen = aktifSayim.kalemler.filter(k =>
-    eslesirMi([k.urun_adi, k.barkod, k.sku].filter(Boolean).join(' '), arama)
-  )
-  // "Sayılanlar üstte": en son sayılan 1. sırada. Kapalıyken liste sırası HİÇ değişmez —
-  // rafta ilerlerken satırların yer değiştirmemesi sayım güvenliği açısından önemli.
-  const kalemler = sayilanlarUstte
-    ? [...suzulen].sort((a, b) => (Number(b._sira) || 0) - (Number(a._sira) || 0))
-    : suzulen
-
-  // Son okutulan kart: sayı/fark aktifSayim'dan TÜRETİLİR (elle düzeltmede de güncel kalır).
-  const son = sonOkutulanId != null ? aktifSayim.kalemler.find(k => k.urun_id === sonOkutulanId) : null
-  const sonFark = son && son.sayilan_miktar != null ? son.sayilan_miktar - son.beklenen_miktar : null
-
-  return (
-    <div>
-      <form onSubmit={barkodOkut} className="p-3 bg-blue-50 border-b flex gap-2">
-        <input ref={barkodRef} value={barkodInput} onChange={e => setBarkodInput(e.target.value)}
-          placeholder="📷 Barkod okutun — otomatik +1 sayılır"
-          className="flex-1 border rounded-lg px-3 py-2 text-sm" autoFocus />
-        <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+1 Ekle</button>
-      </form>
-
-      {/* Son okutulan ürün — bir sonraki okutmaya kadar durur. Sarı vurgu 1.6 sn'de
-          kaybolduğu için hangi ürünün sayıldığını bulmak zordu. */}
-      {son && (
-        <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 flex items-baseline gap-x-4 gap-y-1 flex-wrap">
-          <span className="text-[11px] font-semibold tracking-wide text-amber-700 uppercase">Son okutulan</span>
-          <span className="font-semibold text-gray-800 flex-1 min-w-40">{son.urun_adi}</span>
-          <span className="text-xs text-gray-500">Sistemde <b className="text-gray-800 text-sm">{son.beklenen_miktar}</b></span>
-          <span className="text-xs text-gray-500">Sayılan <b className="text-gray-800 text-sm">{son.sayilan_miktar ?? '—'}</b></span>
-          <span className={`text-xs ${sonFark === null ? 'text-gray-400' : sonFark < 0 ? 'text-red-600' : sonFark > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
-            Fark <b className="text-sm">{sonFark === null ? '—' : sonFark > 0 ? `+${sonFark}` : sonFark}</b>
-          </span>
-        </div>
-      )}
-
-      <div className="px-4 py-2 border-b bg-gray-50">
-        <label className="inline-flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
-          <input type="checkbox" checked={sayilanlarUstte} onChange={e => setSayilanlarUstte(e.target.checked)} />
-          Sayılanlar üstte
-        </label>
-      </div>
-      <table className="w-full text-sm">
-        <thead className="bg-white border-b">
-          <tr>
-            {['Ürün', 'Barkod', 'Sistemde', 'Sayılan', 'Fark'].map(h => (
-              <th key={h} className="text-left px-4 py-2.5 font-medium text-gray-600">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {kalemler.map(k => {
-            const fark = k.sayilan_miktar !== null && k.sayilan_miktar !== undefined ? k.sayilan_miktar - k.beklenen_miktar : null
-            const vurgulu = vurgulanan === k.urun_id
-            return (
-              <tr key={k.urun_id} id={'sayim-' + k.urun_id}
-                className={`border-b transition-colors ${vurgulu ? 'bg-yellow-200' : fark !== null && fark !== 0 ? (fark < 0 ? 'bg-red-50' : 'bg-blue-50') : ''}`}>
-                <td className="px-4 py-2 font-medium">{k.urun_adi}</td>
-                <td className="px-4 py-2 font-mono text-xs text-gray-500">{k.barkod || '—'}</td>
-                <td className="px-4 py-2 font-bold">{k.beklenen_miktar}</td>
-                <td className="px-4 py-2">
-                  {/* Enter → odak barkod kutusuna döner. Barkod okuyucu kancası, BAŞKA bir
-                      yazı alanı seçiliyken bilerek devreye girmez (yoksa barkodun ilk
-                      rakamları bu sayı alanına düşer ve yanlış miktar kaydedilir).
-                      Bu yüzden "say → Enter → okutmaya devam et" akışı gerekiyor. */}
-                  <input type="number" value={k._girilen} min="0"
-                    onChange={e => kalemGir(k.urun_id, e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); barkodRef.current?.focus() } }}
-                    className="w-20 border rounded px-2 py-1 text-center text-sm" placeholder="—" />
-                </td>
-                <td className={`px-4 py-2 font-semibold ${fark === null ? 'text-gray-300' : fark < 0 ? 'text-red-600' : fark > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
-                  {fark === null ? '—' : fark > 0 ? `+${fark}` : fark}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
   )
 }
