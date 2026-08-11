@@ -46,13 +46,24 @@ function trNormal(s) {
   return out.toLowerCase()
 }
 
+// BAĞLAÇLAR aramadan düşülür. Arama AND mantığıyla çalıştığı için katalogda
+// bulunmayan tek bir bağlaç TÜM sonucu siler: kullanıcı ikas'taki "Sofram 6 Boy
+// Rendeli Saklama VE Karıştırma Kabı" adını yapıştırdığında, yereldeki
+// "Sofram 6 Boy Karıştırma Saklama Kabı (Kapaklı) + Rendeli" seti yalnızca "ve"
+// yüzünden bulunamadı (2026-08-11). Bağlaçlar zaten ayırt edici değil.
+// Not: normalize edilmiş biçimler ('için' → 'icin').
+const BAGLACLAR = new Set(['ve', 'ile', 'veya', 'icin', 'ya', 'ki', 'the', 'and'])
+
 /**
- * Aramayı kelimelere böler (normalize edilmiş, boşlar atılmış).
+ * Aramayı kelimelere böler (normalize edilmiş, boşlar atılmış, bağlaçlar düşülmüş).
+ * Arama SADECE bağlaçlardan oluşuyorsa hiçbiri atılmaz (kullanıcı gerçekten onu arıyordur).
  * @param {*} s
  * @returns {string[]}
  */
 function kelimeler(s) {
-  return trNormal(s).split(/\s+/).filter(Boolean)
+  const hepsi = trNormal(s).split(/\s+/).filter(Boolean)
+  const suzulmus = hepsi.filter((k) => !BAGLACLAR.has(k))
+  return suzulmus.length ? suzulmus : hepsi
 }
 
 // LIKE deseni: % ve _ kullanıcı metninde JOKER olmamalı. SKU'larda '.' var, '%' yok

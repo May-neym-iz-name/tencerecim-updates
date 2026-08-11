@@ -26,8 +26,13 @@ export function trNormal(s) {
   return out.toLowerCase()
 }
 
+// Bağlaçlar aramadan düşülür — gerekçe ikiz dosyada (AND mantığı, "ve" tüm sonucu siliyordu).
+const BAGLACLAR = new Set(['ve', 'ile', 'veya', 'icin', 'ya', 'ki', 'the', 'and'])
+
 export function kelimeler(s) {
-  return trNormal(s).split(/\s+/).filter(Boolean)
+  const hepsi = trNormal(s).split(/\s+/).filter(Boolean)
+  const suzulmus = hepsi.filter((k) => !BAGLACLAR.has(k))
+  return suzulmus.length ? suzulmus : hepsi
 }
 
 /**

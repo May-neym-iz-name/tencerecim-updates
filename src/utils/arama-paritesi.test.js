@@ -68,6 +68,23 @@ describe('eslesirMi — kelime sırası önemsiz', () => {
     expect(eslesirMi(URUN, 'granit')).toBe(false)
   })
 
+  // 2026-08-11: ikas'taki ad yapıştırılınca yerel kayıt bulunamıyordu — tek fark "ve" idi.
+  test('bağlaçlar (ve/ile/veya/için) aramayı öldürmez', () => {
+    const SET = 'Sofram 6 Boy Karıştırma Saklama Kabı (Kapaklı) + Rendeli'
+    expect(eslesirMi(SET, 'Sofram 6 Boy Rendeli Saklama ve Karıştırma')).toBe(true)
+    expect(eslesirMi(URUN, 'lines ve tencere')).toBe(true)
+    expect(kelimeler('saklama ve karıştırma')).toEqual(['saklama', 'karistirma'])
+  })
+
+  test('arama SADECE bağlaçtan ibaretse kelime düşürülmez', () => {
+    expect(kelimeler('ve')).toEqual(['ve'])
+    expect(eslesirMi('Tencere ve Tava', 've')).toBe(true)
+  })
+
+  test('bağlaç ELEMESİ ayırt ediciliği bozmaz (AND hâlâ geçerli)', () => {
+    expect(eslesirMi(URUN, 'lines ve granit')).toBe(false)
+  })
+
   test('boş arama her şeyi geçirir', () => {
     expect(eslesirMi(URUN, '')).toBe(true)
     expect(eslesirMi(URUN, '   ')).toBe(true)
