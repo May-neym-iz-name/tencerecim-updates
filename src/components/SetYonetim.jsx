@@ -1,18 +1,35 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { setApi, urunlerApi, markaApi, kategoriApi } from '../api/ipc'
 import AranabilirSecici from './AranabilirSecici'
+import Sayfalama from './Sayfalama'
+import SiraliBaslik from './SiraliBaslik'
 import { useBarkodTarama } from '../hooks/useBarkodTarama'
+import { useDebounce } from '../hooks/useDebounce'
+import { useSayfalama } from '../hooks/useSayfalama'
+import { useSiralama } from '../hooks/useSiralama'
 
 // Kendi setlerimizi yönetme: mevcut ürünlerden set oluştur, tek SET fiyatı belirle.
 // Satışta set seçilince bileşenler fişe girer ama yalnızca set fiyatı geçerli olur.
-export default function SetYonetim() {
+export default function SetYonetim({ baslangicArama = '' }) {
   const [setler, setSetler] = useState([])
   const [formAcik, setFormAcik] = useState(false)
   const [duzenlenen, setDuzenlenen] = useState(null) // set kaydı ya da null (yeni)
+  // Arama SUNUCUDA (set adı + bileşen ürün adları) — ürün aramasıyla aynı Türkçe mantığı.
+  const [arama, setArama] = useState(baslangicArama)
+  const geciktirilmisArama = useDebounce(arama, 250)
 
-  function yukle() { setApi.listele().then(setSetler).catch(e => toast.error(e.message)) }
-  useEffect(yukle, [])
+  const yukle = useCallback(() => {
+    setApi.listele({ arama: geciktirilmisArama.trim() || undefined })
+      .then(setSetler).catch(e => toast.error(e.message))
+  }, [geciktirilmisArama])
+  useEffect(() => { yukle() }, [yukle])
+
+  // Bileşen sayısı/adı üzerinden de sıralanabilsin diye türetilmiş alan verilir.
+  const sr = useSiralama(setler, {
+    deger: (s, k) => k === 'parca' ? s.bilesenler.reduce((t, b) => t + b.miktar, 0) : s[k],
+  })
+  const { dilim: sayfaSetler, ...sayfalama } = useSayfalama(sr.sirali, 50)
 
   async function sil(s) {
     if (!confirm(`"${s.ad}" seti silinsin mi? (Ürünler etkilenmez)`)) return
@@ -31,18 +48,26 @@ export default function SetYonetim() {
         </button>
       </div>
 
+      <div className="flex gap-2 items-center mb-3">
+        <input value={arama} onChange={e => setArama(e.target.value)}
+          placeholder="🔍 Set adı veya içindeki ürün adıyla ara..."
+          className="border rounded-lg px-3 py-2 text-sm flex-1" />
+        {arama && <button onClick={() => setArama('')} className="text-xs text-gray-500 hover:text-red-600 px-2">✕ Temizle</button>}
+        <span className="text-xs text-gray-400 whitespace-nowrap">{setler.length} set</span>
+      </div>
+
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600 text-left">
             <tr>
-              <th className="px-3 py-2 font-medium">Set Adı</th>
-              <th className="px-3 py-2 font-medium">Set Fiyatı</th>
-              <th className="px-3 py-2 font-medium">İçerik</th>
+              <SiraliBaslik k="ad" {...sr}>Set Adı</SiraliBaslik>
+              <SiraliBaslik k="fiyat" {...sr}>Set Fiyatı</SiraliBaslik>
+              <SiraliBaslik k="parca" {...sr}>İçerik</SiraliBaslik>
               <th className="px-3 py-2 font-medium text-right">İşlem</th>
             </tr>
           </thead>
           <tbody>
-            {setler.map(s => (
+            {sayfaSetler.map(s => (
               <tr key={s.id} className="border-t hover:bg-gray-50 align-top">
                 <td className="px-3 py-2 font-medium text-gray-800">🎁 {s.ad}</td>
                 <td className="px-3 py-2 font-bold text-green-700">₺{Number(s.fiyat).toFixed(2)}</td>
@@ -58,12 +83,15 @@ export default function SetYonetim() {
             ))}
             {setler.length === 0 && (
               <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400">
-                Henüz set yok. "+ Set Oluştur" ile mevcut ürünlerden set hazırlayın.
+                {arama.trim()
+                  ? `"${arama.trim()}" için set bulunamadı.`
+                  : 'Henüz set yok. "+ Set Oluştur" ile mevcut ürünlerden set hazırlayın.'}
               </td></tr>
             )}
           </tbody>
         </table>
       </div>
+      <Sayfalama {...sayfalama} />
 
       {formAcik && <SetFormu set={duzenlenen} kapat={() => setFormAcik(false)} onTamam={() => { setFormAcik(false); yukle() }} />}
     </div>

@@ -7,17 +7,24 @@ const { kelimeKosulu } = require('./tr-arama')
 
 // Set listesi + bileşenleri (Satış ekranı ve Setler yönetimi için).
 // arama verilmezse (boş/undefined) mevcut davranış aynen korunur: tüm aktif setler.
-// Arama yalnız set ADINDA yapılır — bileşen ürün adlarında aramaz (kapsamı büyütmesin).
+// Arama set ADI + BİLEŞEN ÜRÜN ADLARI üzerinde yapılır: kullanıcı setin içindeki bir
+// ürünün adını yazınca da set bulunmalı (2026-08-11 isteği — set ürün havuzunda çıkmıyordu).
 // db enjekte edilebilir (test için); üretimde IPC sarmalayıcısı getDb() geçer.
+const SET_ICERIK_ALT = `(SELECT group_concat(u.ad, ' ') FROM set_urunler su
+   JOIN urunler u ON u.id = su.urun_id WHERE su.set_id = s.id)`
+
 function listele({ arama } = {}, db = getDb()) {
-  let where = 'WHERE aktif = 1'
   const params = []
+  let where = ''
   if (arama) {
-    const k = kelimeKosulu('ad', arama)
-    where += k.sql
+    const k = kelimeKosulu("(ad || ' ' || COALESCE(icerik_metni, ''))", arama)
+    where = ' WHERE 1 = 1' + k.sql
     params.push(...k.params)
   }
-  const setler = db.prepare(`SELECT * FROM setler ${where} ORDER BY ad`).all(...params)
+  const setler = db.prepare(
+    `SELECT * FROM (SELECT s.*, ${SET_ICERIK_ALT} AS icerik_metni FROM setler s WHERE s.aktif = 1)` +
+    `${where} ORDER BY ad`
+  ).all(...params).map(({ icerik_metni, ...s }) => s)
   const bilesenStmt = db.prepare(`
     SELECT su.urun_id, su.miktar, u.ad, u.kdv_orani, u.satis_fiyati
     FROM set_urunler su JOIN urunler u ON u.id = su.urun_id

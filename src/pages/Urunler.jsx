@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi } from '../api/ipc'
+import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi, setApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import BarkodModal from '../components/BarkodModal'
 import Sayfalama from '../components/Sayfalama'
@@ -72,6 +72,7 @@ export default function Urunler() {
   const [excelSonuc, setExcelSonuc] = useState(null)
   const [barkodUrun, setBarkodUrun] = useState(null)
   const [sekme, setSekme] = useState('urunler')
+  const [bulunanSetler, setBulunanSetler] = useState([])
   // 'aktif' | 'pasif' — pasif ürünler YALNIZCA burada listelenir (satış/stok görmez).
   const [durum, setDurum] = useState('aktif')
   // Ek barkodlar (takma adlar): yalnız düzenleme modunda gösterilir.
@@ -99,6 +100,20 @@ export default function Urunler() {
       : u[k],
   })
   const { dilim: sayfaUrunler, ...sayfalama } = useSayfalama(sr.sirali, 50)
+
+  // Setler ürün tablosunda GÖRÜNMEZ (ayrı tablo, stok/barkod tutmaz) — ama aranınca
+  // bulunmalı: kullanıcı "ürün havuzunda çıkmıyor" diye bildirdi (2026-08-11).
+  // Yalnız ARAMA modunda ve yalnız aktif ürünlerde gösterilir (marka/kategori filtresi
+  // setlere uygulanamaz; pasif görünümü setleri ilgilendirmez).
+  const setleriGoster = durum === 'aktif' && !!geciktirilmisArama.trim()
+  useEffect(() => {
+    if (!setleriGoster) { setBulunanSetler([]); return }
+    let iptal = false
+    setApi.listele({ arama: geciktirilmisArama.trim() })
+      .then(r => { if (!iptal) setBulunanSetler(r) })
+      .catch(() => { if (!iptal) setBulunanSetler([]) })
+    return () => { iptal = true }
+  }, [setleriGoster, geciktirilmisArama])
 
   const yukleYardimcilar = useCallback(async () => {
     const [m, t, k] = await Promise.all([markaApi.listele(), tedarikciApi.listele(), kategoriApi.listele()])
@@ -217,7 +232,7 @@ export default function Urunler() {
     return (
       <div className="p-4 h-full flex flex-col">
         {sekmeler}
-        {sekme === 'setler' ? <SetYonetim /> : sekme === 'kategoriler' ? <KategoriYonetim /> : <MarkaYonetim />}
+        {sekme === 'setler' ? <SetYonetim baslangicArama={arama} /> : sekme === 'kategoriler' ? <KategoriYonetim /> : <MarkaYonetim />}
       </div>
     )
   }
@@ -278,6 +293,30 @@ export default function Urunler() {
           <button onClick={() => { setFiltreMarka(''); setFiltreKategori(''); setArama('') }} className="text-xs text-gray-500 hover:text-red-600 px-2">✕ Temizle</button>
         )}
       </div>
+
+      {/* Aramayla eşleşen SETLER — ürün tablosunun üstünde ayrı bölüm.
+          Setler ürün değildir (stok/barkod yok), bu yüzden tabloya karıştırılmaz. */}
+      {bulunanSetler.length > 0 && (
+        <div className="mb-3 flex-shrink-0 bg-purple-50 border border-purple-200 rounded-lg p-2">
+          <div className="text-xs font-semibold text-purple-800 mb-1.5 px-1">
+            🎁 Eşleşen Setler ({bulunanSetler.length}) — setler ürün listesinde yer almaz, "🎁 Setler" sekmesinden yönetilir
+          </div>
+          <div className="space-y-1">
+            {bulunanSetler.map(s => (
+              <div key={s.id} className="bg-white border border-purple-100 rounded px-3 py-1.5 flex items-center gap-3">
+                <span className="font-medium text-gray-800 text-sm">🎁 {s.ad}</span>
+                <span className="font-bold text-green-700 text-sm whitespace-nowrap">₺{Number(s.fiyat).toFixed(2)}</span>
+                <span className="text-xs text-gray-500 flex-1 truncate"
+                  title={s.bilesenler.map(b => `${b.ad}${b.miktar > 1 ? ` ×${b.miktar}` : ''}`).join(' + ')}>
+                  {s.bilesenler.map(b => `${b.ad}${b.miktar > 1 ? ` ×${b.miktar}` : ''}`).join(' + ') || '—'}
+                </span>
+                <button onClick={() => setSekme('setler')}
+                  className="text-purple-700 hover:underline text-xs whitespace-nowrap">Setlerde aç →</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Tablo */}
       <div className="bg-white rounded-lg border overflow-auto flex-1">
@@ -346,7 +385,9 @@ export default function Urunler() {
             ))}
             {urunler.length === 0 && (
               <tr><td colSpan={11} className="text-center py-12 text-gray-400">
-                {durum === 'pasif' ? 'Pasif ürün yok.' : 'Ürün bulunamadı'}
+                {durum === 'pasif' ? 'Pasif ürün yok.'
+                  : bulunanSetler.length > 0 ? 'Ürün bulunamadı — yalnızca yukarıdaki set(ler) eşleşti.'
+                  : 'Ürün bulunamadı'}
               </td></tr>
             )}
           </tbody>

@@ -129,10 +129,16 @@ async function merchantIdAl() {
 //
 // İade/iptal açısından da kritik: ikas'a gerçek fiyat gönderilmek zorunda, uyuşmazlıkta
 // işlem REDDEDİLİR. Liste fiyatı gönderilseydi indirimli siparişler iade edilemezdi.
+//
+// İKİNCİ VAKA (2026-08-11, sipariş 3581484666): yukarıdaki düzeltme `finalPrice`i satır
+// toplamı sanıp ADEDE BÖLÜYORDU. ikas'ta HER ÜÇ alan da BİRİM fiyattır — bölme YOK.
+// Canlı ölçüm: quantity=2, price=3200, finalUnitPrice=null, finalPrice=3200,
+// totalFinalPrice=6400. Bölme yüzünden 1600 kaydedildi, kargo etiketine 3200 basıldı.
+// (8461469470'te quantity=1 olduğu için bölme görünmemişti.)
 function birimFiyatHesapla(kalem) {
-  const adet = Number(kalem?.quantity) || 1
+  // Üçü de BİRİM fiyat: finalUnitPrice (en kesin) → finalPrice (ödenen) → price (liste).
   if (kalem?.finalUnitPrice != null) return Number(kalem.finalUnitPrice) || 0
-  if (kalem?.finalPrice != null) return (Number(kalem.finalPrice) || 0) / adet
+  if (kalem?.finalPrice != null) return Number(kalem.finalPrice) || 0
   if (kalem?.price != null) return Number(kalem.price) || 0 // son çare: liste fiyatı
   return 0
 }
@@ -390,7 +396,63 @@ async function pullSiparisler() {
   // İlk (tüm geçmiş) çekim tamamlandı → işaretle; bundan sonra yalnızca yeniler gelir.
   if (ilkKurulum) ayarKaydet('gecmis_cekildi', '1')
   const adresOnarilan = await adresGeriTarama(db)
-  return { ilkKurulum, kaydedilen, guncellenen, stokDusulen, eslesmeyen, adresOnarilan }
+  const fiyatOnarilan = await kalemFiyatGeriTarama(db)
+  return { ilkKurulum, kaydedilen, guncellenen, stokDusulen, eslesmeyen, adresOnarilan, fiyatOnarilan }
+}
+
+// TEK SEFERLİK: birimFiyatHesapla iki kez yanlış çalıştı (bkz. fonksiyon üstündeki notlar):
+// önce indirimli siparişlerde LİSTE fiyatı, sonra çok adetli siparişlerde ADEDE BÖLÜNMÜŞ
+// fiyat kaydedildi. Kayıtlı birim fiyatlar ikas'taki gerçek değerle yeniden hizalanır.
+// Yalnızca birim_fiyat yazar: sipariş/kalem EKLEMEZ, stok/durum'a DOKUNMAZ.
+const KALEM_FIYAT_TARAMA_SORGU = `query FiyatTara($page: Int, $limit: Int) {
+  listOrder(sort: "orderedAt asc", pagination: { page: $page, limit: $limit }) {
+    hasNext
+    data { id orderLineItems { id quantity finalUnitPrice finalPrice price } }
+  }
+}`
+
+async function kalemFiyatGeriTarama(db) {
+  const ONARIM_ADI = 'kalem_birim_fiyat_2026_08'
+  try {
+    db.exec('CREATE TABLE IF NOT EXISTS yerel_onarimlar (ad TEXT PRIMARY KEY, tarih TEXT)')
+    if (db.prepare('SELECT 1 FROM yerel_onarimlar WHERE ad = ?').get(ONARIM_ADI)) return 0
+
+    // ikas_kalem_id doğal anahtar; yoksa hangi satır olduğu belirsiz → dokunulmaz.
+    const kalemGetir = db.prepare('SELECT id, birim_fiyat FROM online_siparis_kalemleri WHERE ikas_kalem_id = ?')
+    const kalemGuncelle = db.prepare('UPDATE online_siparis_kalemleri SET birim_fiyat = ? WHERE id = ?')
+
+    let onarilan = 0
+    for (let page = 1; ; page++) {
+      const data = await graphql(KALEM_FIYAT_TARAMA_SORGU, { page, limit: SIPARIS_LIMIT })
+      const liste = data?.listOrder
+      const siparisler = liste?.data || []
+      if (!siparisler.length) break
+
+      db.transaction(() => {
+        for (const sip of siparisler) {
+          for (const kalem of (sip.orderLineItems || [])) {
+            if (!kalem?.id) continue
+            const dogru = birimFiyatHesapla(kalem)
+            if (!dogru) continue // fiyatsız kalemi 0'a çekme
+            const mevcut = kalemGetir.get(kalem.id)
+            if (!mevcut || Math.abs(Number(mevcut.birim_fiyat) - dogru) < 0.01) continue
+            kalemGuncelle.run(dogru, mevcut.id)
+            onarilan++
+          }
+        }
+      })()
+
+      if (!liste.hasNext) break
+    }
+
+    db.prepare("INSERT INTO yerel_onarimlar (ad, tarih) VALUES (?, datetime('now','localtime'))").run(ONARIM_ADI)
+    console.log(`ikas kalem fiyat geri taraması: ${onarilan} kalem onarıldı`)
+    return onarilan
+  } catch (e) {
+    // Onarım işareti YAZILMAZ → bir sonraki senkronda yeniden denenir.
+    console.error('ikas kalem fiyat geri taraması:', e.message)
+    return 0
+  }
 }
 
 // TEK SEFERLİK: 2026-08 öncesi çekilen siparişlerde adres satırı 2 (daire/blok/kat)

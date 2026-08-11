@@ -36,8 +36,16 @@ describe('birimFiyatHesapla', () => {
       .toBe(500)
   })
 
-  test('finalPrice adede bölünür', () => {
-    expect(birimFiyat({ quantity: 3, price: 900, finalUnitPrice: null, finalPrice: 2400 }))
+  // GERÇEK VAKA 2 (2026-08-11, sipariş 3581484666): ikas'ta finalPrice SATIR TOPLAMI DEĞİL,
+  // BİRİM fiyattır. Adede bölmek çok adetli siparişlerde fiyatı yarıya düşürüyordu.
+  test('ÇOK ADETLİ sipariş: finalPrice adede BÖLÜNMEZ (birim fiyattır)', () => {
+    // ikas'tan gelen gerçek değerler; siparişin totalFinalPrice'ı 6400 idi.
+    expect(birimFiyat({ quantity: 2, price: 3200, finalUnitPrice: null, finalPrice: 3200 }))
+      .toBe(3200)
+  })
+
+  test('çok adetli + indirimli: ödenen birim fiyat aynen alınır', () => {
+    expect(birimFiyat({ quantity: 3, price: 900, finalUnitPrice: null, finalPrice: 800 }))
       .toBe(800)
   })
 
@@ -57,8 +65,9 @@ describe('birimFiyatHesapla', () => {
     expect(birimFiyat(null)).toBe(0)
   })
 
-  test('quantity yoksa 1 varsayılır (finalPrice bölünürken sıfıra bölme olmaz)', () => {
+  test('quantity alanı sonucu hiç etkilemez', () => {
     expect(birimFiyat({ price: null, finalUnitPrice: null, finalPrice: 750 })).toBe(750)
     expect(birimFiyat({ quantity: 0, finalUnitPrice: null, finalPrice: 640 })).toBe(640)
+    expect(birimFiyat({ quantity: 7, finalUnitPrice: null, finalPrice: 640 })).toBe(640)
   })
 })

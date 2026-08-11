@@ -71,6 +71,22 @@ describe('setler _listele', () => {
     expect(r[0].ad).toBe('Çeyiz Seti')
   })
 
+  // 2026-08-11 isteği: set içindeki ürünün adı yazılınca da set bulunmalı.
+  test('bileşen ürün adıyla arama seti bulur', () => {
+    const r = setler._listele({ arama: 'tava' }, db)
+    expect(r.map(s => s.ad)).toEqual(['Çeyiz Seti'])
+  })
+
+  test('set adı + bileşen adı karışık kelimelerle bulunur', () => {
+    const r = setler._listele({ arama: 'çeyiz tencere' }, db)
+    expect(r.map(s => s.ad)).toEqual(['Çeyiz Seti'])
+  })
+
+  test('içerik metni sonuçta sızdırılmaz', () => {
+    const r = setler._listele({}, db)
+    expect(r[0]).not.toHaveProperty('icerik_metni')
+  })
+
   test('eşleşmeyen arama boş dizi döner', () => {
     const r = setler._listele({ arama: 'olmayan-set-xyz' }, db)
     expect(r).toEqual([])
