@@ -1,35 +1,22 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { barkodApi } from '../api/ipc'
-import { barkodSvg, barkodYazdirHtml, ETIKET_BOYUTLARI, VARSAYILAN_BOYUT, boyutBul } from '../lib/barkod'
+import { barkodSvg, barkodYazdirHtml, VARSAYILAN_BOYUT, boyutBul } from '../lib/barkod'
+import { BARKOD_YAZICI_KEY, BARKOD_BOYUT_KEY, yaziciAyarOku } from '../lib/yaziciAyarlari'
 
-const YAZICI_KEY = 'barkod_yazici'
 const FIYAT_KEY = 'barkod_fiyat_goster'
-const BOYUT_KEY = 'barkod_etiket_boyut' // cihaza özel: her PC'nin yazıcısı/etiketi farklı
 
 // Tek bir ürün için barkod etiketi önizleyip yazdıran modal.
-// 45mm x 20mm OS-214 plus etiketi içindir.
+// Yazıcı ve etiket boyutu Ayarlar > 🖨️ Yazıcılar'dan TEK SEFER tanımlanır (2026-08-13
+// kararı); burada yalnız gösterilir. Adet ve fiyat baskı başına değişebildiği için kaldı.
 export default function BarkodModal({ urun, onKapat }) {
   const deger = urun.barkod || urun.sku || ''
   const [adet, setAdet] = useState(1)
   const [fiyatGoster, setFiyatGoster] = useState(() => localStorage.getItem(FIYAT_KEY) !== '0')
-  const [yazicilar, setYazicilar] = useState([])
-  const [secilenYazici, setSecilenYazici] = useState(() => localStorage.getItem(YAZICI_KEY) || '')
-  const [boyut, setBoyut] = useState(() => localStorage.getItem(BOYUT_KEY) || VARSAYILAN_BOYUT)
   const [yazdiriliyor, setYazdiriliyor] = useState(false)
-
-  useEffect(() => {
-    barkodApi.yazicilar()
-      .then(list => {
-        setYazicilar(list)
-        setSecilenYazici(prev => {
-          if (prev && list.some(y => y.ad === prev)) return prev
-          const varsayilan = list.find(y => y.varsayilan)
-          return varsayilan ? varsayilan.ad : ''
-        })
-      })
-      .catch(e => toast.error('Yazıcılar alınamadı: ' + e.message))
-  }, [])
+  // Modal her açılışta ayarlardan okur — Ayarlar'da yapılan değişiklik anında geçerli.
+  const secilenYazici = yaziciAyarOku(BARKOD_YAZICI_KEY)
+  const boyut = yaziciAyarOku(BARKOD_BOYUT_KEY, VARSAYILAN_BOYUT)
 
   // Önizleme barkodu (geçersiz değerde null).
   const onizlemeSvg = useMemo(() => {
@@ -41,16 +28,6 @@ export default function BarkodModal({ urun, onKapat }) {
     const v = e.target.checked
     setFiyatGoster(v)
     localStorage.setItem(FIYAT_KEY, v ? '1' : '0')
-  }
-
-  function handleBoyutSec(e) {
-    setBoyut(e.target.value)
-    localStorage.setItem(BOYUT_KEY, e.target.value)
-  }
-
-  function handleYaziciSec(e) {
-    setSecilenYazici(e.target.value)
-    localStorage.setItem(YAZICI_KEY, e.target.value)
   }
 
   async function handleYazdir() {
@@ -110,24 +87,9 @@ export default function BarkodModal({ urun, onKapat }) {
             </div>
 
             <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Etiket boyutu</label>
-                <select value={boyut} onChange={handleBoyutSec}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white">
-                  {ETIKET_BOYUTLARI.map(b => (
-                    <option key={b.kod} value={b.kod}>{b.ad}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Yazıcı</label>
-                <select value={secilenYazici} onChange={handleYaziciSec}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white">
-                  <option value="">Sistem yazdırma penceresi (seç)</option>
-                  {yazicilar.map(y => (
-                    <option key={y.ad} value={y.ad}>{y.aciklama}{y.varsayilan ? ' (varsayılan)' : ''}</option>
-                  ))}
-                </select>
+              <div className="bg-gray-50 border rounded-lg px-3 py-2 text-xs text-gray-600">
+                🖨️ {secilenYazici || 'Sistem yazdırma penceresi'} · {boyutBul(boyut).ad}
+                <span className="text-gray-400"> — Ayarlar &gt; 🖨️ Yazıcılar'dan değiştirilir</span>
               </div>
 
               <div className="flex items-center gap-3">

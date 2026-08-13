@@ -12,8 +12,20 @@ export const ETIKET_BOYUTLARI = [
   { kod: '40x20', genislik: 40, yukseklik: 20, ad: '40 x 20 mm (XP-470B)' },
 ]
 export const VARSAYILAN_BOYUT = '45x20'
+// Hazır listedeki kodların yanında "GENxYUK" biçimli ÖZEL ölçüyü de tanır
+// ("58x40" gibi — Ayarlar > Yazıcılar'dan serbest girilir). Sınır 10-300mm:
+// yazım hatasıyla 0 veya devasa değer girilirse baskı bozulmasın.
 export function boyutBul(kod) {
-  return ETIKET_BOYUTLARI.find(b => b.kod === kod) || ETIKET_BOYUTLARI[0]
+  const hazir = ETIKET_BOYUTLARI.find(b => b.kod === kod)
+  if (hazir) return hazir
+  const e = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/.exec(String(kod || '').trim())
+  if (e) {
+    const g = Number(e[1]); const y = Number(e[2])
+    if (g >= 10 && g <= 300 && y >= 10 && y <= 300) {
+      return { kod, genislik: g, yukseklik: y, ad: `${g} x ${y} mm (özel)` }
+    }
+  }
+  return ETIKET_BOYUTLARI[0]
 }
 // Geriye uyum (eski içe aktarımlar için varsayılan ölçü).
 export const ETIKET_GENISLIK_MM = 45

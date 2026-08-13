@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi, lokasyonApi, musteriApi, lokasyonGondericiApi } from '../api/ipc'
 import { telefonGoster, telefonHam, telefonHatasi } from '../lib/girdiMaske'
+import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoOlcuOku } from '../lib/yaziciAyarlari'
 import IlIlceSecici from './IlIlceSecici'
 
 const BOS = {
@@ -107,10 +108,15 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
         kapidaOdemeTutar: form.kapidaOdeme && !form.iade ? kapidaTutar : 0,
       })
       toast.success(`✓ ${form.iade ? 'İade gönderisi' : 'Kargo'} oluşturuldu — Takip No: ${kargo.takip_no}`)
-      // Etiketi önizleme penceresinde aç (hata olursa gönderiyi engellemesin).
+      // Etiket çıktısı (hata olursa gönderiyi engellemesin): Ayarlar'da kargo yazıcısı
+      // tanımlıysa doğrudan sessiz bas; değilse önizleme penceresi. İade etiketi HER ZAMAN
+      // önizlemede açılır — WhatsApp sohbetine sürüklenerek müşteriye gönderiliyor.
       if (kargo.barkodPng?.length) {
-        kargoApi.etiketOnizle(kargo.barkodPng, 1)
-          .catch(err => toast.error('Etiket önizleme açılamadı: ' + err.message))
+        const yazici = form.iade ? '' : yaziciAyarOku(KARGO_YAZICI_KEY)
+        const cikti = yazici
+          ? kargoApi.etiketYazdir(kargo.barkodPng, yazici, 1, kargoOlcuOku())
+          : kargoApi.etiketOnizle(kargo.barkodPng, 1, kargoOlcuOku())
+        cikti.catch(err => toast.error('Etiket çıktısı alınamadı: ' + err.message))
       }
       onTamam?.(kargo)
       kapat()

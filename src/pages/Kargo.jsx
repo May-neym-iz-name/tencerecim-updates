@@ -18,6 +18,7 @@ import { useSayfalama } from '../hooks/useSayfalama'
 import { useSiralama } from '../hooks/useSiralama'
 import SiraliBaslik from '../components/SiraliBaslik'
 import { usePersistentState } from '../hooks/usePersistentState'
+import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoSayfaBasinaOku, kargoOlcuOku } from '../lib/yaziciAyarlari'
 
 const DURUM_RENK = {
   olusturuldu: 'bg-blue-100 text-blue-700',
@@ -85,7 +86,8 @@ export default function Kargo() {
     })
     setFormAcik(true)
   }
-  const [sayfaBasina, setSayfaBasina] = usePersistentState('kargo_etiket_sayfa_basina', 1) // 1|2|4
+  // Yazıcı/düzen/ölçü Ayarlar > 🖨️ Yazıcılar'dan yönetilir (2026-08-13 kararı) —
+  // baskı anında okunur ki Ayarlar'daki değişiklik bu sayfayı yenilemeden geçerli olsun.
 
   function filtreAlan(k, v) { setFiltre(f => ({ ...f, [k]: v })) }
   function filtreTemizle() { setFiltre({ takip: '', musteri: '', bas: '', bit: '', lokasyon: '' }) }
@@ -170,7 +172,7 @@ export default function Kargo() {
     // (yalnızca metin); bu yüzden etiketi önizlemede açarız → personel sohbete sürükleyip
     // ekleyebilir. (Otomatik görsel gönderimi WhatsApp Business API ister — ayrı faz.)
     if (k.tip === 'iade') {
-      etiketBas(k)
+      etiketBas(k, { zorlaOnizle: true })
       toast('Etiket önizlemesi açıldı — WhatsApp sohbetine sürükleyip ekleyebilirsiniz.', { icon: '🏷️' })
     }
   }
@@ -186,7 +188,21 @@ export default function Kargo() {
     } catch (e) { toast.error(e.message, { id: bekle }) }
   }
 
-  async function etiketBas(k) {
+  // Etiket çıktısını yollandırır: Ayarlar'da kargo yazıcısı TANIMLIYSA doğrudan ona
+  // sessiz basar; tanımlı değilse (veya zorlaOnizle — iade etiketi WhatsApp'a
+  // sürüklenmek için görünmeli) önizleme penceresi açar.
+  async function etiketCiktisi(pngler) {
+    const yazici = yaziciAyarOku(KARGO_YAZICI_KEY)
+    const sayfa = kargoSayfaBasinaOku()
+    if (yazici) {
+      await kargoApi.etiketYazdir(pngler, yazici, sayfa, kargoOlcuOku())
+      return 'yazici'
+    }
+    await kargoApi.etiketOnizle(pngler, sayfa, kargoOlcuOku())
+    return 'onizleme'
+  }
+
+  async function etiketBas(k, { zorlaOnizle = false } = {}) {
     try {
       let pngler = await kargoApi.etiket(k.id)
       // Yerelde yoksa (başka PC'de oluşturuldu) → Supabase Storage'dan indir.
@@ -196,8 +212,13 @@ export default function Kargo() {
         finally { toast.dismiss(bekle) }
       }
       if (pngler.length) {
-        await kargoApi.etiketOnizle(pngler, Number(sayfaBasina) || 1)
-        toast.success('Önizleme açıldı')
+        if (zorlaOnizle) {
+          await kargoApi.etiketOnizle(pngler, kargoSayfaBasinaOku(), kargoOlcuOku())
+          toast.success('Önizleme açıldı')
+        } else {
+          const yol = await etiketCiktisi(pngler)
+          toast.success(yol === 'yazici' ? 'Etiket yazıcıya gönderildi' : 'Önizleme açıldı')
+        }
       } else if (k.etiket_link) {
         // Son çare: UPS linki (güvenilmez, oturum/sürede geçersiz olabilir).
         sistemApi.linkAc(k.etiket_link).catch(e => toast.error(e.message))
@@ -247,9 +268,10 @@ export default function Kargo() {
         toast.error('Seçili kargoların etiketi bu bilgisayarda yok ve Storage\'a henüz yüklenmemiş. Etiketi oluşturan bilgisayar senkronladıktan sonra tekrar deneyin.', { id: bekle })
         return
       }
-      await kargoApi.etiketOnizle(pngler, Number(sayfaBasina) || 1)
+      const yol = await etiketCiktisi(pngler)
       const eksikNot = eksikSayisi ? ` (${eksikSayisi} kargonun etiketi bulunamadı, atlandı)` : ''
-      toast.success(`${kargoSayisi} kargo · ${pngler.length} etiket önizlemede açıldı${eksikNot}`, { id: bekle })
+      const nereye = yol === 'yazici' ? 'yazıcıya gönderildi' : 'önizlemede açıldı'
+      toast.success(`${kargoSayisi} kargo · ${pngler.length} etiket ${nereye}${eksikNot}`, { id: bekle })
       setSecili(new Set())
     } catch (e) { toast.error('Toplu etiket yazdırılamadı: ' + e.message, { id: bekle }) }
     finally { setBasiliyor(false) }
@@ -307,17 +329,9 @@ export default function Kargo() {
           </select>
         </label>
         <button onClick={filtreTemizle} className="text-xs text-gray-500 hover:text-gray-800 underline pb-2">Temizle</button>
-        {/* Sağ küme: sayaç + etiket düzeni (hem tekli hem toplu basımda geçerli) */}
+        {/* Sağ küme: sayaç. Yazıcı/düzen seçimi Ayarlar > 🖨️ Yazıcılar'a taşındı (13.08). */}
         <div className="ml-auto flex items-end gap-3">
           <span className="text-xs text-gray-400 pb-2 whitespace-nowrap">{listelenen.length} / {kargolar.length} gönderi</span>
-          <label className="text-xs text-gray-500" title="Etiket önizlemesinde sayfa başına kaç etiket dizilsin">🖨️ Etiket/sayfa
-            <select value={sayfaBasina} onChange={e => setSayfaBasina(Number(e.target.value))}
-              className="border rounded px-2 py-1.5 text-sm bg-white mt-0.5 block w-28">
-              <option value={1}>1 · Termal</option>
-              <option value={2}>2 · A4</option>
-              <option value={4}>4 · A4</option>
-            </select>
-          </label>
         </div>
       </div>
 

@@ -136,8 +136,8 @@ export const kargoApi = {
   listele: () => invoke('kargo:listele'),
   etiket: (id) => invoke('kargo:etiket', id),
   etiketToplu: (idler) => invoke('kargo:etiket-toplu', idler),
-  etiketYazdir: (pngler, yazici, sayfaBasina) => invoke('kargo:etiket-yazdir', { pngler, yazici, sayfaBasina }),
-  etiketOnizle: (pngler, sayfaBasina) => invoke('kargo:etiket-onizle', { pngler, sayfaBasina }),
+  etiketYazdir: (pngler, yazici, sayfaBasina, etiketOlcu) => invoke('kargo:etiket-yazdir', { pngler, yazici, sayfaBasina, etiketOlcu }),
+  etiketOnizle: (pngler, sayfaBasina, etiketOlcu) => invoke('kargo:etiket-onizle', { pngler, sayfaBasina, etiketOlcu }),
   takip: (takipNo) => invoke('kargo:takip', takipNo),
   // Tüm bekleyen gönderilerin durumunu UPS'ten anında sorgular (30 dk'lık otomatik turu beklemeden).
   takipYokla: () => invoke('kargo:takip-yokla'),

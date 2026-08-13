@@ -6,6 +6,11 @@ import { veriSenk } from '../lib/veriSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import IlIlceSecici from '../components/IlIlceSecici'
+import { ETIKET_BOYUTLARI, VARSAYILAN_BOYUT } from '../lib/barkod'
+import {
+  BARKOD_YAZICI_KEY, BARKOD_BOYUT_KEY, KARGO_YAZICI_KEY, KARGO_OLCU_KEY,
+  yaziciAyarOku, yaziciAyarYaz, kargoSayfaBasinaOku, kargoSayfaBasinaYaz,
+} from '../lib/yaziciAyarlari'
 
 export default function Ayarlar() {
   const [lokasyonlar, setLokasyonlar] = useState([])
@@ -19,6 +24,7 @@ export default function Ayarlar() {
     { kod: 'lokasyon', ad: '🏬 Mağazalar' },
     { kod: 'satis', ad: '🛒 Satış' },
     { kod: 'kargo', ad: '📦 Kargo / UPS' },
+    { kod: 'yazici', ad: '🖨️ Yazıcılar' },
     { kod: 'ikas', ad: '🛍️ ikas' },
     { kod: 'meta', ad: '💬 Sosyal Medya' },
     { kod: 'yedek', ad: '💾 Yedekleme' },
@@ -444,14 +450,8 @@ export default function Ayarlar() {
               placeholder="E-posta" className="border rounded px-2 py-1.5 text-sm" />
           </div>
 
-          <p className="text-sm font-medium text-gray-600 mb-2">Etiket Yazıcısı</p>
-          <select value={ups.etiket_yazici || ''} onChange={e => upsAlan('etiket_yazici', e.target.value)}
-            className="border rounded px-2 py-1.5 text-sm w-full mb-1 bg-white">
-            <option value="">Yazdırırken sor (sistem diyaloğu)</option>
-            {yazicilar.map(y => <option key={y.ad} value={y.ad}>{y.aciklama}</option>)}
-          </select>
           <p className="text-xs text-gray-400 mb-4">
-            UPS etiketi 100×150mm boyutundadır; ürün barkodu yazıcısından (45×20mm) farklı bir kargo etiketi yazıcısı/rulosu gerektirir.
+            🖨️ Etiket yazıcısı ve ölçü seçimi <b>Yazıcılar</b> sekmesine taşındı.
           </p>
 
           <p className="text-sm font-medium text-gray-600 mb-2">☁️ Bulut Köprüsü</p>
@@ -491,6 +491,9 @@ export default function Ayarlar() {
           </button>
         </div>
       )}
+
+      {/* Yazıcı Ayarları — cihaza özel, buluta senkronlanmaz */}
+      {sekme === 'yazici' && <YaziciAyarlariKarti yazicilar={yazicilar} />}
 
       {/* Mağaza Gönderici Adresleri (online sipariş kargosu için) */}
       {sekme === 'kargo' && yonetici && (
@@ -745,6 +748,119 @@ export default function Ayarlar() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// 🖨️ Yazıcı Ayarları — TÜM yazıcı/etiket tanımları tek yerden (13.08.2026 kararı).
+// Cihaza özel (localStorage): her PC'nin yazıcısı ve etiket rulosu farklıdır, buluta
+// senkronlanmaz. Barkod Bas penceresi ve Kargo sayfası baskı anında buradan okur.
+function YaziciAyarlariKarti({ yazicilar }) {
+  const [barkodYazici, setBarkodYazici] = useState(() => yaziciAyarOku(BARKOD_YAZICI_KEY))
+  const [barkodBoyut, setBarkodBoyut] = useState(() => yaziciAyarOku(BARKOD_BOYUT_KEY, VARSAYILAN_BOYUT))
+  const [kargoYazici, setKargoYazici] = useState(() => yaziciAyarOku(KARGO_YAZICI_KEY))
+  const [kargoOlcu, setKargoOlcu] = useState(() => yaziciAyarOku(KARGO_OLCU_KEY, '100x150'))
+  const [sayfaBasina, setSayfaBasina] = useState(() => kargoSayfaBasinaOku())
+
+  const barkodHazir = ETIKET_BOYUTLARI.some(b => b.kod === barkodBoyut)
+  const kargoStandart = kargoOlcu === '100x150'
+
+  // "GENxYUK" metnini tek eksende günceller ("45x20", eksen 0 → genişlik).
+  function olcuDegistir(mevcut, eksen, deger, yaz) {
+    const p = String(mevcut).split('x')
+    p[eksen] = String(Number(deger) || 0)
+    yaz(p[0] + 'x' + (p[1] || '0'))
+  }
+
+  function kaydetVeBildir(key, deger, setState) {
+    setState(deger)
+    yaziciAyarYaz(key, deger)
+    toast.success('Yazıcı ayarı kaydedildi')
+  }
+
+  const secStil = 'border rounded px-2 py-1.5 text-sm bg-white w-full'
+  const mmStil = 'border rounded px-2 py-1.5 text-sm w-20'
+
+  return (
+    <div className="bg-white rounded-xl border p-5 mb-5">
+      <h3 className="font-semibold mb-1">🖨️ Yazıcı Ayarları</h3>
+      <p className="text-xs text-gray-400 mb-4">
+        Bir kere tanımlayın — Barkod Bas ve Kargo etiketi her baskıda buradaki seçimi kullanır.
+        Bu ayarlar <b>bu bilgisayara özeldir</b> (her PC'nin yazıcısı farklı olabilir), buluta senkronlanmaz.
+      </p>
+
+      <div className="grid md:grid-cols-2 gap-5">
+        {/* Ürün barkod etiketi */}
+        <div className="border rounded-lg p-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">🏷️ Ürün Barkod Etiketi</p>
+          <label className="block text-xs text-gray-500 mb-1">Yazıcı</label>
+          <select value={barkodYazici} className={secStil + ' mb-3'}
+            onChange={e => kaydetVeBildir(BARKOD_YAZICI_KEY, e.target.value, setBarkodYazici)}>
+            <option value="">Sistem yazdırma penceresi (her baskıda sor)</option>
+            {yazicilar.map(y => <option key={y.ad} value={y.ad}>{y.aciklama}{y.varsayilan ? ' (varsayılan)' : ''}</option>)}
+          </select>
+          <label className="block text-xs text-gray-500 mb-1">Etiket boyutu</label>
+          <select value={barkodHazir ? barkodBoyut : 'ozel'} className={secStil + ' mb-2'}
+            onChange={e => {
+              const v = e.target.value
+              kaydetVeBildir(BARKOD_BOYUT_KEY, v === 'ozel' ? '50x30' : v, setBarkodBoyut)
+            }}>
+            {ETIKET_BOYUTLARI.map(b => <option key={b.kod} value={b.kod}>{b.ad}</option>)}
+            <option value="ozel">Özel ölçü…</option>
+          </select>
+          {!barkodHazir && (
+            <div className="flex items-center gap-2 text-sm">
+              <input type="number" min={10} max={300} value={barkodBoyut.split('x')[0] || ''} className={mmStil}
+                onChange={e => olcuDegistir(barkodBoyut, 0, e.target.value, v => kaydetVeBildir(BARKOD_BOYUT_KEY, v, setBarkodBoyut))} />
+              <span className="text-gray-400">×</span>
+              <input type="number" min={10} max={300} value={barkodBoyut.split('x')[1] || ''} className={mmStil}
+                onChange={e => olcuDegistir(barkodBoyut, 1, e.target.value, v => kaydetVeBildir(BARKOD_BOYUT_KEY, v, setBarkodBoyut))} />
+              <span className="text-gray-500">mm (genişlik × yükseklik)</span>
+            </div>
+          )}
+        </div>
+
+        {/* Kargo etiketi */}
+        <div className="border rounded-lg p-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">📦 Kargo Etiketi (UPS)</p>
+          <label className="block text-xs text-gray-500 mb-1">Yazıcı</label>
+          <select value={kargoYazici} className={secStil + ' mb-3'}
+            onChange={e => kaydetVeBildir(KARGO_YAZICI_KEY, e.target.value, setKargoYazici)}>
+            <option value="">Önizleme penceresi (elle yazdır)</option>
+            {yazicilar.map(y => <option key={y.ad} value={y.ad}>{y.aciklama}{y.varsayilan ? ' (varsayılan)' : ''}</option>)}
+          </select>
+          <label className="block text-xs text-gray-500 mb-1">Etiket ölçüsü (termal düzen)</label>
+          <select value={kargoStandart ? '100x150' : 'ozel'} className={secStil + ' mb-2'}
+            onChange={e => {
+              const v = e.target.value
+              kaydetVeBildir(KARGO_OLCU_KEY, v === 'ozel' ? '100x180' : v, setKargoOlcu)
+            }}>
+            <option value="100x150">100 × 150 mm (UPS standart)</option>
+            <option value="ozel">Özel ölçü…</option>
+          </select>
+          {!kargoStandart && (
+            <div className="flex items-center gap-2 text-sm mb-2">
+              <input type="number" min={50} max={300} value={kargoOlcu.split('x')[0] || ''} className={mmStil}
+                onChange={e => olcuDegistir(kargoOlcu, 0, e.target.value, v => kaydetVeBildir(KARGO_OLCU_KEY, v, setKargoOlcu))} />
+              <span className="text-gray-400">×</span>
+              <input type="number" min={50} max={300} value={kargoOlcu.split('x')[1] || ''} className={mmStil}
+                onChange={e => olcuDegistir(kargoOlcu, 1, e.target.value, v => kaydetVeBildir(KARGO_OLCU_KEY, v, setKargoOlcu))} />
+              <span className="text-gray-500">mm (genişlik × yükseklik)</span>
+            </div>
+          )}
+          <label className="block text-xs text-gray-500 mb-1">Sayfa düzeni</label>
+          <select value={sayfaBasina} className={secStil}
+            onChange={e => { const n = Number(e.target.value); setSayfaBasina(n); kargoSayfaBasinaYaz(n); toast.success('Yazıcı ayarı kaydedildi') }}>
+            <option value={1}>1 etiket / sayfa · Termal</option>
+            <option value={2}>2 etiket / sayfa · A4</option>
+            <option value={4}>4 etiket / sayfa · A4</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-2">
+            Yazıcı seçiliyse etiketler önizlemesiz doğrudan basılır. İade etiketi her zaman
+            önizlemede açılır (WhatsApp'a sürüklemek için). UPS kuralı: barkod min. 2×12cm, 200dpi.
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

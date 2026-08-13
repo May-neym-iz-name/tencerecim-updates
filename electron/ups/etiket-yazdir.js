@@ -4,13 +4,24 @@
 const { BrowserWindow } = require('electron')
 const { htmlYukle } = require('../html-yukle')
 
-// Sayfa başına etiket düzenleri. 1 = termal etiket (100×150mm, 1 etiket/sayfa);
-// 2 ve 4 = A4 sayfaya ızgara (yazıcıda kâğıda basanlar için).
+// Sayfa başına etiket düzenleri. 1 = termal etiket (varsayılan 100×150mm, 1 etiket/sayfa;
+// ölçü Ayarlar > Yazıcılar'dan `etiketOlcu` ile değiştirilebilir);
+// 2 ve 4 = A4 sayfaya ızgara (yazıcıda kâğıda basanlar için) — A4 ölçüsü sabittir.
 // mm cinsinden sayfa ölçüsü + ızgara (kolon×satır). pageSize mikron olarak eşitlenir.
 const DUZENLER = {
   1: { pageW: 100, pageH: 150, kolon: 1, satir: 1 },
   2: { pageW: 210, pageH: 297, kolon: 1, satir: 2 },
   4: { pageW: 210, pageH: 297, kolon: 2, satir: 2 },
+}
+
+// Termal düzende (sayfaBasina=1) ayarlardan gelen ölçüyü uygular; A4 ızgaralar sabit.
+function duzenSec(sayfaBasina, etiketOlcu) {
+  const duzen = DUZENLER[sayfaBasina] || DUZENLER[1]
+  const g = Number(etiketOlcu?.genislikMm); const y = Number(etiketOlcu?.yukseklikMm)
+  if (duzen.kolon * duzen.satir === 1 && g >= 50 && g <= 300 && y >= 50 && y <= 300) {
+    return { ...duzen, pageW: g, pageH: y }
+  }
+  return duzen
 }
 
 async function gizliPencereyle(is) {
@@ -65,9 +76,9 @@ function etiketHtml(pngler, duzen, { onizleme = false } = {}) {
 // Açık olan varsa içeriği değiştirilir (konum/boyut korunur), yenisi açılmaz.
 let onizlemePenceresi = null
 
-async function etiketOnizle({ pngler, sayfaBasina = 1 }) {
+async function etiketOnizle({ pngler, sayfaBasina = 1, etiketOlcu }) {
   if (!pngler || !pngler.length) throw new Error('Önizlenecek etiket bulunamadı')
-  const duzen = DUZENLER[sayfaBasina] || DUZENLER[1]
+  const duzen = duzenSec(sayfaBasina, etiketOlcu)
   const html = etiketHtml(pngler, duzen, { onizleme: true })
   if (onizlemePenceresi && !onizlemePenceresi.isDestroyed()) {
     await htmlYukle(onizlemePenceresi, html)
@@ -82,9 +93,9 @@ async function etiketOnizle({ pngler, sayfaBasina = 1 }) {
 }
 
 // pngler: base64 dizisi. sayfaBasina: 1|2|4 (sayfa başına etiket). yazici verilirse sessiz basar.
-async function etiketYazdir({ pngler, yazici, sayfaBasina = 1 }) {
+async function etiketYazdir({ pngler, yazici, sayfaBasina = 1, etiketOlcu }) {
   if (!pngler || !pngler.length) throw new Error('Yazdırılacak etiket bulunamadı')
-  const duzen = DUZENLER[sayfaBasina] || DUZENLER[1]
+  const duzen = duzenSec(sayfaBasina, etiketOlcu)
   const html = etiketHtml(pngler, duzen)
   return gizliPencereyle(async (win) => {
     await htmlYukle(win, html)
@@ -109,6 +120,6 @@ async function etiketYazdir({ pngler, yazici, sayfaBasina = 1 }) {
 }
 
 module.exports = {
-  'kargo:etiket-yazdir': ({ pngler, yazici, sayfaBasina }) => etiketYazdir({ pngler, yazici, sayfaBasina }),
-  'kargo:etiket-onizle': ({ pngler, sayfaBasina }) => etiketOnizle({ pngler, sayfaBasina }),
+  'kargo:etiket-yazdir': ({ pngler, yazici, sayfaBasina, etiketOlcu }) => etiketYazdir({ pngler, yazici, sayfaBasina, etiketOlcu }),
+  'kargo:etiket-onizle': ({ pngler, sayfaBasina, etiketOlcu }) => etiketOnizle({ pngler, sayfaBasina, etiketOlcu }),
 }
