@@ -5,6 +5,7 @@ import { eslesirMi } from '../utils/arama'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
 import OtomasyonPaneli from '../components/OtomasyonPaneli'
+import SablonKutuphanesi from '../components/SablonKutuphanesi'
 import SosyalGorsel from '../components/SosyalGorsel'
 import { useGorunurAralik } from '../hooks/useGorunurAralik'
 
@@ -583,10 +584,16 @@ function SablonSecici({ onSec }) {
   const [acik, setAcik] = useState(false)
   const [sablonlar, setSablonlar] = useState(null) // null = henüz yüklenmedi
   const [arama, setArama] = useState('')
+  const [yonet, setYonet] = useState(false) // şablon kütüphanesi modalı (oluştur/düzenle/sil)
   const aramaRef = useRef(null)
   const ac = () => {
     setAcik(a => !a)
     if (sablonlar === null) sosyalApi.sablonlar().then(setSablonlar).catch(() => setSablonlar([]))
+  }
+  // Kütüphane kapanınca listeyi tazele — orada eklenen/düzenlenen şablon seçicide hemen görünsün.
+  const yonetKapat = () => {
+    setYonet(false)
+    sosyalApi.sablonlar().then(setSablonlar).catch(() => {})
   }
   // Kutu açılınca imleç doğrudan aramaya gitsin — personel yazmaya başlayabilsin.
   useEffect(() => { if (acik) aramaRef.current?.focus() }, [acik])
@@ -615,11 +622,15 @@ function SablonSecici({ onSec }) {
       </button>
       {acik && (
         <div className="absolute bottom-full mb-1 left-0 z-10 w-80 bg-white border rounded-lg shadow-lg p-1 max-h-72 flex flex-col">
-          <div className="px-1.5 py-1 text-[11px] font-semibold text-gray-500 flex-shrink-0">
-            Otomasyon şablonları
-            {sablonlar?.length > 0 && (
-              <span className="font-normal text-gray-400"> · {suzulmus.length}/{sablonlar.length}</span>
-            )}
+          <div className="px-1.5 py-1 text-[11px] font-semibold text-gray-500 flex-shrink-0 flex items-center justify-between">
+            <span>
+              Otomasyon şablonları
+              {sablonlar?.length > 0 && (
+                <span className="font-normal text-gray-400"> · {suzulmus.length}/{sablonlar.length}</span>
+              )}
+            </span>
+            <button type="button" onClick={() => { setAcik(false); setYonet(true) }}
+              className="text-violet-600 hover:underline font-normal">⚙️ Yönet</button>
           </div>
           {/* Arama kutusu listenin ÜSTÜNDE sabit kalır (flex-shrink-0), liste kayar. */}
           {sablonlar?.length > 0 && (
@@ -635,7 +646,7 @@ function SablonSecici({ onSec }) {
           <div className="overflow-y-auto">
           {sablonlar === null && <p className="text-[11px] text-gray-400 px-2 py-1.5">Yükleniyor…</p>}
           {sablonlar?.length === 0 && (
-            <p className="text-[11px] text-gray-400 px-2 py-1.5">Şablon yok. Otomasyon panelinden ekleyebilirsiniz.</p>
+            <p className="text-[11px] text-gray-400 px-2 py-1.5">Şablon yok. "⚙️ Yönet" ile ekleyebilirsiniz.</p>
           )}
           {sablonlar?.length > 0 && suzulmus.length === 0 && (
             <p className="text-[11px] text-gray-400 px-2 py-1.5">"{arama}" ile eşleşen şablon yok.</p>
@@ -649,6 +660,17 @@ function SablonSecici({ onSec }) {
                 : <span className="text-gray-400"> · {s.urun_adi}{(s.fiyat ?? s.kaynak_fiyati) ? ` · ${Number(s.fiyat ?? s.kaynak_fiyati).toLocaleString('tr-TR')} TL` : ''}</span>}
             </button>
           ))}
+          </div>
+        </div>
+      )}
+      {/* Şablon kütüphanesi modalı — mesajlaşmadan ayrılmadan oluştur/düzenle/sil.
+          (13.08 isteği: şablon yönetimi yalnız yorum otomasyon panelindeydi.) */}
+      {yonet && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={yonetKapat}>
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[85vh] overflow-auto p-5"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold mb-3">📦 Şablon Kütüphanesi</h3>
+            <SablonKutuphanesi kapat={yonetKapat} />
           </div>
         </div>
       )}

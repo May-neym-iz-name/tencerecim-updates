@@ -6,6 +6,7 @@ import { veriSenk } from '../lib/veriSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import IlIlceSecici from '../components/IlIlceSecici'
+import SablonKutuphanesi from '../components/SablonKutuphanesi'
 import { ETIKET_BOYUTLARI, VARSAYILAN_BOYUT } from '../lib/barkod'
 import {
   BARKOD_YAZICI_KEY, BARKOD_BOYUT_KEY, KARGO_YAZICI_KEY, KARGO_OLCU_KEY,
@@ -708,6 +709,19 @@ export default function Ayarlar() {
       )}
 
       {/* Yedekleme (yalnızca yönetici) */}
+      {/* Şablon Kütüphanesi — yorum otomasyonu + mesajlaşmada kullanılan yanıt şablonları.
+          Bileşen kendi yetkisini kontrol eder (sosyal_otomasyon_yonet olmadan salt görüntüleme). */}
+      {sekme === 'meta' && (
+        <div className="bg-white rounded-xl border p-5 mb-5">
+          <h3 className="font-semibold mb-1">📦 Şablon Kütüphanesi</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            Yorum otomasyonunda ve mesajlaşmadaki "📦 Şablonlar" seçicisinde kullanılan yanıt şablonları.
+            Ürün şablonları fiyatı üründen CANLI çeker; genel şablonlar serbest metindir.
+          </p>
+          <SablonKutuphanesi />
+        </div>
+      )}
+
       {sekme === 'yedek' && (
         <div className="bg-white rounded-xl border p-5 mb-5">
           <h3 className="font-semibold mb-1">💾 Veritabanı Yedekleme</h3>
