@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
-import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink } from '../api/ipc'
+import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink, barkodApi } from '../api/ipc'
+import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoOlcuOku } from '../lib/yaziciAyarlari'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { bekleyenTalepMi, urunBekleniyorMu } from '../utils/talep'
@@ -231,8 +232,17 @@ export default function OnlineSiparisler() {
         })
       } catch { logoData = null }
       const html = kargoEtiketHtml({ ...veri, barkodSvg: svg, logo: logoData })
-      await onlineSiparisApi.etiketOnizle(html, `Kargo Etiketi ${veri.siparis_no || ''}`)
-      toast.success('Önizleme açıldı.', { id: bekle })
+      // Ayarlar'da kargo yazıcısı tanımlıysa önizlemesiz doğrudan bas (kargo etiket
+      // ölçüsünde); tanımlı değilse eski davranış — önizleme penceresi.
+      const yazici = yaziciAyarOku(KARGO_YAZICI_KEY)
+      if (yazici) {
+        const olcu = kargoOlcuOku()
+        await barkodApi.yazdir(html, yazici, { genislikMm: olcu.genislikMm, yukseklikMm: olcu.yukseklikMm })
+        toast.success('Etiket yazıcıya gönderildi.', { id: bekle })
+      } else {
+        await onlineSiparisApi.etiketOnizle(html, `Kargo Etiketi ${veri.siparis_no || ''}`)
+        toast.success('Önizleme açıldı.', { id: bekle })
+      }
     } catch (e) {
       toast.error('Etiket oluşturulamadı: ' + e.message, { id: bekle })
     }

@@ -10,6 +10,14 @@ export const KARGO_YAZICI_KEY = 'kargo_etiket_yazici'
 // Kargo sayfası bu anahtarı eskiden usePersistentState ile yazıyordu → değer JSON'dur ("1").
 export const KARGO_SAYFA_KEY = 'kargo_etiket_sayfa_basina'
 export const KARGO_OLCU_KEY = 'kargo_etiket_olcu' // "100x150" biçiminde, mm
+export const FIS_YAZICI_KEY = 'fis_yazici'
+export const FIS_GENISLIK_KEY = 'fis_genislik' // rulo genişliği mm: "80" | "58"
+
+// Fiş rulosu genişliği (mm). Yaygın iki termal rulo: 80mm (varsayılan) ve 58mm.
+export function fisGenisligiOku() {
+  const n = Number(yaziciAyarOku(FIS_GENISLIK_KEY, '80'))
+  return [58, 80].includes(n) ? n : 80
+}
 
 // Kargo termal etiket ölçüsü. UPS kuralı gereği varsayılan 100×150mm; farklı rulo
 // kullanan yazıcılar için Ayarlar'dan değiştirilir. Bozuk değerde varsayılana döner.

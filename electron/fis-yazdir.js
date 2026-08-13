@@ -32,7 +32,9 @@ function fisVerisiGetir(satisId) {
   return satis
 }
 
-function fisHtml(satis) {
+function fisHtml(satis, genislikMm = 80) {
+  // İçerik genişliği = rulo - 4mm kenar payı (80mm ruloda eski 76mm değeriyle birebir).
+  const icerikMm = Math.max(40, genislikMm - 4)
   const musteriAdi = satis.m_ad ? `${satis.m_ad} ${satis.m_soyad || ''}`.trim() : null
   const odemeEtiket = { nakit: 'Nakit', kredi_karti: 'Kredi Kartı', kart: 'Kart', havale: 'Havale' }[satis.odeme_tipi] || satis.odeme_tipi
 
@@ -71,7 +73,7 @@ function fisHtml(satis) {
 <html lang="tr"><head><meta charset="utf-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Courier New', monospace; font-size: 12px; color: #000; width: 76mm; padding: 4mm 3mm; }
+  body { font-family: 'Courier New', monospace; font-size: 12px; color: #000; width: ${icerikMm}mm; padding: 4mm 3mm; }
   .merkez { text-align: center; }
   .magaza-ad { font-size: 15px; font-weight: bold; }
   .kucuk { font-size: 10px; }
@@ -110,11 +112,12 @@ function fisHtml(satis) {
 </body></html>`
 }
 
-// satisId verilen satışın fişini yazdırır. sessiz=true ise diyalog açmadan
-// varsayılan yazıcıya basar (termal yazıcı için ileride kullanılabilir).
-async function fisYazdir(satisId, { sessiz = false } = {}) {
+// satisId verilen satışın fişini yazdırır. yazici (Ayarlar > Yazıcılar'daki fiş
+// yazıcısı) verilirse diyalog açmadan SESSİZCE ona basar; verilmezse sistem
+// yazdırma diyaloğu açılır (eski davranış). genislikMm: fiş rulosu (80|58).
+async function fisYazdir(satisId, { sessiz = false, yazici, genislikMm } = {}) {
   const satis = fisVerisiGetir(satisId)
-  const html = fisHtml(satis)
+  const html = fisHtml(satis, Number(genislikMm) || 80)
 
   const win = new BrowserWindow({
     show: false,
@@ -124,8 +127,10 @@ async function fisYazdir(satisId, { sessiz = false } = {}) {
   try {
     await htmlYukle(win, html)
     await new Promise((resolve, reject) => {
+      const secenekler = { silent: sessiz || !!yazici, printBackground: true, margins: { marginType: 'none' } }
+      if (yazici) secenekler.deviceName = yazici
       win.webContents.print(
-        { silent: sessiz, printBackground: true, margins: { marginType: 'none' } },
+        secenekler,
         (success, failureReason) => {
           if (!success && failureReason && failureReason !== 'cancelled') {
             reject(new Error(`Yazdırma hatası: ${failureReason}`))
@@ -142,5 +147,5 @@ async function fisYazdir(satisId, { sessiz = false } = {}) {
 }
 
 module.exports = {
-  'fis:yazdir': ({ satis_id, sessiz }) => fisYazdir(satis_id, { sessiz }),
+  'fis:yazdir': ({ satis_id, sessiz, yazici, genislikMm }) => fisYazdir(satis_id, { sessiz, yazici, genislikMm }),
 }

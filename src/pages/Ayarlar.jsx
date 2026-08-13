@@ -9,6 +9,7 @@ import IlIlceSecici from '../components/IlIlceSecici'
 import { ETIKET_BOYUTLARI, VARSAYILAN_BOYUT } from '../lib/barkod'
 import {
   BARKOD_YAZICI_KEY, BARKOD_BOYUT_KEY, KARGO_YAZICI_KEY, KARGO_OLCU_KEY,
+  FIS_YAZICI_KEY, FIS_GENISLIK_KEY, fisGenisligiOku,
   yaziciAyarOku, yaziciAyarYaz, kargoSayfaBasinaOku, kargoSayfaBasinaYaz,
 } from '../lib/yaziciAyarlari'
 
@@ -761,6 +762,8 @@ function YaziciAyarlariKarti({ yazicilar }) {
   const [kargoYazici, setKargoYazici] = useState(() => yaziciAyarOku(KARGO_YAZICI_KEY))
   const [kargoOlcu, setKargoOlcu] = useState(() => yaziciAyarOku(KARGO_OLCU_KEY, '100x150'))
   const [sayfaBasina, setSayfaBasina] = useState(() => kargoSayfaBasinaOku())
+  const [fisYazici, setFisYazici] = useState(() => yaziciAyarOku(FIS_YAZICI_KEY))
+  const [fisGenislik, setFisGenislik] = useState(() => String(fisGenisligiOku()))
 
   const barkodHazir = ETIKET_BOYUTLARI.some(b => b.kod === barkodBoyut)
   const kargoStandart = kargoOlcu === '100x150'
@@ -790,6 +793,27 @@ function YaziciAyarlariKarti({ yazicilar }) {
       </p>
 
       <div className="grid md:grid-cols-2 gap-5">
+        {/* Satış fişi */}
+        <div className="border rounded-lg p-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">🧾 Satış Fişi</p>
+          <label className="block text-xs text-gray-500 mb-1">Yazıcı</label>
+          <select value={fisYazici} className={secStil + ' mb-3'}
+            onChange={e => kaydetVeBildir(FIS_YAZICI_KEY, e.target.value, setFisYazici)}>
+            <option value="">Sistem yazdırma penceresi (her fişte sor)</option>
+            {yazicilar.map(y => <option key={y.ad} value={y.ad}>{y.aciklama}{y.varsayilan ? ' (varsayılan)' : ''}</option>)}
+          </select>
+          <label className="block text-xs text-gray-500 mb-1">Fiş rulosu genişliği</label>
+          <select value={fisGenislik} className={secStil}
+            onChange={e => kaydetVeBildir(FIS_GENISLIK_KEY, e.target.value, setFisGenislik)}>
+            <option value="80">80 mm (standart termal)</option>
+            <option value="58">58 mm (dar rulo)</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-2">
+            Yazıcı seçiliyse satış tamamlanınca fiş sorulmadan doğrudan basılır.
+            Satış ve Satış &amp; Kasa ekranlarındaki fiş baskıları bu tanımı kullanır.
+          </p>
+        </div>
+
         {/* Ürün barkod etiketi */}
         <div className="border rounded-lg p-4">
           <p className="text-sm font-medium text-gray-700 mb-2">🏷️ Ürün Barkod Etiketi</p>

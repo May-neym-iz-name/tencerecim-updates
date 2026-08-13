@@ -1,3 +1,5 @@
+import { FIS_YAZICI_KEY, yaziciAyarOku, fisGenisligiOku } from '../lib/yaziciAyarlari'
+
 const invoke = async (channel, ...args) => {
   if (!window.api) throw new Error('Electron API bulunamadı')
   const result = await window.api.invoke(channel, ...args)
@@ -108,7 +110,13 @@ export const excelApi = {
 }
 
 export const fisApi = {
-  yazdir: (satis_id, sessiz = false) => invoke('fis:yazdir', { satis_id, sessiz }),
+  // Yazıcı/rulo tanımı Ayarlar > 🖨️ Yazıcılar'dan okunur — çağıran sayfaların
+  // (Satış, Satış Geçmişi) hiçbirinin yazıcı bilmesi gerekmez, tek yerden yönetilir.
+  yazdir: (satis_id) => invoke('fis:yazdir', {
+    satis_id,
+    yazici: yaziciAyarOku(FIS_YAZICI_KEY) || undefined,
+    genislikMm: fisGenisligiOku(),
+  }),
 }
 
 export const barkodApi = {
