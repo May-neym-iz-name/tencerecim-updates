@@ -18,9 +18,56 @@ async function gizliPencereyle(is) {
   }
 }
 
+// wmic CSV çıktısını ayrıştırır. Kolonlar ALFABETİK sıralanır: Node,Default,Name.
+// Yazıcı adı virgül içerebilir → Name = 2. virgülden sonrasının tamamı.
+function _wmicCsvAyristir(metin) {
+  const sonuc = []
+  for (const ham of metin.split(/\r?\n/)) {
+    const satir = ham.trim()
+    if (!satir || satir.startsWith('Node,')) continue
+    const ilk = satir.indexOf(',')
+    const iki = satir.indexOf(',', ilk + 1)
+    if (ilk < 0 || iki < 0) continue
+    const varsayilan = /^true$/i.test(satir.slice(ilk + 1, iki).trim())
+    const ad = satir.slice(iki + 1).trim()
+    if (ad) sonuc.push({ ad, aciklama: ad, varsayilan })
+  }
+  return sonuc
+}
+
+// wmic yönlendirilen çıktıyı çoğu sistemde UTF-16LE (BOM'lu) yazar; düz utf8 okunursa
+// her harfin arasına \0 girer ve ayrıştırma bozulur. BOM'a bakıp doğru çöz.
+function _bufferCoz(buf) {
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return buf.slice(2).toString('utf16le')
+  if (buf.includes(0)) return buf.toString('utf16le')
+  return buf.toString('utf8')
+}
+
+// YEDEK YOL — Chromium getPrintersAsync bazı sistemlerde (özellikle Win7 + kimi termal
+// yazıcı sürücüleri, 2026-08-13 mağaza kasası) yüklü yazıcıyı görmez ve BOŞ liste döner.
+// Windows'un kendi envanterinden sor: önce wmic (Win7'de her zaman var, Win11'de
+// kaldırılmış olabilir), o yoksa Windows PowerShell WMI (5.1 her Windows'ta var).
+function _windowsYazicilari() {
+  const { execFile } = require('child_process')
+  const calistir = (cmd, args) => new Promise((resolve) => {
+    execFile(cmd, args, { windowsHide: true, encoding: 'buffer', timeout: 15000 },
+      (err, stdout) => resolve(err ? null : _bufferCoz(stdout)))
+  })
+  return calistir('wmic', ['printer', 'get', 'Name,Default', '/format:csv'])
+    .then((csv) => {
+      if (csv) return _wmicCsvAyristir(csv)
+      // wmic yok/başarısız → PowerShell WMI. CSV başlıksız üretilir (ConvertTo-Csv Win7
+      // PS 2.0'da -NoTypeInformation ister, uğraşmaya değmez; kendimiz biçimleriz).
+      return calistir('powershell.exe', ['-NoProfile', '-Command',
+        "Get-WmiObject Win32_Printer | ForEach-Object { 'PC,' + $_.Default + ',' + $_.Name }"])
+        .then((cikti) => (cikti ? _wmicCsvAyristir(cikti) : []))
+    })
+    .catch(() => [])
+}
+
 // Sistemdeki yazıcıları listeler (etiket yazıcısını seçtirmek için).
 async function yazicilariGetir() {
-  return gizliPencereyle(async (win) => {
+  const liste = await gizliPencereyle(async (win) => {
     const yazicilar = await win.webContents.getPrintersAsync()
     return yazicilar.map(y => ({
       ad: y.name,
@@ -28,6 +75,8 @@ async function yazicilariGetir() {
       varsayilan: !!y.isDefault,
     }))
   })
+  if (liste.length || process.platform !== 'win32') return liste
+  return _windowsYazicilari()
 }
 
 // Verilen HTML etiketlerini yazdırır.
@@ -91,6 +140,8 @@ async function onizlemeAc({ html, baslik }) {
 }
 
 module.exports = {
+  _wmicCsvAyristir,
+  _bufferCoz,
   'barkod:yazicilar': () => yazicilariGetir(),
   'barkod:yazdir': ({ html, yazici, genislikMm, yukseklikMm }) => barkodYazdir({ html, yazici, genislikMm, yukseklikMm }),
   'kargo-etiket:onizle': ({ html, baslik }) => onizlemeAc({ html, baslik }),
