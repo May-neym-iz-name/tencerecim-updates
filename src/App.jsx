@@ -230,7 +230,18 @@ function Kapi() {
   ) : <Giris />
 }
 
+// Zayıf donanımda (main süreci 'sistem:dusuk-guc' ile bildirir) köke .dusuk-guc sınıfı
+// eklenir; index.css bu sınıf altında animasyon/gölge/geçişleri kapatır. Donanım
+// hızlandırma kapalıyken bu efektlerin her karesi CPU'da çizildiği için donmanın
+// başlıca kaynağıdır (mağazadaki Atom D510 + Win7 kasası).
+function dusukGucModunuUygula() {
+  window.api?.invoke('sistem:dusuk-guc')
+    .then((dusuk) => { if (dusuk) document.documentElement.classList.add('dusuk-guc') })
+    .catch(() => {})
+}
+
 export default function App() {
+  useEffect(() => { dusukGucModunuUygula() }, [])
   return (
     <HataSiniri>
     <GuncellemeKapisi>

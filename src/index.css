@@ -3,7 +3,36 @@
 @tailwind utilities;
 
 * { box-sizing: border-box; }
-body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; }
+
+/* EMOJİ YEDEK FONTU — Windows 7'de renkli emoji fontu (Segoe UI Emoji) yoktur;
+   sekme adlarındaki 🏠🛒📦 gibi göstergeler kutu (□) olarak çıkar. Uygulamaya
+   gömülü siyah-beyaz Noto Emoji son çare olarak devreye girer: modern Windows'ta
+   sistem fontları emoji karakterini zaten karşıladığı için sıra ona hiç gelmez,
+   Win7'de ise kutu yerine tek renk emoji çizilir. */
+@font-face {
+  font-family: 'Noto Emoji Yedek';
+  src: url('./assets/NotoEmoji-Regular.ttf') format('truetype');
+  font-display: swap;
+}
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif,
+    'Segoe UI Emoji', 'Noto Emoji Yedek';
+  margin: 0;
+}
+
+/* DÜŞÜK GÜÇ KİPİ — main süreci zayıf donanım tespit edince köke .dusuk-guc ekler
+   (App.jsx). Donanım hızlandırma bu makinelerde kapalı olduğundan geçiş/animasyon/
+   gölge/bulanıklık her karede CPU ile çizilir; donma ve "yanıt vermiyor" uyarılarının
+   ana kaynağı budur. Hepsi kapatılır — işlev aynı kalır, süsler gider. */
+.dusuk-guc *, .dusuk-guc *::before, .dusuk-guc *::after {
+  transition: none !important;
+  animation: none !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  backdrop-filter: none !important;
+  filter: none !important;
+  scroll-behavior: auto !important;
+}
 
 /* Fiş yazdırma stili */
 @media print {

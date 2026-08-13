@@ -1,9 +1,32 @@
 const { app, BrowserWindow, ipcMain, Menu, shell, protocol } = require('electron')
 const path = require('path')
+const os = require('os')
 const { autoUpdater } = require('electron-updater')
 
 const isDev = !app.isPackaged
 let mainWindow
+
+// DÜŞÜK GÜÇ KİPİ — mağazadaki zayıf kasalar için (örn. Atom D510 + Win7 + 4GB).
+// Kıstas: Win7/Vista çekirdeği (6.x) VEYA Atom/Celeron sınıfı işlemci VEYA ≤2 çekirdek.
+// Bu kipte: donanım hızlandırma kapatılır (GMA sınıfı çiplerde GPU süreci fayda değil
+// takılma üretir; yazılımsal çizim daha kararlı), yoklama aralıkları seyreltilir ve
+// arayüz animasyonları kapatılır (renderer 'sistem:dusuk-guc' ile sorar).
+const dusukGuc = (() => {
+  const surum = os.release() // Win7 = 6.1
+  const win7Ailesi = process.platform === 'win32' && /^6\./.test(surum)
+  const islemci = os.cpus()[0]?.model || ''
+  const zayifIslemci = /\b(Atom|Celeron)\b/i.test(islemci)
+  return win7Ailesi || zayifIslemci || os.cpus().length <= 2
+})()
+// app hazır olmadan çağrılmalı — sonrası etkisizdir.
+if (dusukGuc) {
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-smooth-scrolling')
+}
+// Yoklama aralığı çarpanı: zayıf makinede arka plan turları 3 kat seyrek çalışır.
+// (5 dk'lık mutabakat turu + idempotent çekim sayesinde sipariş kaçmaz, sadece gecikir.)
+const YOKLAMA_CARPANI = dusukGuc ? 3 : 1
+ipcMain.handle('sistem:dusuk-guc', () => dusukGuc)
 
 // SOSYAL MEDYA GÖRSEL PROTOKOLÜ
 // <img src="sosyal-gorsel://img/?t=gonderi&b=kucuk&id=..."> ile görseller doğrudan
@@ -247,8 +270,8 @@ function ikasSiparisSenkBaslat() {
 // döner — yani ilk sipariş en geç 30 sn içinde yakalanır, ondan sonraki her sipariş
 // yine 5 sn'de. Kaçırma riski yok: 5 dk'lık mutabakat turu (ikasSiparisSenkBaslat)
 // arkada duruyor ve _pullSiparisler idempotent.
-const IKAS_OLAY_ARALIGI_MS = 5 * 1000   // taban: olay akarken
-const IKAS_OLAY_TAVAN_MS = 30 * 1000    // tavan: sessizlikte
+const IKAS_OLAY_ARALIGI_MS = 5 * 1000 * YOKLAMA_CARPANI   // taban: olay akarken
+const IKAS_OLAY_TAVAN_MS = 30 * 1000 * YOKLAMA_CARPANI    // tavan: sessizlikte
 const IKAS_OLAY_IMLECI = 'ikas_bulut_imlec'
 function ikasOlayYoklayiciBaslat() {
   const { _pullSiparisler } = require('./ikas')
@@ -295,7 +318,7 @@ function ikasOlayYoklayiciBaslat() {
 // bilgisini UPS'ten öğrenip yerele yazar (ikas'ın kendi UPS entegrasyonunun yaptığının aynısı,
 // ama kontrol bizde). 10 dk: bildirim merkezi kargo olaylarını taşıdığından tazelik önemli
 // (2026-07-28 kararı, eskiden 30 dk); UPS yükü artarsa tek satırla geri alınır.
-const UPS_TAKIP_ARALIGI_MS = 10 * 60 * 1000
+const UPS_TAKIP_ARALIGI_MS = 10 * 60 * 1000 * YOKLAMA_CARPANI
 function upsTakipBaslat() {
   const { _takipleriYokla } = require('./ups/takip')
   let calisiyor = false // tur uzun sürerse üst üste binmesin
@@ -327,7 +350,7 @@ function upsTakipBaslat() {
 // Sosyal medya (Facebook/Instagram) yorum & DM polling. ikas deseniyle aynı:
 // masaüstü uygulama public webhook alamadığı için sık çekme. Kurulu değilse veya
 // otomatik senkron kapalıysa atlanır. Çekilen öğeler yerel önbelleğe idempotent yazılır.
-const META_SENK_ARALIGI_MS = 120 * 1000
+const META_SENK_ARALIGI_MS = 120 * 1000 * YOKLAMA_CARPANI
 function metaSosyalSenkBaslat() {
   const { _tumunuCek } = require('./meta')
   const { _ayarlariGetir } = require('./db/meta-ayarlar')
