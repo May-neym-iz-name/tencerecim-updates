@@ -231,15 +231,17 @@ export default function OnlineSiparisler() {
           fr.readAsDataURL(blob)
         })
       } catch { logoData = null }
-      const html = kargoEtiketHtml({ ...veri, barkodSvg: svg, logo: logoData })
-      // Ayarlar'da kargo yazıcısı tanımlıysa önizlemesiz doğrudan bas (kargo etiket
-      // ölçüsünde); tanımlı değilse eski davranış — önizleme penceresi.
+      // DÜZEN OTOMATİK SEÇİLİR: Ayarlar'da kargo yazıcısı tanımlıysa termal düzen
+      // (dikey barkod, Ayarlar'daki ölçüde — 100×135 vb.) üretilip önizlemesiz doğrudan
+      // basılır; tanımlı değilse eski A4 düzeni önizleme penceresinde açılır.
       const yazici = yaziciAyarOku(KARGO_YAZICI_KEY)
       if (yazici) {
         const olcu = kargoOlcuOku()
+        const html = kargoEtiketHtml({ ...veri, barkodSvg: svg, logo: logoData }, { termal: true, ...olcu })
         await barkodApi.yazdir(html, yazici, { genislikMm: olcu.genislikMm, yukseklikMm: olcu.yukseklikMm })
         toast.success('Etiket yazıcıya gönderildi.', { id: bekle })
       } else {
+        const html = kargoEtiketHtml({ ...veri, barkodSvg: svg, logo: logoData })
         await onlineSiparisApi.etiketOnizle(html, `Kargo Etiketi ${veri.siparis_no || ''}`)
         toast.success('Önizleme açıldı.', { id: bekle })
       }

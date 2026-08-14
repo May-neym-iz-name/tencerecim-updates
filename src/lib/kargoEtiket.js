@@ -18,7 +18,12 @@ function satir(label, deger) {
   return `<div class="ln"><span class="lbl">${esc(label)}</span> <span class="val">${esc(deger)}</span></div>`
 }
 
-export function kargoEtiketHtml(d) {
+// secenekler.termal true ise 100×135mm sınıfı termal etikete sıkıştırılmış DİKEY
+// barkodlu düzen üretilir (genislikMm/yukseklikMm ile ölçü değişir); false/boşsa
+// eski A4 düzeni (önizleme + A4 yazıcı) aynen korunur. Çağıran (OnlineSiparisler)
+// kargo yazıcısı tanımlı mı diye bakıp otomatik seçer.
+export function kargoEtiketHtml(d, secenekler = {}) {
+  if (secenekler.termal) return termalEtiketHtml(d, secenekler)
   const adres = [d.teslimat_adres, [d.teslimat_ilce, d.teslimat_il].filter(Boolean).join(' / ')]
     .filter(Boolean).join('\n')
   const firma = d.kargo_firma || 'UPS'
@@ -123,5 +128,88 @@ export function kargoEtiketHtml(d) {
     <div><span>KDV</span><span>${tl(kdvToplam)}</span></div>
     <div class="net"><span>Net Toplam</span><span>${tl(netToplam)}</span></div>
   </div>
+</body></html>`
+}
+
+// ── TERMAL DÜZEN ─────────────────────────────────────────────────────────────
+// 100×135mm (varsayılan) dikey barkodlu kompakt etiket. Yer stratejisi:
+// barkod 90° DÖNDÜRÜLÜP sağ kenara dikilir — böylece UPS'in "min 2×12cm" barkod
+// kuralı 135mm boyda rahatça sağlanır ve sol taraftaki ~72mm tamamen yazıya kalır.
+// Görsel/tablo yok: kalemler "2x Ad · SKU" satırlarına iner, ilk 8 kalem yazılır.
+function termalEtiketHtml(d, { genislikMm = 100, yukseklikMm = 135 } = {}) {
+  const G = Number(genislikMm) || 100
+  const Y = Number(yukseklikMm) || 135
+  const adres = [d.teslimat_adres, [d.teslimat_ilce, d.teslimat_il].filter(Boolean).join(' / ')]
+    .filter(Boolean).join(' ')
+  const firma = d.kargo_firma || 'UPS'
+
+  let netToplam = 0
+  for (const k of (d.kalemler || [])) netToplam += (Number(k.birim_fiyat) || 0) * (Number(k.miktar) || 1)
+
+  const KALEM_SINIRI = 8
+  const kalemList = (d.kalemler || [])
+  const kalemler = kalemList.slice(0, KALEM_SINIRI).map(k =>
+    `<div class="kalem"><b>${k.miktar}x</b> ${esc(k.ad)}${k.sku ? ` <span class="sku">· ${esc(k.sku)}</span>` : ''}</div>`
+  ).join('') + (kalemList.length > KALEM_SINIRI
+    ? `<div class="kalem sku">… +${kalemList.length - KALEM_SINIRI} kalem daha</div>` : '')
+
+  // Dikey barkod şeridi: sağda BARKOD_EN genişliğinde kolon; içerik önce -BARKOD_EN
+  // kadar yukarı itilip 90° döndürülür (transform sağdan sola uygulanır) → yatay
+  // üretilen CODE128 SVG'si dikey şerit olarak kenara oturur.
+  const BARKOD_EN = 24  // mm — şerit genişliği (barkod yüksekliği + takip no satırı)
+  const BARKOD_BOY = Y - 8 // mm — kenar payları sonrası kullanılabilir boy
+  const barkodSerit = (d.takip_no && d.barkodSvg) ? `
+    <div class="dikey-kutu">
+      <div class="dikey-ic">
+        <div class="barkod-svg">${d.barkodSvg}</div>
+        <div class="takip-no">${esc(d.takip_no)} · ${esc(firma)} Kargo</div>
+      </div>
+    </div>` : ''
+
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
+<title>Kargo Etiketi ${esc(d.siparis_no || '')}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: ${G}mm ${Y}mm; margin: 0; }
+  html, body { width: ${G}mm; height: ${Y}mm; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #000; font-size: 8.5pt;
+         padding: 3mm ${BARKOD_EN + 4}mm 3mm 3mm; position: relative; overflow: hidden; }
+  .baslik { font-size: 10.5pt; font-weight: 800; letter-spacing: .3px; }
+  .firma-ust { font-size: 8pt; margin-bottom: 1.5mm; border-bottom: 1px solid #000; padding-bottom: 1mm; }
+  .ln { margin: .6mm 0; line-height: 1.25; }
+  .lbl { color: #333; }
+  .val { font-weight: 700; }
+  .alici { font-size: 10pt; font-weight: 800; margin-top: 1mm; }
+  .adres { font-size: 9pt; font-weight: 600; line-height: 1.3; }
+  .bolum { border-top: 1px dashed #000; margin-top: 1.5mm; padding-top: 1mm; }
+  .kalem { font-size: 7.5pt; line-height: 1.3; }
+  .kalem .sku { color: #444; }
+  .toplam { font-weight: 800; font-size: 9pt; margin-top: 1mm; }
+  .dikey-kutu { position: absolute; top: 4mm; right: 1mm; width: ${BARKOD_EN}mm; height: ${BARKOD_BOY}mm; }
+  .dikey-ic { width: ${BARKOD_BOY}mm; height: ${BARKOD_EN}mm;
+              transform: rotate(90deg) translateY(-${BARKOD_EN}mm); transform-origin: top left; }
+  .barkod-svg { line-height: 0; }
+  .barkod-svg svg { width: ${BARKOD_BOY - 2}mm; height: ${BARKOD_EN - 6}mm; }
+  .takip-no { font-family: 'Consolas', monospace; font-weight: 700; font-size: 8pt;
+              letter-spacing: 1px; text-align: center; }
+</style></head>
+<body>
+  <div class="baslik">TENCERECİM KARGO ETİKETİ</div>
+  <div class="firma-ust">${esc(firma)} Kargo${d.siparis_no ? ` · Sipariş: ${esc(d.siparis_no)}` : ''}</div>
+  <div class="alici">${esc(d.musteri_ad || '')}</div>
+  ${d.musteri_telefon ? `<div class="ln"><span class="val">${esc(d.musteri_telefon)}</span></div>` : ''}
+  <div class="adres">${esc(adres)}</div>
+  <div class="bolum">
+    ${d.gonderen ? `<div class="ln"><span class="lbl">Gönderen:</span> <span class="val">${esc(d.gonderen)}</span></div>` : ''}
+    ${d.satisKanali ? `<div class="ln"><span class="lbl">Kanal:</span> ${esc(d.satisKanali)}</div>` : ''}
+    ${d.siparis_tarihi ? `<div class="ln"><span class="lbl">Tarih:</span> ${esc(d.siparis_tarihi)}</div>` : ''}
+    ${d.odeme_yontemi ? `<div class="ln"><span class="lbl">Ödeme:</span> ${esc(d.odeme_yontemi)}</div>` : ''}
+    ${d.kargoKurali ? `<div class="ln"><span class="lbl">${esc(d.kargoKurali)}:</span> <span class="val">${tl(d.kargoUcreti)}</span></div>` : ''}
+  </div>
+  <div class="bolum">
+    ${kalemler}
+    <div class="toplam">Net Toplam: ${tl(netToplam)}</div>
+  </div>
+  ${barkodSerit}
 </body></html>`
 }

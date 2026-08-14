@@ -780,7 +780,8 @@ function YaziciAyarlariKarti({ yazicilar }) {
   const [fisGenislik, setFisGenislik] = useState(() => String(fisGenisligiOku()))
 
   const barkodHazir = ETIKET_BOYUTLARI.some(b => b.kod === barkodBoyut)
-  const kargoStandart = kargoOlcu === '100x150'
+  const KARGO_HAZIR_OLCULER = ['100x150', '100x135']
+  const kargoHazir = KARGO_HAZIR_OLCULER.includes(kargoOlcu)
 
   // "GENxYUK" metnini tek eksende günceller ("45x20", eksen 0 → genişlik).
   function olcuDegistir(mevcut, eksen, deger, yaz) {
@@ -868,15 +869,16 @@ function YaziciAyarlariKarti({ yazicilar }) {
             {yazicilar.map(y => <option key={y.ad} value={y.ad}>{y.aciklama}{y.varsayilan ? ' (varsayılan)' : ''}</option>)}
           </select>
           <label className="block text-xs text-gray-500 mb-1">Etiket ölçüsü (termal düzen)</label>
-          <select value={kargoStandart ? '100x150' : 'ozel'} className={secStil + ' mb-2'}
+          <select value={kargoHazir ? kargoOlcu : 'ozel'} className={secStil + ' mb-2'}
             onChange={e => {
               const v = e.target.value
               kaydetVeBildir(KARGO_OLCU_KEY, v === 'ozel' ? '100x180' : v, setKargoOlcu)
             }}>
             <option value="100x150">100 × 150 mm (UPS standart)</option>
+            <option value="100x135">100 × 135 mm (kısa rulo)</option>
             <option value="ozel">Özel ölçü…</option>
           </select>
-          {!kargoStandart && (
+          {!kargoHazir && (
             <div className="flex items-center gap-2 text-sm mb-2">
               <input type="number" min={50} max={300} value={kargoOlcu.split('x')[0] || ''} className={mmStil}
                 onChange={e => olcuDegistir(kargoOlcu, 0, e.target.value, v => kaydetVeBildir(KARGO_OLCU_KEY, v, setKargoOlcu))} />
