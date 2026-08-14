@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink, barkodApi } from '../api/ipc'
 import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoOlcuOku } from '../lib/yaziciAyarlari'
+import { ayarOku } from '../ayarlar/AyarlarContext'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { bekleyenTalepMi, urunBekleniyorMu } from '../utils/talep'
@@ -220,6 +221,8 @@ export default function OnlineSiparisler() {
     const bekle = toast.loading('Kargo etiketi hazırlanıyor…')
     try {
       const veri = await onlineSiparisApi.etiketVeri(id)
+      // Ayarlar > Yazıcılar'daki "gönderen telefonu" doluysa otomatik bulunanı ezer.
+      veri.gonderen_telefon = ayarOku('etiket_gonderen_telefon') || veri.gonderen_telefon
       let svg = null
       try { if (veri.takip_no) svg = barkodSvg(veri.takip_no) } catch { svg = null }
       let logoData = null

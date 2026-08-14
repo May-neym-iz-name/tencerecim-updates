@@ -113,6 +113,7 @@ export function kargoEtiketHtml(d, secenekler = {}) {
       ${satir('Takip Numarası:', d.takip_no)}
       ${satir('Kargo Kural İsmi:', d.kargoKurali)}
       ${satir('Gönderen:', d.gonderen)}
+      ${satir('Gönderen Telefon:', d.gonderen_telefon)}
       ${satir('Satış Kanalı:', d.satisKanali)}
       ${satir('Alıcı Ad-Soyad:', d.musteri_ad)}
       ${satir('Alıcı Telefon:', d.musteri_telefon)}
@@ -200,7 +201,7 @@ function termalEtiketHtml(d, { genislikMm = 100, yukseklikMm = 135 } = {}) {
   ${d.musteri_telefon ? `<div class="ln"><span class="val">${esc(d.musteri_telefon)}</span></div>` : ''}
   <div class="adres">${esc(adres)}</div>
   <div class="bolum">
-    ${d.gonderen ? `<div class="ln"><span class="lbl">Gönderen:</span> <span class="val">${esc(d.gonderen)}</span></div>` : ''}
+    ${d.gonderen ? `<div class="ln"><span class="lbl">Gönderen:</span> <span class="val">${esc(d.gonderen)}${d.gonderen_telefon ? ` · ${esc(d.gonderen_telefon)}` : ''}</span></div>` : ''}
     ${d.satisKanali ? `<div class="ln"><span class="lbl">Kanal:</span> ${esc(d.satisKanali)}</div>` : ''}
     ${d.siparis_tarihi ? `<div class="ln"><span class="lbl">Tarih:</span> ${esc(d.siparis_tarihi)}</div>` : ''}
     ${d.odeme_yontemi ? `<div class="ln"><span class="lbl">Ödeme:</span> ${esc(d.odeme_yontemi)}</div>` : ''}

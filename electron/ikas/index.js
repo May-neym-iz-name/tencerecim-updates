@@ -655,7 +655,11 @@ module.exports = {
       try { barkodlar = JSON.parse(takip.barkod_png) } catch { barkodlar = [] }
       if (!Array.isArray(barkodlar)) barkodlar = []
     }
-    const gon = db.prepare('SELECT ad, yetkili FROM lokasyon_gonderici WHERE ad IS NOT NULL LIMIT 1').get()
+    const gon = db.prepare('SELECT ad, yetkili, telefon, cep FROM lokasyon_gonderici WHERE ad IS NOT NULL LIMIT 1').get()
+    // Gönderen telefonu: mağaza gönderici kaydından; yoksa UPS ayarlarındaki genel gönderici.
+    const upsTel = db.prepare(
+      "SELECT anahtar, deger FROM ups_ayarlar WHERE anahtar IN ('gonderici_telefon','gonderici_cep')"
+    ).all().reduce((h, r) => { h[r.anahtar] = r.deger; return h }, {})
 
     let satisKanali = null, kargoKurali = null, kargoUcreti = null
     const resimMap = {}
@@ -700,6 +704,7 @@ module.exports = {
       kargoKurali,
       kargoUcreti,
       gonderen: (gon?.ad || a.store_name || 'Tencerecim'),
+      gonderen_telefon: gon?.cep || gon?.telefon || upsTel.gonderici_cep || upsTel.gonderici_telefon || null,
       kalemler: kalemler.map(k => ({
         ad: k.urun_adi || '',
         marka: k.urun_marka || '',

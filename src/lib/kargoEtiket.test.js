@@ -8,6 +8,7 @@ const veri = {
   teslimat_adres: 'Çınar Mah. No:5', teslimat_ilce: 'Gölcük', teslimat_il: 'Kocaeli',
   siparis_tarihi: '13.08.2026 10:00', odeme_yontemi: 'Kredi Kartı',
   barkodSvg: '<svg viewBox="0 0 200 32"></svg>',
+  gonderen: 'Tencerecim Store / Pendik', gonderen_telefon: '0 545 151 60 77',
   kalemler: Array.from({ length: 10 }, (_, i) => ({ ad: `Ürün ${i + 1}`, miktar: 2, birim_fiyat: 100, sku: `TNC.X.${i}` })),
 }
 
@@ -26,6 +27,11 @@ describe('kargoEtiketHtml', () => {
     expect(h).toContain('dikey-kutu')
     expect(h).toContain('1Z999')
     expect(h).toContain('Ayşe Yılmaz')
+  })
+
+  test('gönderen telefonu iki düzende de basılır', () => {
+    expect(kargoEtiketHtml(veri)).toContain('0 545 151 60 77')
+    expect(kargoEtiketHtml(veri, { termal: true })).toContain('0 545 151 60 77')
   })
 
   test('termal düzende kalem sınırı: 8 yazılır, kalanı özetlenir', () => {

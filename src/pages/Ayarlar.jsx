@@ -771,6 +771,16 @@ export default function Ayarlar() {
 // Cihaza özel (localStorage): her PC'nin yazıcısı ve etiket rulosu farklıdır, buluta
 // senkronlanmaz. Barkod Bas penceresi ve Kargo sayfası baskı anında buradan okur.
 function YaziciAyarlariKarti({ yazicilar }) {
+  // Gönderen telefonu CİHAZA ÖZEL DEĞİL: tencerecim_ayarlar'da tutulur ve buluta
+  // senkronlanır — bir PC'de değişince (senkron sonrası) hepsinde aynı basılır.
+  const { ayarlar, kaydet: ayarKaydet } = useAyarlar()
+  const [gonderenTel, setGonderenTel] = useState(ayarlar.etiket_gonderen_telefon || '')
+  function gonderenTelKaydet() {
+    if ((ayarlar.etiket_gonderen_telefon || '') === gonderenTel.trim()) return
+    ayarKaydet('etiket_gonderen_telefon', gonderenTel.trim())
+    bulutaYukle().catch(() => {})
+    toast.success('Gönderen telefonu kaydedildi')
+  }
   const [barkodYazici, setBarkodYazici] = useState(() => yaziciAyarOku(BARKOD_YAZICI_KEY))
   const [barkodBoyut, setBarkodBoyut] = useState(() => yaziciAyarOku(BARKOD_BOYUT_KEY, VARSAYILAN_BOYUT))
   const [kargoYazici, setKargoYazici] = useState(() => yaziciAyarOku(KARGO_YAZICI_KEY))
@@ -895,9 +905,16 @@ function YaziciAyarlariKarti({ yazicilar }) {
             <option value={2}>2 etiket / sayfa · A4</option>
             <option value={4}>4 etiket / sayfa · A4</option>
           </select>
+          <label className="block text-xs text-gray-500 mb-1 mt-3">Etikette basılacak gönderen telefonu</label>
+          <input value={gonderenTel} onChange={e => setGonderenTel(e.target.value)}
+            onBlur={gonderenTelKaydet}
+            onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+            placeholder="Boş = mağaza gönderici kaydından otomatik"
+            className="border rounded px-2 py-1.5 text-sm w-full" />
           <p className="text-xs text-gray-400 mt-2">
             Yazıcı seçiliyse etiketler önizlemesiz doğrudan basılır. İade etiketi her zaman
             önizlemede açılır (WhatsApp'a sürüklemek için). UPS kuralı: barkod min. 2×12cm, 200dpi.
+            Gönderen telefonu tüm bilgisayarlarda ortaktır (bulut senkronlu).
           </p>
         </div>
       </div>
