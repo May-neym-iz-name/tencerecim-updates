@@ -47,3 +47,6 @@ _*.js
 
 # GENEL KURAL: Uygulama kodu/dokumani DISINDA hicbir sey (sirket verisi,
 # fatura, fiyat, musteri bilgisi, gorsel calisma dosyasi) bu repoya eklenmez.
+
+# UPS API dokumanlari (vendor PDF/XLS) — repoya girmez, yerel kalir
+UPS KARGO ENTEGRASYONU/
