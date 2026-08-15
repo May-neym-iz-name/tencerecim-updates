@@ -31,6 +31,19 @@ URUN-ESLESTIRME/
 KATALOG*.pdf
 *KATALOG*.pdf
 
+# Sirket verileri (fatura, sozlesme, komisyon, fiyat listeleri) — REPO PUBLIC, ASLA girmez
+FATURALAR/
+HEPSIBURADA/
+TRENDYOL/
+MAL KABUL/
+
+# Taranmis belge gorselleri (irsaliye vb. kaynak belgeler) — kok dizindeki jpeg/jpg
+/*.jpeg
+/*.jpg
+
 # Yerel calisma/gecici dosyalar
 _*.js
 *.output
+
+# GENEL KURAL: Uygulama kodu/dokumani DISINDA hicbir sey (sirket verisi,
+# fatura, fiyat, musteri bilgisi, gorsel calisma dosyasi) bu repoya eklenmez.
