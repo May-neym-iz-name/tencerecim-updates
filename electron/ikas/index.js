@@ -621,9 +621,80 @@ function kalemIkasLokId(db, kalem) {
   return kalem.ikas_lokasyon_id || null
 }
 
+// Web sitesi (storefront) ürün linki: https://tencerecim.store/<slug>.
+// Ara ek YOK — ikas storefront ürünü kökten servis ediyor (canlı doğrulandı).
+// Domain sabit çünkü tek mağazamız var; ikas Admin API storefront domain'ini
+// (listStorefront.routings.domain) NULL döndürüyor, yani oradan okunamıyor.
+const WEB_SITESI = 'https://tencerecim.store'
+
+/**
+ * ikas'taki tüm ürünlerin metaData.slug'ını çekip yerel urunler.web_link'e yazar.
+ * Eşleştirme SKU ile: uygulamadaki 2823 aktif ürünün tamamında SKU var ama yalnız 58'inde
+ * ikas_urun_id dolu — ikas_urun_id'ye bağlanmak ürünlerin neredeyse tamamını linksiz bırakırdı.
+ * Ad eşleştirmesi bilinçli olarak KULLANILMAZ (kulp/varyant farkları yanlış link üretir).
+ * @returns {{yazilan: number, ikasToplam: number, ikasSku: number, eslesen: number,
+ *            sitedeYokSayi: number, slugsuz: Array<string>, skusuz: Array<string>}}
+ */
+async function webLinkleriCek() {
+  const db = getDb()
+  const slugBySku = new Map()
+  const slugsuz = []   // ikas'ta sayfa adresi (slug) tanımsız ürünler
+  const skusuz = []    // ikas'ta hiçbir varyantında stok kodu olmayan ürünler — eşleşemezler
+  let ikasToplam = 0
+  for (let page = 1; page <= 100; page++) {
+    const r = await graphql(
+      `query P($page:Int!){ listProduct(pagination:{page:$page,limit:100}) {
+        count data { name metaData { slug } variants { sku } } } }`,
+      { page },
+    )
+    const veri = r?.listProduct?.data || []
+    ikasToplam = r?.listProduct?.count ?? ikasToplam
+    if (!veri.length) break
+    for (const u of veri) {
+      const slug = u?.metaData?.slug
+      if (!slug) { slugsuz.push(u.name); continue }
+      const skular = (u.variants || []).map(v => v.sku).filter(Boolean)
+      if (!skular.length) { skusuz.push(u.name); continue }
+      for (const sku of skular) slugBySku.set(String(sku).trim(), slug)
+    }
+    if (veri.length < 100) break
+  }
+
+  const yerel = db.prepare("SELECT id, sku, ad, web_link FROM urunler WHERE aktif=1 AND sku IS NOT NULL AND sku != ''").all()
+  const yaz = db.prepare('UPDATE urunler SET web_link = ? WHERE id = ?')
+  // "Eşleşmeyen" ürünlerin ÇOĞU hata değil: katalogda 2800+ ürün var, sitede yalnız ~400'ü
+  // satılıyor. Bu yüzden sayı ayrı raporlanır ama uyarı diliyle sunulmaz; asıl uyarı,
+  // ikas'ta OLUP stok kodu/slug'ı eksik olan ürünlerdir (skusuz/slugsuz) — onlar düzeltilebilir.
+  const sitedeYok = []
+  let yazilan = 0
+  const tx = db.transaction(() => {
+    for (const u of yerel) {
+      const slug = slugBySku.get(String(u.sku).trim())
+      if (!slug) { sitedeYok.push(`${u.sku} — ${u.ad}`); continue }
+      const link = `${WEB_SITESI}/${slug}`
+      if (u.web_link === link) continue // değişmediyse yazma (senkron kuyruğunu şişirmesin)
+      yaz.run(link, u.id)
+      yazilan++
+    }
+  })
+  tx()
+  return { yazilan, ikasToplam, ikasSku: slugBySku.size, eslesen: yerel.length - sitedeYok.length,
+    sitedeYokSayi: sitedeYok.length, slugsuz, skusuz }
+}
+
 // --- IPC handler'ları -------------------------------------------------------
 
 module.exports = {
+  _webLinkleriCek: webLinkleriCek,
+  _WEB_SITESI: WEB_SITESI,
+
+  // Ürünlerin web sitesi linklerini ikas'tan toplu doldurur. Eşleşmeyenleri SESSİZCE
+  // geçmez — arayüz listeyi gösterir, hangi ürünün linksiz kaldığı görünür olsun.
+  'ikas:web-link-cek': async () => {
+    require('../yetki')._yetkiKontrol('urun_duzenle')
+    return webLinkleriCek()
+  },
+
   // Kalem fiyat seçimi — sırası indirimli siparişlerde kritik, testle sabitlendi.
   _birimFiyatHesapla: birimFiyatHesapla,
   // satislar.js / stok.js arka plan push için kullanır (main.js _ önekini atlar).

@@ -79,4 +79,41 @@ function mesajOlustur({ sablonlar, selamlama = SELAMLAMA }) {
   return { metin, karakter: metin.length, asildi: metin.length > MAKS_KARAKTER }
 }
 
-module.exports = { fiyatYaz, sablonBloku, mesajOlustur, MAKS_KARAKTER, SELAMLAMA }
+/**
+ * GÖNDERİYE ÖZEL mesaj. mesajOlustur'dan (şablon yolu) üç noktada ayrılır:
+ *  1. Açıklama gönderiye aittir, ürüne değil → bir kez yazılır. Şablon yolunda her ürün
+ *     kendi açıklamasını taşıdığı için 3 ürünlü gönderide 3 açıklama gidiyordu.
+ *  2. Ürünün kendi `aciklama` alanı BİLEREK okunmaz — çağıran yanlışlıkla tam ürün satırı
+ *     geçirse bile açıklama sızmaz (yukarıdaki 1. maddenin garantisi).
+ *  3. WhatsApp gönderi başına tek → tekilleştirme mantığı gerekmez.
+ * Şablon yolu bozulmadan durur: mesajlaşmadaki `sosyal:sablonMetin` onu kullanmaya devam eder.
+ *
+ * @param {{aciklama?: string, urunler?: Array<{ad: string, fiyat?: number|null, web_link?: string}>,
+ *          whatsapp?: string, selamlama?: string}} girdi
+ * @returns {{metin: string, karakter: number, asildi: boolean}}
+ */
+function gonderiMesajiOlustur({ aciklama, urunler, whatsapp, selamlama = SELAMLAMA } = {}) {
+  const liste = (urunler || []).filter(u => u && u.ad)
+  const metinAciklama = (aciklama || '').trim()
+  if (!metinAciklama && !liste.length) return { metin: '', karakter: 0, asildi: false }
+
+  // Ürünsüz gönderi = duyuru (mağaza tanıtımı, konum bilgisi). Metin AYNEN gider —
+  // eski 'genel' şablon yolunun davranışı. Kullanıcının metni zaten kendi selamlamasıyla
+  // başlıyor olabilir; başına "Merhaba," eklemek çift selamlama üretirdi.
+  const parcalar = liste.length ? [selamlama, ''] : []
+  if (metinAciklama) parcalar.push(metinAciklama, '')
+  for (const u of liste) {
+    const satirlar = [u.ad]
+    const f = fiyatYaz(u.fiyat)
+    if (f) satirlar.push(`${ETIKET_FIYAT} ${f}`)
+    if (u.web_link) satirlar.push(`${ETIKET_LINK} ${u.web_link}`)
+    parcalar.push(satirlar.join('\n'), '')
+  }
+  const wp = (whatsapp || '').trim()
+  if (wp) parcalar.push(`${ETIKET_WHATSAPP} ${wp}`)
+
+  const metin = parcalar.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+  return { metin, karakter: metin.length, asildi: metin.length > MAKS_KARAKTER }
+}
+
+module.exports = { fiyatYaz, sablonBloku, mesajOlustur, gonderiMesajiOlustur, MAKS_KARAKTER, SELAMLAMA }

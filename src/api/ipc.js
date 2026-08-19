@@ -161,6 +161,8 @@ export const ikasApi = {
   ayarKaydet: (veri) => invoke('ikas-ayar:kaydet', veri),
   test: () => invoke('ikas:test'),
   lokasyonEsle: () => invoke('ikas:lokasyon-esle'),
+  // Ürünlerin web sitesi linklerini ikas slug'larından SKU eşleşmesiyle toplu doldurur.
+  webLinkCek: () => invoke('ikas:web-link-cek'),
   stokGonder: () => invoke('ikas:stok-gonder'),
   siparisCek: () => invoke('ikas:siparis-cek'),
   siparisGecmisCek: () => invoke('ikas:siparis-gecmis-cek'),
@@ -225,6 +227,8 @@ export const sosyalApi = {
   otomasyonGetir: (v) => invoke('sosyal:otomasyonGetir', v),
   otomasyonKaydet: (v) => invoke('sosyal:otomasyonKaydet', v),
   otomasyonAdaySayisi: (v) => invoke('sosyal:otomasyonAdaySayisi', v),
+  // Gönderiye özel mesajın canlı önizlemesi (kaydetmeden). Gönderimle aynı üreticiyi kullanır.
+  gonderiOnizleme: (v) => invoke('sosyal:gonderiOnizleme', v),
 }
 
 export const onlineSiparisApi = {

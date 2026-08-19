@@ -2,8 +2,8 @@
 // Ayrı dosya: meta/index.js zaten çekme/gönderme ile dolu; bu iş kendi güvenlik kurallarına sahip.
 // Polling turunun SONUNDA çalışır (yorumlar çekildikten sonra).
 const { getDb } = require('../db/database')
-const { _adaylar, _sablonlariCoz } = require('../db/sosyal-otomasyon')
-const { mesajOlustur } = require('./sablon-mesaj')
+const { _adaylar, _sablonlariCoz, _gonderiUrunleriCoz } = require('../db/sosyal-otomasyon')
+const { mesajOlustur, gonderiMesajiOlustur } = require('./sablon-mesaj')
 const client = require('./client')
 
 // Meta özel yanıt sınırı: saatte 750 (IG hesabı başına). 500'de tutuyoruz çünkü her yorum
@@ -38,6 +38,23 @@ async function _acikYanit(platform, yorumHariciId, metin) {
   return client.post(`${yorumHariciId}/${yol}`, { message: metin })
 }
 
+/**
+ * Bir otomasyonun DM metni. İKİ MODEL bir arada yaşar:
+ *  - YENİ (gönderiye özel): gönderinin kendi açıklaması + seçilmiş ürünler. Açıklama tek.
+ *  - ESKİ (şablon bağlı): geriye dönük uyum. Gönderi henüz yeni modele taşınmadıysa çalışır.
+ * Seçim ölçütü ürün/açıklama VARLIĞI — bayrak sütunu yok, tutulması gereken ikinci bir
+ * durum olmasın. Yeni modele geçen gönderide şablon bağı zaten kaldırılıyor.
+ * @returns {{metin: string, asildi: boolean}}
+ */
+function _otomasyonMetni(db, otomasyonId) {
+  const o = db.prepare('SELECT ozel_aciklama, whatsapp FROM sosyal_otomasyonlar WHERE id = ?').get(otomasyonId)
+  const urunler = _gonderiUrunleriCoz(db, otomasyonId)
+  if (urunler.length || (o?.ozel_aciklama || '').trim()) {
+    return gonderiMesajiOlustur({ aciklama: o.ozel_aciklama, urunler, whatsapp: o.whatsapp })
+  }
+  return mesajOlustur({ sablonlar: _sablonlariCoz(db, otomasyonId) })
+}
+
 async function otomasyonCalistir() {
   const db = getDb()
   const sonuc = { islenen: 0, dm: 0, yanit: 0, hatalar: [], sinirDoldu: false }
@@ -62,8 +79,7 @@ async function otomasyonCalistir() {
     if (!_kotaVar()) { sonuc.sinirDoldu = true; break }
 
     if (!metinOnbellek.has(a.otomasyon_id)) {
-      const sablonlar = _sablonlariCoz(db, a.otomasyon_id)
-      const { metin, asildi } = mesajOlustur({ sablonlar })
+      const { metin, asildi } = _otomasyonMetni(db, a.otomasyon_id)
       // Şablon yoksa veya mesaj 1000'i aşıyorsa GÖNDERME — kesik/boş mesaj müşteriye gitmesin.
       metinOnbellek.set(a.otomasyon_id, (!metin || asildi) ? null : metin)
       if (asildi) sonuc.hatalar.push(`Otomasyon ${a.otomasyon_id}: mesaj 1000 karakteri aşıyor, gönderilmedi`)
@@ -104,4 +120,4 @@ async function otomasyonCalistir() {
   return sonuc
 }
 
-module.exports = { _otomasyonCalistir: otomasyonCalistir }
+module.exports = { _otomasyonCalistir: otomasyonCalistir, _otomasyonMetni }

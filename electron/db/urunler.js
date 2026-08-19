@@ -246,7 +246,7 @@ module.exports = {
 
   'urunler:guncelle': ({ id, ...veri }, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
-    const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
+    const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani, web_link } = veri
     // Satış fiyatı değişiyorsa ayrıca fiyat_degistir yetkisi gerekir.
     const mevcut = db.prepare('SELECT satis_fiyati, alis_fiyati FROM urunler WHERE id = ?').get(id)
     if (mevcut && Number(mevcut.satis_fiyati) !== Number(satis_fiyati)) {
@@ -261,12 +261,18 @@ module.exports = {
       throw new Error('Bu barkod başka bir ürüne takma ad olarak tanımlı')
     }
     try {
+      // web_link undefined = alanı hiç göndermeyen çağrı (eski arayüz, toplu içe aktarma) →
+      // mevcut link KORUNUR. '' = kullanıcı kutuyu boşalttı → silinir. Bu ayrım olmadan
+      // ikas'tan toplu çekilen linkler her ürün düzenlemesinde sessizce kaybolurdu.
+      const linkYaz = web_link !== undefined
       db.prepare(`
         UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
-        aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?, guncelleme_tarihi=datetime('now','localtime')
+        aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?${linkYaz ? ', web_link=?' : ''},
+        guncelleme_tarihi=datetime('now','localtime')
         WHERE id=?
       `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null,
-         aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20, id)
+         aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20,
+         ...(linkYaz ? [web_link || null] : []), id)
     } catch (e) {
       if (String(e.message).includes('UNIQUE') && e.message.includes('barkod')) throw new Error('Bu barkod başka bir üründe kullanılıyor')
       if (String(e.message).includes('UNIQUE') && e.message.includes('sku')) throw new Error('Bu SKU başka bir üründe kullanılıyor')

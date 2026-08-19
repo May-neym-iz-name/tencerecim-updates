@@ -103,6 +103,7 @@ export default function SetYonetim({ baslangicArama = '' }) {
 function SetFormu({ set, kapat, onTamam }) {
   const [ad, setAd] = useState(set?.ad || '')
   const [fiyat, setFiyat] = useState(set?.fiyat || '')
+  const [webLink, setWebLink] = useState(set?.web_link || '')
   const [kalemler, setKalemler] = useState(set?.bilesenler?.map(b => ({ urun_id: b.urun_id, ad: b.ad, miktar: b.miktar })) || [])
   const [arama, setArama] = useState('')
   // Barkod okuyucu: kutuya tıklamadan okutulabilsin, her okutmada eskisi silinsin.
@@ -151,7 +152,7 @@ function SetFormu({ set, kapat, onTamam }) {
     if (kalemler.length === 0) { toast.error('Sete en az bir ürün ekleyin'); return }
     setKaydediliyor(true)
     try {
-      const veri = { ad: ad.trim(), fiyat: Number(fiyat), kalemler: kalemler.map(k => ({ urun_id: k.urun_id, miktar: k.miktar })) }
+      const veri = { ad: ad.trim(), fiyat: Number(fiyat), web_link: webLink.trim(), kalemler: kalemler.map(k => ({ urun_id: k.urun_id, miktar: k.miktar })) }
       if (set?.id) await setApi.guncelle({ id: set.id, ...veri })
       else await setApi.olustur(veri)
       toast.success(set?.id ? 'Set güncellendi' : 'Set oluşturuldu')
@@ -175,6 +176,13 @@ function SetFormu({ set, kapat, onTamam }) {
                 placeholder="0,00" className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
             </label>
           </div>
+
+          {/* Setin web sitesi sayfası. Sosyal medya otomasyonunda "Online Sipariş Hattı"
+              satırı olarak gider. ikas'tan otomatik çekilemez — set ikas'ta ayrı ürün değil. */}
+          <label className="text-xs text-gray-500 mb-3 flex-shrink-0 block">Web Sitesi Linki
+            <input type="url" value={webLink} onChange={e => setWebLink(e.target.value)}
+              placeholder="https://tencerecim.store/set-adi" className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
+          </label>
 
           <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
             {/* SOL: filtreli ürün havuzu */}

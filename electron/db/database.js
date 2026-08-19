@@ -832,6 +832,42 @@ function migrate() {
   // Şablon türü: 'urun' (fiyat odaklı, mevcut) | 'genel' (serbest metin aynen gider).
   // Mevcut satırlar 'urun' varsayılır — geriye dönük uyumlu.
   try { db.exec("ALTER TABLE sosyal_sablonlar ADD COLUMN tur TEXT NOT NULL DEFAULT 'urun'") } catch {}
+
+  // --- Gönderiye özel otomasyon (v1.2.173) ---
+  // Neden: şablonlar PAYLAŞIMLI. Bir gönderide 3 ürün seçilince her şablon kendi açıklamasını
+  // getiriyor → müşteriye 3 ayrı açıklama gidiyordu. Açıklamayı şablona yazmak da çözmez:
+  // aynı şablon başka gönderilerde de kullanıldığı için biri düzeltilince diğerleri bozulur.
+  // Çözüm: gönderiye ait veri gönderinin kendi satırında dursun.
+  try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN ozel_aciklama TEXT") } catch {}
+  try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN whatsapp TEXT") } catch {}
+  // Gönderi başına ürün seçimi. sosyal_otomasyon_sablonlar KALDIRILMADI: eski otomasyonlar
+  // yeni modele taşınana kadar çalışmaya devam etsin (bkz. _gonderiUrunleriCoz / _sablonlariCoz).
+  // urun_id XOR set_id — şablonlardaki ile aynı kural (setlerin urunler'de karşılığı yok).
+  db.exec(`CREATE TABLE IF NOT EXISTS sosyal_otomasyon_urunler (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    otomasyon_id INTEGER NOT NULL REFERENCES sosyal_otomasyonlar(id) ON DELETE CASCADE,
+    urun_id INTEGER REFERENCES urunler(id),
+    set_id INTEGER REFERENCES setler(id),
+    sira INTEGER DEFAULT 0
+  );`)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sosyal_oto_urun ON sosyal_otomasyon_urunler(otomasyon_id)")
+  // Gönderiye özel fiyat. NULL = "kataloğa sor" (canlı fiyat, zam kendiliğinden yansır),
+  // dolu = "bunu yaz". sosyal_sablonlar.fiyat ile AYNI semantik — ayrı bir "fiyat tipi"
+  // bayrağı yok, NULL'ın kendisi anlam taşıyor. Kampanya fiyatı ve kataloğu 0 olan
+  // ürünler için gerekli (bkz. Saflon 34/36 cm — katalog fiyatı 0).
+  try { db.exec("ALTER TABLE sosyal_otomasyon_urunler ADD COLUMN ozel_fiyat REAL") } catch {}
+  // Gönderiye özel görünen ad. NULL = kataloğun adı. Katalog adları depo/stok için yazılmış
+  // (BÜYÜK HARF, ölçü/litre ekleri); müşteriye giden mesajda daha okunaklı bir ad gerekebilir.
+  // sosyal_sablonlar.urun_adi'nın karşılığı — eski otomasyonlar taşınırken oradan gelir.
+  try { db.exec("ALTER TABLE sosyal_otomasyon_urunler ADD COLUMN ozel_ad TEXT") } catch {}
+  // Ürünün web sitesi (ikas storefront) linki. ikas'taki metaData.slug'dan SKU eşleşmesiyle
+  // toplu doldurulur (bkz. ikas/index.js webLinkleriCek). Gönderim anında ikas'a SORULMAZ:
+  // DM'in Meta tarafında 7 günlük penceresi ve yorum başına tek hakkı var, araya bir API
+  // çağrısının gecikmesi/hatası girmemeli.
+  try { db.exec("ALTER TABLE urunler ADD COLUMN web_link TEXT") } catch {}
+  // Setlerin de web sitesinde kendi sayfaları var (ör. .../celik-kase-seti-...). ikas'tan
+  // otomatik çekilemez — setler ikas'ta ayrı ürün değil, bizim paketimiz — bu yüzden elle girilir.
+  try { db.exec("ALTER TABLE setler ADD COLUMN web_link TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_sablonlar ADD COLUMN serbest_metin TEXT") } catch {}
 
   // PERFORMANS index'leri:

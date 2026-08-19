@@ -47,7 +47,7 @@ module.exports = {
 
   'setler:listele': (p) => listele(p || {}),
 
-  'setler:olustur': ({ ad, fiyat, kalemler }) => {
+  'setler:olustur': ({ ad, fiyat, kalemler, web_link }) => {
     yetkiKontrol('urun_duzenle')
     if (!ad || !ad.trim()) throw new Error('Set adı zorunlu')
     if (!(Number(fiyat) > 0)) throw new Error('Geçerli bir set fiyatı girin')
@@ -58,10 +58,10 @@ module.exports = {
       const mevcut = db.prepare('SELECT id FROM setler WHERE ad = ?').get(ad.trim())
       let id
       if (mevcut) {
-        db.prepare('UPDATE setler SET fiyat = ?, aktif = 1 WHERE id = ?').run(Number(fiyat), mevcut.id)
+        db.prepare('UPDATE setler SET fiyat = ?, aktif = 1, web_link = ? WHERE id = ?').run(Number(fiyat), web_link || null, mevcut.id)
         id = mevcut.id
       } else {
-        id = db.prepare('INSERT INTO setler (ad, fiyat, aktif) VALUES (?, ?, 1)').run(ad.trim(), Number(fiyat)).lastInsertRowid
+        id = db.prepare('INSERT INTO setler (ad, fiyat, aktif, web_link) VALUES (?, ?, 1, ?)').run(ad.trim(), Number(fiyat), web_link || null).lastInsertRowid
       }
       kalemleriYaz(db, id, kalemler)
       return id
@@ -70,13 +70,18 @@ module.exports = {
     return { id }
   },
 
-  'setler:guncelle': ({ id, ad, fiyat, kalemler }) => {
+  'setler:guncelle': ({ id, ad, fiyat, kalemler, web_link }) => {
     yetkiKontrol('urun_duzenle')
     if (!id) throw new Error('Set id gerekli')
     const db = getDb()
     const tx = db.transaction(() => {
       db.prepare('UPDATE setler SET ad = COALESCE(?, ad), fiyat = COALESCE(?, fiyat) WHERE id = ?')
         .run(ad?.trim() || null, Number(fiyat) > 0 ? Number(fiyat) : null, id)
+      // web_link ayrı yazılır: COALESCE ile birleştirilseydi kutuyu boşaltıp linki SİLMEK
+      // imkânsız olurdu (boş değer "dokunma" sayılırdı). undefined = alan gönderilmedi → koru.
+      if (web_link !== undefined) {
+        db.prepare('UPDATE setler SET web_link = ? WHERE id = ?').run(web_link || null, id)
+      }
       if (Array.isArray(kalemler)) kalemleriYaz(db, id, kalemler)
     })
     tx()

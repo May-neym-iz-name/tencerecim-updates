@@ -24,6 +24,25 @@ function _sablonlariCoz(db, otomasyonId) {
   `).all(otomasyonId)
 }
 
+// Gönderiye özel seçilmiş ürünleri, mesaj üreticisinin beklediği biçimde çözer.
+// Ad önceliği: ou.ozel_ad (gönderiye özel görünen ad) → kataloğun canlı adı. ozel_ad NULL ise
+// katalogdaki ad değişince mesaj da güncel kalır. Fiyat önceliği: ou.ozel_fiyat (gönderiye özel) → ürünün canlı satış fiyatı →
+// setin fiyatı. ozel_fiyat NULL ise zam kendiliğinden mesaja yansır.
+// web_link hem üründe hem sette var (setlerin de sitede kendi sayfası oluyor). Link yoksa
+// mesaj üreticisi o satırı atlar — ürün yine de ad+fiyatıyla yazılır.
+function _gonderiUrunleriCoz(db, otomasyonId) {
+  return db.prepare(`
+    SELECT COALESCE(ou.ozel_ad, u.ad, st.ad) AS ad,
+           COALESCE(ou.ozel_fiyat, u.satis_fiyati, st.fiyat) AS fiyat,
+           COALESCE(u.web_link, st.web_link) AS web_link
+    FROM sosyal_otomasyon_urunler ou
+    LEFT JOIN urunler u ON u.id = ou.urun_id
+    LEFT JOIN setler st ON st.id = ou.set_id
+    WHERE ou.otomasyon_id = ?
+    ORDER BY ou.sira, ou.id
+  `).all(otomasyonId).filter(u => u.ad)
+}
+
 // Cevaplanacak yorumlar. konuId verilirse yalnız o gönderi (açma onayındaki sayı için),
 // verilmezse aktif tüm otomasyonlar (çalıştırıcı için).
 //
@@ -60,9 +79,78 @@ function _adaylar(db, konuId = null) {
   `).all(...params)
 }
 
+
+// otomasyonKaydet çekirdeği — db ENJEKTE EDİLEBİLİR (urunler.js/setler.js deseni).
+// IPC sarmalayıcısı yetkiyi kontrol edip getDb() geçer; testler kendi bellek veritabanını
+// geçer. Yetki mantığı burada DEĞİL: bu fonksiyon veri kurallarından sorumlu.
+//
+// İki alanın "verilmedi" (undefined) ile "boşaltıldı" ([]) ayrımı KRİTİK:
+//   sablon_idler / urunler undefined ise mevcut bağlara DOKUNULMAZ. Koşulsuz silmek,
+//   listeyi göndermeyen bir çağrının (yalnız aç/kapat, ya da güncellenmemiş 2. PC)
+//   bağları sessizce yok etmesine yol açar. Boş dizi ise gerçekten temizlenir.
+function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_idler,
+  ozel_aciklama, whatsapp, urunler }, db) {
+  if (ozel_aciklama && ozel_aciklama.length > 1000) {
+    throw new Error('Gönderi açıklaması 1000 karakteri aşamaz.')
+  }
+  if (urunler) {
+    for (const u of urunler) {
+      if (!u.urun_id && !u.set_id) throw new Error('Geçersiz ürün seçimi.')
+      if (u.urun_id && u.set_id) throw new Error('Bir satır ya ürüne ya sete bağlanabilir.')
+    }
+  }
+  // Tek-tür kuralı: bir otomasyona ya birden çok ürün şablonu YA DA tek bir genel şablon.
+  const idler = sablon_idler || []
+  if (idler.length) {
+    const turler = db.prepare(
+      `SELECT tur, COUNT(*) n FROM sosyal_sablonlar WHERE id IN (${idler.map(() => '?').join(',')}) GROUP BY tur`
+    ).all(...idler)
+    const genelSayi = turler.find(x => x.tur === 'genel')?.n || 0
+    const urunSayi = turler.find(x => x.tur !== 'genel')?.n || 0
+    if (genelSayi && urunSayi) throw new Error('Bir otomasyonda ürün ve genel şablon karıştırılamaz.')
+    if (genelSayi > 1) throw new Error('Bir otomasyona yalnız tek genel şablon bağlanabilir.')
+  }
+  const tx = db.transaction(() => {
+    let o = db.prepare('SELECT id, aktif FROM sosyal_otomasyonlar WHERE konu_id = ?').get(konu_id)
+    if (!o) {
+      const r = db.prepare(`INSERT INTO sosyal_otomasyonlar
+        (platform, konu_id, aktif, acik_yanit_metni, baslangic_tarihi, ozel_aciklama, whatsapp)
+        VALUES (?,?,?,?,?,?,?)`).run(platform, konu_id, aktif ? 1 : 0, acik_yanit_metni || null,
+          aktif ? new Date().toISOString() : null, ozel_aciklama || null, whatsapp || null)
+      o = { id: r.lastInsertRowid, aktif: 0 }
+    } else {
+      // baslangic_tarihi yalnız KAPALI→AÇIK geçişinde tazelenir.
+      const acildi = aktif && !o.aktif
+      db.prepare(`UPDATE sosyal_otomasyonlar SET aktif=?, acik_yanit_metni=?, ozel_aciklama=?, whatsapp=?
+        ${acildi ? ", baslangic_tarihi=datetime('now','localtime')" : ''} WHERE id=?`)
+        .run(aktif ? 1 : 0, acik_yanit_metni || null, ozel_aciklama || null, whatsapp || null, o.id)
+    }
+    // `urunler` ile aynı kural: undefined = DOKUNMA. Koşulsuz silmek, şablon listesini
+    // göndermeyen bir çağrının (yalnız aç/kapat) bağları sessizce yok etmesine yol açardı.
+    if (sablon_idler) {
+      db.prepare('DELETE FROM sosyal_otomasyon_sablonlar WHERE otomasyon_id = ?').run(o.id)
+      const ekle = db.prepare(`INSERT INTO sosyal_otomasyon_sablonlar
+        (otomasyon_id, sablon_id, sira) VALUES (?,?,?)`)
+      sablon_idler.forEach((sid, i) => ekle.run(o.id, sid, i))
+    }
+    if (urunler) {
+      db.prepare('DELETE FROM sosyal_otomasyon_urunler WHERE otomasyon_id = ?').run(o.id)
+      const urunEkle = db.prepare(`INSERT INTO sosyal_otomasyon_urunler
+        (otomasyon_id, urun_id, set_id, sira, ozel_fiyat, ozel_ad) VALUES (?,?,?,?,?,?)`)
+      urunler.forEach((u, i) => urunEkle.run(o.id, u.urun_id || null, u.set_id || null, i,
+        u.ozel_fiyat === '' || u.ozel_fiyat == null ? null : Number(u.ozel_fiyat),
+        (u.ozel_ad || '').trim() || null))
+    }
+    return o.id
+  })
+  return { id: tx() }
+}
+
 module.exports = {
   _adaylar,
   _sablonlariCoz,
+  _gonderiUrunleriCoz,
+  _otomasyonKaydet: otomasyonKaydet,
 
   // Şablon kütüphanesi. Bağlı kaynağın (ürün veya set) canlı fiyatını `kaynak_fiyati` olarak
   // döner — arayüz "canlı" rozetinde ve önizlemede kullanır.
@@ -146,47 +234,49 @@ module.exports = {
       JOIN sosyal_sablonlar s ON s.id = os.sablon_id
       WHERE os.otomasyon_id = ? ORDER BY os.sira, s.id
     `).all(o.id)
+    // Gönderiye özel ürünler. Arayüz listede canlı fiyatı ve linkin var/yok durumunu gösterir
+    // (linksiz ürün uyarılır — mesajda o satır sessizce eksik kalmasın).
+    o.urunler = db.prepare(`
+      SELECT ou.id AS baglanti_id, ou.urun_id, ou.set_id, ou.sira,
+             COALESCE(ou.ozel_ad, u.ad, st.ad) AS ad,
+             COALESCE(u.ad, st.ad) AS katalog_adi,
+             COALESCE(ou.ozel_fiyat, u.satis_fiyati, st.fiyat) AS fiyat,
+             ou.ozel_fiyat, ou.ozel_ad,
+             COALESCE(u.web_link, st.web_link) AS web_link, u.sku,
+             CASE WHEN ou.set_id IS NOT NULL THEN 'set' ELSE 'urun' END AS tip
+      FROM sosyal_otomasyon_urunler ou
+      LEFT JOIN urunler u ON u.id = ou.urun_id
+      LEFT JOIN setler st ON st.id = ou.set_id
+      WHERE ou.otomasyon_id = ? ORDER BY ou.sira, ou.id
+    `).all(o.id)
     o.bugun_giden = db.prepare(`SELECT COUNT(*) n FROM sosyal_mesajlar
       WHERE konu_id = ? AND date(ozel_mesaj_tarihi) = date('now','localtime')`).get(konu_id).n
     return o
   },
 
-  'sosyal:otomasyonKaydet': ({ konu_id, platform, aktif, acik_yanit_metni, sablon_idler }) => {
+  'sosyal:otomasyonKaydet': (veri) => {
     yetkiKontrol('sosyal_otomasyon_yonet')
+    return otomasyonKaydet(veri, getDb())
+  },
+
+  // Panelin canlı önizlemesi. KAYDEDİLMEMİŞ seçim üzerinden çalışır (kaydetmeden görmek için),
+  // ama metni gönderimle AYNI üreticiden alır → önizlemede görülen, müşteriye giden metindir.
+  // Yetki istemez: yalnız metin döndürür, hiçbir şey göndermez/yazmaz.
+  'sosyal:gonderiOnizleme': ({ aciklama, whatsapp, urunler }) => {
     const db = getDb()
-    // Tek-tür kuralı: bir otomasyona ya birden çok ürün şablonu YA DA tek bir genel şablon.
-    const idler = sablon_idler || []
-    if (idler.length) {
-      const turler = db.prepare(
-        `SELECT tur, COUNT(*) n FROM sosyal_sablonlar WHERE id IN (${idler.map(() => '?').join(',')}) GROUP BY tur`
-      ).all(...idler)
-      const genelSayi = turler.find(x => x.tur === 'genel')?.n || 0
-      const urunSayi = turler.find(x => x.tur !== 'genel')?.n || 0
-      if (genelSayi && urunSayi) throw new Error('Bir otomasyonda ürün ve genel şablon karıştırılamaz.')
-      if (genelSayi > 1) throw new Error('Bir otomasyona yalnız tek genel şablon bağlanabilir.')
-    }
-    const tx = db.transaction(() => {
-      let o = db.prepare('SELECT id, aktif FROM sosyal_otomasyonlar WHERE konu_id = ?').get(konu_id)
-      if (!o) {
-        const r = db.prepare(`INSERT INTO sosyal_otomasyonlar
-          (platform, konu_id, aktif, acik_yanit_metni, baslangic_tarihi)
-          VALUES (?,?,?,?,?)`).run(platform, konu_id, aktif ? 1 : 0, acik_yanit_metni || null,
-            aktif ? new Date().toISOString() : null)
-        o = { id: r.lastInsertRowid, aktif: 0 }
-      } else {
-        // baslangic_tarihi yalnız KAPALI→AÇIK geçişinde tazelenir.
-        const acildi = aktif && !o.aktif
-        db.prepare(`UPDATE sosyal_otomasyonlar SET aktif=?, acik_yanit_metni=?
-          ${acildi ? ", baslangic_tarihi=datetime('now','localtime')" : ''} WHERE id=?`)
-          .run(aktif ? 1 : 0, acik_yanit_metni || null, o.id)
-      }
-      db.prepare('DELETE FROM sosyal_otomasyon_sablonlar WHERE otomasyon_id = ?').run(o.id)
-      const ekle = db.prepare(`INSERT INTO sosyal_otomasyon_sablonlar
-        (otomasyon_id, sablon_id, sira) VALUES (?,?,?)`)
-      ;(sablon_idler || []).forEach((sid, i) => ekle.run(o.id, sid, i))
-      return o.id
-    })
-    return { id: tx() }
+    const secim = (urunler || []).map(u => {
+      const r = u.set_id
+        ? db.prepare('SELECT ad, fiyat, web_link FROM setler WHERE id = ?').get(u.set_id)
+        : db.prepare('SELECT ad, satis_fiyati AS fiyat, web_link FROM urunler WHERE id = ?').get(u.urun_id)
+      if (!r) return null
+      // Gönderiye özel fiyat girildiyse önizleme de onu göstermeli — yoksa panelde
+      // görülen metin ile gidecek metin ayrışırdı.
+      const ozelF = u.ozel_fiyat === '' || u.ozel_fiyat == null ? null : Number(u.ozel_fiyat)
+      const ozelA = (u.ozel_ad || '').trim() || null
+      return { ...r, fiyat: ozelF ?? r.fiyat, ad: ozelA ?? r.ad }
+    }).filter(Boolean)
+    const { gonderiMesajiOlustur } = require('../meta/sablon-mesaj')
+    return gonderiMesajiOlustur({ aciklama, whatsapp, urunler: secim })
   },
 
   // Açma onayı için: "bu gönderide kaç kişiye mesaj gidecek?"

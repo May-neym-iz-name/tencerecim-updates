@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi, setApi } from '../api/ipc'
+import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi, setApi, ikasApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import BarkodModal from '../components/BarkodModal'
 import Sayfalama from '../components/Sayfalama'
@@ -19,7 +19,7 @@ import AranabilirSecici from '../components/AranabilirSecici'
 const kategoriSecenekleri = (kategoriler) =>
   kategoriHiyerarsik(kategoriler).map(k => ({ deger: k.id, etiket: '   '.repeat(k.derinlik) + k.ad }))
 
-const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20 }
+const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20, web_link: '' }
 
 // Kategorileri ağaç sırasına dizip her birinin derinliğini (girinti için) hesaplar.
 function kategoriHiyerarsik(kategoriler) {
@@ -69,6 +69,8 @@ export default function Urunler() {
   const [tedarikciler, setTedarikciler] = useState([])
   const [kategoriler, setKategoriler] = useState([])
   const [excelYukleniyor, setExcelYukleniyor] = useState(false)
+  const [webLinkMesgul, setWebLinkMesgul] = useState(false)
+  const [webLinkSonuc, setWebLinkSonuc] = useState(null)
   const [excelSonuc, setExcelSonuc] = useState(null)
   const [barkodUrun, setBarkodUrun] = useState(null)
   const [sekme, setSekme] = useState('urunler')
@@ -139,7 +141,7 @@ export default function Urunler() {
   useBarkodTarama({ ref: aramaRef, aktif: !formAcik, onKod: setArama })
 
   function handleDuzenle(u) {
-    setForm({ ad: u.ad||'', barkod: u.barkod||'', sku: u.sku||'', marka_id: u.marka_id||'', kategori_id: u.kategori_id||'', tedarikci_id: u.tedarikci_id||'', aciklama: u.aciklama||'', alis_fiyati: u.alis_fiyati||'', satis_fiyati: u.satis_fiyati||'', kdv_orani: u.kdv_orani||20 })
+    setForm({ ad: u.ad||'', barkod: u.barkod||'', sku: u.sku||'', marka_id: u.marka_id||'', kategori_id: u.kategori_id||'', tedarikci_id: u.tedarikci_id||'', aciklama: u.aciklama||'', alis_fiyati: u.alis_fiyati||'', satis_fiyati: u.satis_fiyati||'', kdv_orani: u.kdv_orani||20, web_link: u.web_link||'' })
     setDuzenlenenId(u.id); setFormAcik(true)
   }
 
@@ -207,6 +209,21 @@ export default function Urunler() {
     setExcelYukleniyor(false)
   }
 
+  // ikas'taki ürün sayfalarının linklerini (metaData.slug) stok kodu eşleşmesiyle toplu doldurur.
+  // Eşleşmeyenler SESSİZCE geçilmez — sayısı toast'ta, listesi konsolda görünür, çünkü linksiz
+  // kalan ürün sosyal medya otomasyonunda sipariş linki olmadan gider.
+  async function handleWebLinkCek() {
+    setWebLinkMesgul(true); setWebLinkSonuc(null)
+    try {
+      toast("ikas urun sayfalari taraniyor...", { icon: "⏳" })
+      const r = await ikasApi.webLinkCek()
+      setWebLinkSonuc(r)
+      toast.success(`${r.eslesen} urun eslesti, ${r.yazilan} link guncellendi.`)
+      yukle()
+    } catch (e) { toast.error(e.message) }
+    setWebLinkMesgul(false)
+  }
+
   async function markaEkle(ad) {
     try { await markaApi.olustur(ad); await yukleYardimcilar(); toast.success('Marka eklendi') } catch (e) { toast.error(e.message) }
   }
@@ -265,6 +282,13 @@ export default function Urunler() {
             </button>
           )}
           {duzenleYetkisi && (
+            <button onClick={handleWebLinkCek} disabled={webLinkMesgul}
+              title="ikas'taki ürün sayfalarının linklerini stok kodu eşleşmesiyle toplu doldurur"
+              className="flex items-center gap-1.5 border border-violet-600 text-violet-700 px-3 py-1.5 rounded-lg hover:bg-violet-50 text-sm disabled:opacity-50">
+              {webLinkMesgul ? '⏳ Çekiliyor...' : '🔗 Web Linklerini Çek'}
+            </button>
+          )}
+          {duzenleYetkisi && (
             <button onClick={() => { setForm(BOSH); setDuzenlenenId(null); setFormAcik(true) }}
               className="bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 text-sm">
               + Yeni Ürün
@@ -272,6 +296,44 @@ export default function Urunler() {
           )}
         </div>
       </div>
+
+      {/* Web link çekme sonucu. Sitede olmayan ürünler UYARI DEĞİL (katalogda 2800+ ürün var,
+          sitede ~400'ü satılıyor); asıl düzeltilebilir eksikler ikas'taki slug/stok kodu boşlukları. */}
+      {webLinkSonuc && (
+        <div className="mb-3 bg-violet-50 border border-violet-200 rounded-lg p-3 text-sm flex-shrink-0">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="font-medium">Web linkleri güncellendi:</span>{' '}
+              {webLinkSonuc.eslesen} ürün sitede eşleşti, {webLinkSonuc.yazilan} linki değişti.
+              <div className="text-xs text-gray-500 mt-0.5">
+                ikas'ta {webLinkSonuc.ikasToplam} ürün var, {webLinkSonuc.ikasSku} stok kodu okundu.
+                Kalan {webLinkSonuc.sitedeYokSayi} ürün sitede satılmıyor — linksiz olmaları normal.
+              </div>
+              {webLinkSonuc.skusuz?.length > 0 && (
+                <details className="mt-1 text-amber-800">
+                  <summary className="cursor-pointer text-xs underline">
+                    ikas'ta {webLinkSonuc.skusuz.length} ürünün stok kodu yok — eşleşemedi
+                  </summary>
+                  <ul className="text-xs mt-1 max-h-40 overflow-auto list-disc pl-4">
+                    {webLinkSonuc.skusuz.map(x => <li key={x}>{x}</li>)}
+                  </ul>
+                </details>
+              )}
+              {webLinkSonuc.slugsuz?.length > 0 && (
+                <details className="mt-1 text-amber-800">
+                  <summary className="cursor-pointer text-xs underline">
+                    ikas'ta {webLinkSonuc.slugsuz.length} ürünün sayfa adresi tanımsız
+                  </summary>
+                  <ul className="text-xs mt-1 max-h-40 overflow-auto list-disc pl-4">
+                    {webLinkSonuc.slugsuz.map(x => <li key={x}>{x}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+            <button onClick={() => setWebLinkSonuc(null)} className="text-gray-400 hover:text-gray-700">✕</button>
+          </div>
+        </div>
+      )}
 
       {excelSonuc && (
         <div className="mb-3 bg-green-50 border border-green-200 rounded-lg p-3 text-sm flex-shrink-0">
@@ -451,6 +513,16 @@ export default function Urunler() {
                       className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-400" />
                   </div>
                 )})}
+
+                <div className="col-span-2">
+                  {/* Web sitesi (ikas storefront) linki. Sosyal medya otomasyonunda DM'e
+                      "Online Sipariş Hattı" satırı olarak gider. Ürünler ekranındaki
+                      "Web linklerini çek" ile ikas slug'larından toplu doldurulabilir. */}
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Web Sitesi Linki</label>
+                  <input type="url" placeholder="https://tencerecim.store/urun-adi"
+                    value={form.web_link} onChange={e => setForm(f=>({...f,web_link:e.target.value}))}
+                    className="w-full border rounded-lg px-3 py-2 text-sm" />
+                </div>
 
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Açıklama</label>
