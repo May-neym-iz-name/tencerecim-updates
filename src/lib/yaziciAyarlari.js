@@ -10,6 +10,10 @@ export const KARGO_YAZICI_KEY = 'kargo_etiket_yazici'
 // Kargo sayfası bu anahtarı eskiden usePersistentState ile yazıyordu → değer JSON'dur ("1").
 export const KARGO_SAYFA_KEY = 'kargo_etiket_sayfa_basina'
 export const KARGO_OLCU_KEY = 'kargo_etiket_olcu' // "100x150" biçiminde, mm
+// Kargo oluşturulunca etiketin OTOMATİK basılıp basılmayacağı ("1" = bas).
+// Varsayılan KAPALI: buton sadece gönderiyi oluşturur, etiket istenirse
+// "🖨 Kargo Etiketi" butonuyla elle alınır. İade etiketi bu ayardan bağımsızdır.
+export const KARGO_OTO_ETIKET_KEY = 'kargo_otomatik_etiket'
 export const FIS_YAZICI_KEY = 'fis_yazici'
 export const FIS_GENISLIK_KEY = 'fis_genislik' // rulo genişliği mm: "80" | "58"
 
@@ -28,6 +32,11 @@ export function kargoOlcuOku() {
     if (g >= 50 && g <= 300 && y >= 50 && y <= 300) return { genislikMm: g, yukseklikMm: y }
   }
   return { genislikMm: 100, yukseklikMm: 150 }
+}
+
+// Kargo oluşturunca otomatik etiket açık mı? (varsayılan: kapalı)
+export function kargoOtomatikEtiketOku() {
+  return yaziciAyarOku(KARGO_OTO_ETIKET_KEY) === '1'
 }
 
 export function yaziciAyarOku(key, varsayilan = '') {

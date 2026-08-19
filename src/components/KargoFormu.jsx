@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { kargoApi, lokasyonApi, musteriApi, lokasyonGondericiApi } from '../api/ipc'
 import { telefonGoster, telefonHam, telefonHatasi } from '../lib/girdiMaske'
-import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoOlcuOku } from '../lib/yaziciAyarlari'
+import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoOlcuOku, kargoOtomatikEtiketOku } from '../lib/yaziciAyarlari'
 import IlIlceSecici from './IlIlceSecici'
 
 const BOS = {
@@ -108,10 +108,12 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
         kapidaOdemeTutar: form.kapidaOdeme && !form.iade ? kapidaTutar : 0,
       })
       toast.success(`✓ ${form.iade ? 'İade gönderisi' : 'Kargo'} oluşturuldu — Takip No: ${kargo.takip_no}`)
-      // Etiket çıktısı (hata olursa gönderiyi engellemesin): Ayarlar'da kargo yazıcısı
-      // tanımlıysa doğrudan sessiz bas; değilse önizleme penceresi. İade etiketi HER ZAMAN
-      // önizlemede açılır — WhatsApp sohbetine sürüklenerek müşteriye gönderiliyor.
-      if (kargo.barkodPng?.length) {
+      // Etiket çıktısı (hata olursa gönderiyi engellemesin): normal gönderide SADECE
+      // Ayarlar > Yazıcılar'daki "otomatik etiket" açıksa çıktı alınır (varsayılan kapalı;
+      // etiket istenirse "🖨 Kargo Etiketi" butonu var). Açıksa: kargo yazıcısı tanımlıysa
+      // doğrudan sessiz bas, değilse önizleme penceresi. İade etiketi bu ayardan bağımsız
+      // HER ZAMAN önizlemede açılır — WhatsApp sohbetine sürüklenerek müşteriye gönderiliyor.
+      if (kargo.barkodPng?.length && (form.iade || kargoOtomatikEtiketOku())) {
         const yazici = form.iade ? '' : yaziciAyarOku(KARGO_YAZICI_KEY)
         const cikti = yazici
           ? kargoApi.etiketYazdir(kargo.barkodPng, yazici, 1, kargoOlcuOku())
@@ -268,7 +270,9 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
             <button type="button" onClick={kapat} className="px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50">İptal</button>
             <button type="submit" disabled={gonderiliyor}
               className={`${form.iade ? 'bg-purple-600 hover:bg-purple-700' : 'bg-blue-600 hover:bg-blue-700'} text-white px-4 py-1.5 rounded-lg text-sm disabled:opacity-50`}>
-              {gonderiliyor ? 'Oluşturuluyor…' : (form.iade ? '↩ İade Gönderisi Oluştur & Etiket Bas' : 'Gönderi Oluştur & Etiket Bas')}
+              {gonderiliyor ? 'Oluşturuluyor…' : (form.iade
+                ? '↩ İade Gönderisi Oluştur & Etiket Bas'
+                : (kargoOtomatikEtiketOku() ? 'Gönderi Oluştur & Etiket Bas' : 'Gönderi Oluştur'))}
             </button>
           </div>
         </form>

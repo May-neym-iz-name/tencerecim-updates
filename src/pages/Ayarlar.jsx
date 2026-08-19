@@ -10,6 +10,7 @@ import SablonKutuphanesi from '../components/SablonKutuphanesi'
 import { ETIKET_BOYUTLARI, VARSAYILAN_BOYUT } from '../lib/barkod'
 import {
   BARKOD_YAZICI_KEY, BARKOD_BOYUT_KEY, KARGO_YAZICI_KEY, KARGO_OLCU_KEY,
+  KARGO_OTO_ETIKET_KEY, kargoOtomatikEtiketOku,
   FIS_YAZICI_KEY, FIS_GENISLIK_KEY, fisGenisligiOku,
   yaziciAyarOku, yaziciAyarYaz, kargoSayfaBasinaOku, kargoSayfaBasinaYaz,
 } from '../lib/yaziciAyarlari'
@@ -785,6 +786,7 @@ function YaziciAyarlariKarti({ yazicilar }) {
   const [barkodBoyut, setBarkodBoyut] = useState(() => yaziciAyarOku(BARKOD_BOYUT_KEY, VARSAYILAN_BOYUT))
   const [kargoYazici, setKargoYazici] = useState(() => yaziciAyarOku(KARGO_YAZICI_KEY))
   const [kargoOlcu, setKargoOlcu] = useState(() => yaziciAyarOku(KARGO_OLCU_KEY, '100x150'))
+  const [kargoOtoEtiket, setKargoOtoEtiket] = useState(() => kargoOtomatikEtiketOku())
   const [sayfaBasina, setSayfaBasina] = useState(() => kargoSayfaBasinaOku())
   const [fisYazici, setFisYazici] = useState(() => yaziciAyarOku(FIS_YAZICI_KEY))
   const [fisGenislik, setFisGenislik] = useState(() => String(fisGenisligiOku()))
@@ -905,6 +907,20 @@ function YaziciAyarlariKarti({ yazicilar }) {
             <option value={2}>2 etiket / sayfa · A4</option>
             <option value={4}>4 etiket / sayfa · A4</option>
           </select>
+          <label className="flex items-center gap-2 text-sm text-gray-700 mt-3 cursor-pointer">
+            <input type="checkbox" checked={kargoOtoEtiket}
+              onChange={e => {
+                const acik = e.target.checked
+                setKargoOtoEtiket(acik)
+                yaziciAyarYaz(KARGO_OTO_ETIKET_KEY, acik ? '1' : '')
+                toast.success(acik ? 'Kargo oluşturunca etiket otomatik basılacak' : 'Kargo oluşturma artık etiket basmaz')
+              }} />
+            Kargo oluşturunca etiketi otomatik bas
+          </label>
+          <p className="text-xs text-gray-400 mt-1 mb-2">
+            Kapalıyken "Kargo Oluştur" sadece gönderiyi oluşturur; etiket gerekirse
+            "🖨 Kargo Etiketi" butonuyla alınır. İade etiketi her zaman önizlemede açılır.
+          </p>
           <label className="block text-xs text-gray-500 mb-1 mt-3">Etikette basılacak gönderen telefonu</label>
           <input value={gonderenTel} onChange={e => setGonderenTel(e.target.value)}
             onBlur={gonderenTelKaydet}
