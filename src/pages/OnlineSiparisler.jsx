@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink, barkodApi } from '../api/ipc'
 import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoOlcuOku } from '../lib/yaziciAyarlari'
@@ -6,6 +6,7 @@ import { ayarOku } from '../ayarlar/AyarlarContext'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { bekleyenTalepMi, urunBekleniyorMu } from '../utils/talep'
+import { tutarOzeti, kalemIadeDurumu } from '../utils/iade'
 import TalepModal from '../components/TalepModal'
 import { takipUrl } from '../lib/kargo'
 import { kargoEtiketHtml } from '../lib/kargoEtiket'
@@ -115,6 +116,18 @@ export default function OnlineSiparisler() {
   useEffect(() => { asamalariYukle() }, [asamalariYukle])
 
   useEffect(() => { lokasyonApi.listele().then(setLokasyonlar).catch(() => {}) }, [])
+
+  // Bildirimden ?siparis=<ikas_siparis_id> ile gelince O siparişin detayını aç.
+  // Talep süzgecine yönlendirmek yetmiyordu: talep sonuçlanmışsa süzgeç boş kalıyor.
+  const siparisParam = aramaParams.get('siparis')
+  const acilanRef = useRef(null)
+  useEffect(() => {
+    if (!siparisParam || acilanRef.current === siparisParam) return
+    const s = siparisler.find(x => x.ikas_siparis_id === siparisParam)
+    if (!s) return                       // liste henüz gelmediyse sonraki render'da açılır
+    acilanRef.current = siparisParam
+    detayAc(s.id)
+  }, [siparisParam, siparisler])
 
   // sessiz=true: arka plan tazelemesi — yükleme göstergesini ve hata toast'ını atlar
   // (kullanıcı bir şey istemedi; her 90 sn'de bir spinner titremesi veya ağ hatası
@@ -611,7 +624,21 @@ export default function OnlineSiparisler() {
                   )}
                   {!s.stok_dusuldu && <span className="block text-[10px] text-gray-400 mt-0.5">stok düşülmedi</span>}
                 </td>
-                <td className="px-4 py-2.5 text-right font-medium">{PARA(s.toplam, s.para_birimi)}</td>
+                <td className="px-4 py-2.5 text-right font-medium">
+                  {(() => {
+                    // Listede GERÇEK tahsilat görünmeli: ikas sipariş toplamını iade
+                    // sonrası güncellemiyor, ham toplam yanıltıcı (16.626 yerine 12.979,50).
+                    const oz = tutarOzeti(s, null)
+                    if (!oz.iadeVar) return PARA(oz.toplam, s.para_birimi)
+                    return (
+                      <>
+                        {PARA(oz.kalan, s.para_birimi)}
+                        <span className="block text-[10px] font-normal text-gray-400 line-through">{PARA(oz.toplam, s.para_birimi)}</span>
+                        <span className="block text-[10px] font-normal text-purple-600">{PARA(oz.iade, s.para_birimi)} iade</span>
+                      </>
+                    )
+                  })()}
+                </td>
                 <td className="px-4 py-2.5 text-right">
                   {s.kargo_takip_no && <span className="block text-[10px] text-emerald-600 mb-0.5" title="Kargo takip no">📦 {s.kargo_takip_no}</span>}
                   <button onClick={() => detayAc(s.id)} className="text-blue-600 hover:underline text-xs">Detay</button>
@@ -698,10 +725,17 @@ export default function OnlineSiparisler() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(secili.kalemler || []).map(k => (
-                      <tr key={k.id} className="border-t">
+                    {(secili.kalemler || []).map(k => {
+                      const iadeDurum = kalemIadeDurumu(k)
+                      return (
+                      <tr key={k.id} className={`border-t ${iadeDurum?.tam ? 'bg-purple-50' : ''}`}>
                         <td className="px-3 py-2">
-                          {k.urun_adi}
+                          <span className={iadeDurum?.tam ? 'line-through text-gray-400' : ''}>{k.urun_adi}</span>
+                          {iadeDurum && (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 align-middle">
+                              {iadeDurum.tam ? 'İADE EDİLDİ' : `${iadeDurum.iade} adet iade`}
+                            </span>
+                          )}
                           {!k.urun_id && <span className="block text-[10px] text-amber-600">⚠ yerel ürün eşleşmedi</span>}
                         </td>
                         <td className="px-3 py-2 text-center">{k.miktar}</td>
@@ -716,15 +750,42 @@ export default function OnlineSiparisler() {
                             ))}
                           </select>
                         </td>
-                        <td className="px-3 py-2 text-right whitespace-nowrap">{PARA(k.birim_fiyat, secili.para_birimi)}</td>
+                        <td className={`px-3 py-2 text-right whitespace-nowrap ${iadeDurum?.tam ? 'line-through text-gray-400' : ''}`}>
+                          {PARA(k.birim_fiyat, secili.para_birimi)}
+                        </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                   <tfoot>
-                    <tr className="border-t bg-gray-50">
-                      <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-600">Toplam</td>
-                      <td className="px-3 py-2 text-right font-bold text-gray-800 whitespace-nowrap">{PARA(secili.toplam, secili.para_birimi)}</td>
-                    </tr>
+                    {(() => {
+                      const oz = tutarOzeti(secili, secili.kalemler)
+                      if (!oz.iadeVar) return (
+                        <tr className="border-t bg-gray-50">
+                          <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-600">Toplam</td>
+                          <td className="px-3 py-2 text-right font-bold text-gray-800 whitespace-nowrap">{PARA(oz.toplam, secili.para_birimi)}</td>
+                        </tr>
+                      )
+                      return (
+                        <>
+                          <tr className="border-t bg-gray-50">
+                            <td colSpan={3} className="px-3 py-2 text-right text-gray-500">Sipariş toplamı</td>
+                            <td className="px-3 py-2 text-right text-gray-500 whitespace-nowrap">{PARA(oz.toplam, secili.para_birimi)}</td>
+                          </tr>
+                          <tr className="bg-gray-50">
+                            <td colSpan={3} className="px-3 py-2 text-right text-purple-700">
+                              İade edilen
+                              {oz.tahmini && <span className="ml-1 text-[10px] text-gray-400">(kalem fiyatlarından hesaplandı)</span>}
+                            </td>
+                            <td className="px-3 py-2 text-right text-purple-700 whitespace-nowrap">−{PARA(oz.iade, secili.para_birimi)}</td>
+                          </tr>
+                          <tr className="bg-gray-50 border-t">
+                            <td colSpan={3} className="px-3 py-2 text-right font-semibold text-gray-600">Kalan tutar</td>
+                            <td className="px-3 py-2 text-right font-bold text-gray-800 whitespace-nowrap">{PARA(oz.kalan, secili.para_birimi)}</td>
+                          </tr>
+                        </>
+                      )
+                    })()}
                   </tfoot>
                 </table>
               </div>

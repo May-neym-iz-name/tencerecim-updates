@@ -7,6 +7,7 @@ const { bildirimUret, mevcutTalepleriBildir } = require('./bildirim-uret')
 const { asamalar, asamaYaz } = require('../db/talep-durumlari')
 const { TALEP_SORGUSU, _talepPaketleri } = require('./talep-detay')
 const { adresBirlestir } = require('./adres')
+const { kalemIadeMiktari, iadeToplami, etiketKalemleri } = require('./iade-ozet')
 
 const PUSH_PARTI = 50      // saveProductStockLocations parti boyutu
 const SIPARIS_LIMIT = 200  // listOrder sayfa boyutu (ikas tavanı 200 — daha az istek)
@@ -520,9 +521,22 @@ const TEK_SIPARIS_SORGU = `query Tek($f: StringFilterInput) {
   listOrder(id: $f, pagination: { page: 1, limit: 1 }) {
     data { id status orderPaymentStatus orderPackageStatus
       orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink barcode } }
-      orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } } }
+      orderLineItems { id quantity status finalUnitPrice finalPrice price stockLocationId variant { id name } } }
   }
 }`
+
+// Siparişin başarılı iade tutarı (PayTR FAILED denemeleri sayılmaz — bkz. iade-ozet.js).
+// ikas'ı boş yere yormamak için YALNIZ durumu iade/iptal içeren siparişlerde çağrılır.
+const IADE_IZI = ['REFUND', 'CANCEL']
+async function iadeTutariGetir(ikasSiparisId, ...durumlar) {
+  if (!durumlar.some(d => d && IADE_IZI.some(x => String(d).includes(x)))) return 0
+  try {
+    const d = await graphql(
+      `query($o:String!){ listOrderTransactions(orderId:$o, includeAll:true){ amount type status } }`,
+      { o: ikasSiparisId })
+    return iadeToplami(d?.listOrderTransactions || [])
+  } catch { return 0 }   // iade özeti kritik değil; senkronu düşürmesin
+}
 
 async function tazeleSiparisKalemleri(db, siparisId) {
   const sip = db.prepare('SELECT id, ikas_siparis_id FROM online_siparisler WHERE id = ?').get(siparisId)
@@ -544,8 +558,9 @@ async function tazeleSiparisKalemleri(db, siparisId) {
   }
 
   const kalemEkle = db.prepare(`INSERT INTO online_siparis_kalemleri
-    (siparis_id, urun_id, ikas_kalem_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (siparis_id, urun_id, ikas_kalem_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id,
+     iade_miktar, ikas_kalem_durum)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 
   // Sipariş durumu ikas'ta değişmiş olabilir (örn. iptal/iade) → tazele.
   const mevcut = db.prepare('SELECT durum, odeme_durumu, kargo_durumu, stok_dusuldu FROM online_siparisler WHERE id = ?').get(siparisId)
@@ -553,6 +568,8 @@ async function tazeleSiparisKalemleri(db, siparisId) {
   const yeniOdeme = o.orderPaymentStatus || mevcut?.odeme_durumu
   const yeniKargo = o.orderPackageStatus || mevcut?.kargo_durumu
   const iadeOldu = (yeniDurum === IPTAL_DURUMU || yeniDurum === 'REFUNDED') && mevcut?.stok_dusuldu
+  // Gerçekten geri ödenen para (ağ çağrısı — transaction DIŞINDA yapılmalı).
+  const iadeTutari = await iadeTutariGetir(sip.ikas_siparis_id, yeniDurum, yeniKargo)
 
   const tx = db.transaction(() => {
     // İptal/iade olduysa ve stok düşülmüşse, mevcut kalemlerden yerel stoğu geri ekle.
@@ -572,13 +589,16 @@ async function tazeleSiparisKalemleri(db, siparisId) {
         .run(takip.no, takip.firma, takip.link, siparisId)
     }
 
+    db.prepare('UPDATE online_siparisler SET iade_tutari = ? WHERE id = ?').run(iadeTutari, siparisId)
+
     db.prepare('DELETE FROM online_siparis_kalemleri WHERE siparis_id = ?').run(siparisId)
     for (const kalem of (o.orderLineItems || [])) {
       const vId = kalem?.variant?.id || null
       const urun = vId ? varyantUrun.get(vId) : null
       const lokId = (vId && oncekiLok[vId]) || lokHaritasi[kalem?.stockLocationId] || null
       kalemEkle.run(siparisId, urun?.id || null, kalem?.id || null, vId, kalem?.variant?.name || null,
-        Number(kalem?.quantity) || 0, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null)
+        Number(kalem?.quantity) || 0, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null,
+        kalemIadeMiktari(kalem), kalem?.status || null)
     }
   })
   tx()
@@ -710,11 +730,13 @@ module.exports = {
     const db = getDb()
     const s = db.prepare('SELECT * FROM online_siparisler WHERE id = ?').get(id)
     if (!s) throw new Error('Sipariş bulunamadı')
-    const kalemler = db.prepare(`
+    // İade edilen ürün etikete YAZILMAZ (kullanıcı kararı 2026-08-21): etiketin işi
+    // kutuya ne konacağını söylemek. Kısmen iade edilen kalemde kalan adet yazılır.
+    const kalemler = etiketKalemleri(db.prepare(`
       SELECT k.*, u.sku AS urun_sku, u.marka AS urun_marka, u.kdv_orani AS urun_kdv
       FROM online_siparis_kalemleri k
       LEFT JOIN urunler u ON k.urun_id = u.id
-      WHERE k.siparis_id = ?`).all(id)
+      WHERE k.siparis_id = ?`).all(id))
     const takip = db.prepare(
       `SELECT takip_no, barkod_png FROM kargolar
        WHERE online_siparis_id = ? OR (ikas_siparis_id IS NOT NULL AND ikas_siparis_id = ?)

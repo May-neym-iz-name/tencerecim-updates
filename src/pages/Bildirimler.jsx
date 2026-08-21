@@ -30,7 +30,10 @@ export default function Bildirimler() {
     try {
       if (!b.okundu) await bildirimApi.okundu(b.id)
     } catch { /* okundu yazımı kritik değil */ }
-    if (b.ikas_siparis_id) navigate('/online-siparisler?talep=1')
+    // O SİPARİŞİN detayını aç — talep süzgecine götürme. Süzgeç yalnız BEKLEYEN
+    // talepleri gösterir; talep sonuçlanmışsa (iade yapıldı / reddedildi) liste boş
+    // çıkıyor ve kullanıcı "sipariş kayboldu" sanıyordu. Bildirim kalıcı, süzgeç anlık.
+    if (b.ikas_siparis_id) navigate(`/online-siparisler?siparis=${encodeURIComponent(b.ikas_siparis_id)}`)
     else yukle()
   }
 

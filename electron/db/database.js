@@ -521,6 +521,15 @@ function migrate() {
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_no TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_firma TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_link TEXT") } catch {}
+  // online sipariş iadeleri — ikas'tan okunan iade gerçeği (v1.2.174).
+  // ikas sipariş TOPLAMINI iade sonrası güncellemez (16.626 TL kalır) ve kargo etiketi
+  // iade edilen ürünü listelemeye devam ederdi. Kalan tutarı/kalemi kendimiz tutuyoruz.
+  // iade_miktar: kalemin kaç adedi iade edildi. ikas_kalem_durum: orderLineItems[].status.
+  try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN iade_miktar INTEGER DEFAULT 0") } catch {}
+  try { db.exec("ALTER TABLE online_siparis_kalemleri ADD COLUMN ikas_kalem_durum TEXT") } catch {}
+  // iade_tutari: siparişten GERÇEKTEN geri ödenen para (REFUND/SUCCESS işlemlerinin toplamı).
+  // Kalem fiyatlarından hesaplanmaz — kısmi/elle iadelerde tutmayabilir.
+  try { db.exec("ALTER TABLE online_siparisler ADD COLUMN iade_tutari REAL DEFAULT 0") } catch {}
   // satislar — mağaza içi iade desteği (negatif "iade satışı" kaydı).
   try { db.exec("ALTER TABLE satislar ADD COLUMN tip TEXT DEFAULT 'satis'") } catch {}
   try { db.exec("ALTER TABLE satislar ADD COLUMN iade_kaynak_id INTEGER REFERENCES satislar(id)") } catch {}
