@@ -158,7 +158,7 @@ const SIPARIS_SORGU = `query Cek($gt: Timestamp, $page: Int, $limit: Int) {
       shippingAddress { city { name } district { name } addressLine1 addressLine2 postalCode phone }
       billingAddress { company taxNumber taxOffice identityNumber }
       orderPackages { trackingInfo { trackingNumber cargoCompany trackingLink barcode } }
-      orderLineItems { id quantity finalUnitPrice finalPrice price stockLocationId variant { id name } }
+      orderLineItems { id quantity status finalUnitPrice finalPrice price stockLocationId variant { id name } }
     }
   }
 }`
@@ -256,8 +256,13 @@ async function pullSiparisler() {
      @fatura_unvan, @fatura_vergi_no, @fatura_vergi_dairesi, @fatura_tc, @stok_dusuldu,
      @kargo_takip_no, @kargo_firma, @kargo_takip_link)`)
   const kalemEkle = db.prepare(`INSERT INTO online_siparis_kalemleri
-    (siparis_id, urun_id, ikas_kalem_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (siparis_id, urun_id, ikas_kalem_id, ikas_varyant_id, urun_adi, miktar, birim_fiyat, lokasyon_id, ikas_lokasyon_id,
+     iade_miktar, ikas_kalem_durum)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  // İade bilgisi MEVCUT siparişlerde de tazelenmeli: iade sipariş kaydedildikten
+  // GÜNLER sonra yapılıyor. Yalnız kalem durumunu günceller, kalemi yeniden kurmaz.
+  const kalemIadeGuncelle = db.prepare(
+    'UPDATE online_siparis_kalemleri SET iade_miktar = ?, ikas_kalem_durum = ? WHERE ikas_kalem_id = ?')
   const varyantUrun = db.prepare('SELECT id FROM urunler WHERE ikas_varyant_id = ? AND aktif = 1')
   const stokDus = db.prepare('UPDATE urun_stoklar SET miktar = MAX(0, miktar - ?) WHERE urun_id = ? AND lokasyon_id = ?')
   // Var olan siparişin durum tazeleme + iptal/iade'de stok geri ekleme.
@@ -274,6 +279,10 @@ async function pullSiparisler() {
   let page = 1
   let kaydedilen = 0
   let guncellenen = 0
+  // İade tutarı ayrı bir ikas sorgusu ister (listOrderTransactions) → transaction
+  // İÇİNDE çağrılamaz. Durumu iade/iptal izi taşıyanlar burada toplanır, parti
+  // işlendikten SONRA tek tek çekilir. Yalnız iadeli siparişler → gereksiz sorgu yok.
+  const iadeTutariGerek = []
   let stokDusulen = 0
   let eslesmeyen = 0
   let enSonUpdatedAt = sonSenk
@@ -306,6 +315,12 @@ async function pullSiparisler() {
           // Kargo takip bilgisi ikas'ta girilmiş/değişmişse tazele.
           const takip = takipBilgisi(sip)
           if (takip.no || takip.link) takipGuncelle.run(takip.no, takip.firma, takip.link, mevcut.id)
+          // İADE BİLGİSİ: kalem durumlarını her çekimde tazele. Bunu atlarsak iade
+          // edilen ürün etiketten düşmez ve kalan tutar görünmez (v1.2.174'te atlanmıştı).
+          for (const kalem of (sip.orderLineItems || [])) {
+            if (kalem?.id) kalemIadeGuncelle.run(kalemIadeMiktari(kalem), kalem.status || null, kalem.id)
+          }
+          if (iadeIziVar(yeniDurum, yeniKargo)) iadeTutariGerek.push({ id: mevcut.id, ikasId: sip.id })
           // İkas'ta iptal/iade edildiyse ve stok düşülmüşse yerel stoğu geri ekle.
           if (IADE_DURUMLARI.has(yeniDurum) && mevcut.stok_dusuldu) {
             for (const k of kalemlerGetir.all(mevcut.id)) {
@@ -324,7 +339,8 @@ async function pullSiparisler() {
               const urun = vId ? varyantUrun.get(vId) : null
               const lokId = lokHaritasi[kalem?.stockLocationId] || null
               kalemEkle.run(mevcut.id, urun?.id || null, kalem?.id || null, vId, kalem?.variant?.name || null,
-                Number(kalem?.quantity) || 0, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null)
+                Number(kalem?.quantity) || 0, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null,
+                kalemIadeMiktari(kalem), kalem?.status || null)
             }
             guncellenen++
           }
@@ -376,7 +392,8 @@ async function pullSiparisler() {
           const urun = vId ? varyantUrun.get(vId) : null
           const lokId = lokHaritasi[kalem?.stockLocationId] || null
           kalemEkle.run(siparisId, urun?.id || null, kalem?.id || null, vId, kalem?.variant?.name || null,
-            adet, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null)
+            adet, birimFiyatHesapla(kalem), lokId, kalem?.stockLocationId || null,
+            kalemIadeMiktari(kalem), kalem?.status || null)
 
           if (stokDusecek && adet) {
             if (urun && lokId) stokDus.run(adet, urun.id, lokId)
@@ -384,6 +401,8 @@ async function pullSiparisler() {
           }
         }
         kaydedilen++
+        // Yeni kaydedilen sipariş zaten iadeli/iptalli gelmiş olabilir (geçmiş çekimi).
+        if (iadeIziVar(sip.status, sip.orderPackageStatus)) iadeTutariGerek.push({ id: siparisId, ikasId: sip.id })
         if (stokDusecek) stokDusulen++
       }
     })
@@ -391,6 +410,18 @@ async function pullSiparisler() {
 
     if (!liste.hasNext) break
     page++
+  }
+
+  // İade tutarlarını doldur (ağ çağrıları — parti transaction'ları bittikten SONRA).
+  // Hata YUTULUR: iade özeti kritik değil, sipariş çekimini düşürmemeli.
+  const iadeTutariYaz = db.prepare('UPDATE online_siparisler SET iade_tutari = ? WHERE id = ?')
+  for (const x of iadeTutariGerek) {
+    try {
+      const d = await graphql(
+        `query($o:String!){ listOrderTransactions(orderId:$o, includeAll:true){ amount type status } }`,
+        { o: x.ikasId })
+      iadeTutariYaz.run(iadeToplami(d?.listOrderTransactions || []), x.id)
+    } catch { /* yoksay */ }
   }
 
   if (enSonUpdatedAt > sonSenk) ayarKaydet('son_siparis_senk', String(enSonUpdatedAt))
@@ -528,8 +559,11 @@ const TEK_SIPARIS_SORGU = `query Tek($f: StringFilterInput) {
 // Siparişin başarılı iade tutarı (PayTR FAILED denemeleri sayılmaz — bkz. iade-ozet.js).
 // ikas'ı boş yere yormamak için YALNIZ durumu iade/iptal içeren siparişlerde çağrılır.
 const IADE_IZI = ['REFUND', 'CANCEL']
+function iadeIziVar(...durumlar) {
+  return durumlar.some(d => d && IADE_IZI.some(x => String(d).includes(x)))
+}
 async function iadeTutariGetir(ikasSiparisId, ...durumlar) {
-  if (!durumlar.some(d => d && IADE_IZI.some(x => String(d).includes(x)))) return 0
+  if (!iadeIziVar(...durumlar)) return 0
   try {
     const d = await graphql(
       `query($o:String!){ listOrderTransactions(orderId:$o, includeAll:true){ amount type status } }`,
