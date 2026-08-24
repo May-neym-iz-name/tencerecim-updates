@@ -16,6 +16,38 @@ const ETIKET_LINK = 'Online Sipariş Hattı:'
 const ETIKET_WHATSAPP = 'Whatsapp Sipariş Hattı:'
 
 /**
+ * WhatsApp sipariş hattı satırlarını üretir (v1.2.177 — gönderiye birden çok hat eklenebilir).
+ *
+ * Neden liste: Gölcük ve Pendik ayrı WhatsApp hatları işletiyor; müşteri kendine yakın
+ * mağazaya yazabilmeli. Tek `whatsapp` alanı bunu taşıyamıyordu.
+ *
+ * Başlık gönderi başına DEĞİŞTİRİLEBİLİR (`baslik`) — "Gölcük WhatsApp Sipariş Hattı" yerine
+ * "Hızlı Sipariş" yazmak isteyen kullanıcı engellenmesin. Boşsa eski tek-hat etiketine düşer.
+ *
+ * Tekilleştirme NUMARA üzerinden: iki mağaza kaydı aynı numarayı gösteriyorsa müşteriye aynı
+ * numara iki kez yazılmaz (v1.2.173'te şablonlarda tam bu hata yaşanmıştı — numara farklı
+ * biçimlerde yazıldığı için tekilleştirme tutmamış, mesajda 3 kez görünmüştü). Burada da
+ * biçim farkı tekilleştirmeyi kaçırabilir; o yüzden karşılaştırma RAKAMLAR üzerinden yapılır.
+ *
+ * @param {Array<{baslik?: string, numara?: string}>} numaralar
+ * @returns {string[]} yazılacak satırlar
+ */
+function whatsappSatirlari(numaralar) {
+  const gorulen = new Set()
+  const satirlar = []
+  for (const n of numaralar || []) {
+    const numara = ((n && n.numara) || '').trim()
+    if (!numara) continue // mağaza kaydında telefon girilmemiş → satırı hiç yazma
+    const anahtar = numara.replace(/\D/g, '')
+    if (gorulen.has(anahtar)) continue
+    gorulen.add(anahtar)
+    const baslik = ((n && n.baslik) || '').trim() || ETIKET_WHATSAPP.replace(/:$/, '')
+    satirlar.push(`${baslik}: ${numara}`)
+  }
+  return satirlar
+}
+
+/**
  * Fiyatı Türkçe biçimde yazar. Fiyat yoksa null → çağıran satırı hiç yazmaz.
  * @param {number|null|undefined} n
  * @returns {string|null}
@@ -88,11 +120,16 @@ function mesajOlustur({ sablonlar, selamlama = SELAMLAMA }) {
  *  3. WhatsApp gönderi başına tek → tekilleştirme mantığı gerekmez.
  * Şablon yolu bozulmadan durur: mesajlaşmadaki `sosyal:sablonMetin` onu kullanmaya devam eder.
  *
+ * v1.2.177: `numaralar` (çoklu WhatsApp hattı) eklendi. Doluysa `whatsapp` YOK SAYILIR —
+ * ikisini birden yazmak aynı hattı iki kez gösterirdi. `whatsapp` yalnız henüz çoklu hatta
+ * taşınmamış gönderiler için duruyor (geriye dönük uyum).
+ *
  * @param {{aciklama?: string, urunler?: Array<{ad: string, fiyat?: number|null, web_link?: string}>,
- *          whatsapp?: string, selamlama?: string}} girdi
+ *          whatsapp?: string, numaralar?: Array<{baslik?: string, numara?: string}>,
+ *          selamlama?: string}} girdi
  * @returns {{metin: string, karakter: number, asildi: boolean}}
  */
-function gonderiMesajiOlustur({ aciklama, urunler, whatsapp, selamlama = SELAMLAMA } = {}) {
+function gonderiMesajiOlustur({ aciklama, urunler, whatsapp, numaralar, selamlama = SELAMLAMA } = {}) {
   const liste = (urunler || []).filter(u => u && u.ad)
   const metinAciklama = (aciklama || '').trim()
   if (!metinAciklama && !liste.length) return { metin: '', karakter: 0, asildi: false }
@@ -109,11 +146,16 @@ function gonderiMesajiOlustur({ aciklama, urunler, whatsapp, selamlama = SELAMLA
     if (u.web_link) satirlar.push(`${ETIKET_LINK} ${u.web_link}`)
     parcalar.push(satirlar.join('\n'), '')
   }
-  const wp = (whatsapp || '').trim()
-  if (wp) parcalar.push(`${ETIKET_WHATSAPP} ${wp}`)
+  // Çoklu hat varsa o kazanır; yoksa tek `whatsapp` alanına düş (taşınmamış gönderiler).
+  const hatlar = whatsappSatirlari(numaralar)
+  if (hatlar.length) parcalar.push(hatlar.join('\n'))
+  else {
+    const wp = (whatsapp || '').trim()
+    if (wp) parcalar.push(`${ETIKET_WHATSAPP} ${wp}`)
+  }
 
   const metin = parcalar.join('\n').replace(/\n{3,}/g, '\n\n').trim()
   return { metin, karakter: metin.length, asildi: metin.length > MAKS_KARAKTER }
 }
 
-module.exports = { fiyatYaz, sablonBloku, mesajOlustur, gonderiMesajiOlustur, MAKS_KARAKTER, SELAMLAMA }
+module.exports = { fiyatYaz, sablonBloku, whatsappSatirlari, mesajOlustur, gonderiMesajiOlustur, MAKS_KARAKTER, SELAMLAMA }

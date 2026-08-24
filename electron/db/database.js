@@ -521,6 +521,12 @@ function migrate() {
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_no TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_firma TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_link TEXT") } catch {}
+  // setler — kendi stok kodumuz (v1.2.176). ikas ve bizimhesap'ta setler ZATEN
+  // TNC.SET.000NN koduyla duruyordu, uygulamada karşılığı yoktu → pazaryeri/fatura
+  // eşleştirmesinde set kayıtları hiçbir anahtara bağlanamıyordu.
+  // Ürün SKU'ları gibi UNIQUE: aynı kod iki sete verilemez.
+  try { db.exec("ALTER TABLE setler ADD COLUMN sku TEXT") } catch {}
+  try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_setler_sku ON setler(sku) WHERE sku IS NOT NULL") } catch {}
   // online sipariş iadeleri — ikas'tan okunan iade gerçeği (v1.2.174).
   // ikas sipariş TOPLAMINI iade sonrası güncellemez (16.626 TL kalır) ve kargo etiketi
   // iade edilen ürünü listelemeye devam ederdi. Kalan tutarı/kalemi kendimiz tutuyoruz.
@@ -878,6 +884,57 @@ function migrate() {
   // otomatik çekilemez — setler ikas'ta ayrı ürün değil, bizim paketimiz — bu yüzden elle girilir.
   try { db.exec("ALTER TABLE setler ADD COLUMN web_link TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_sablonlar ADD COLUMN serbest_metin TEXT") } catch {}
+
+  // Gönderiye eklenen WhatsApp sipariş hatları (v1.2.177). Eskiden gönderi başına TEK numara
+  // vardı (sosyal_otomasyonlar.whatsapp); Gölcük ve Pendik ayrı hat işlettiği için müşteriye
+  // kendine yakın mağazanın numarası verilemiyordu.
+  //
+  // numara NULL = "MAĞAZAYA SOR" — kayıt lokasyonlar.telefon'dan CANLI okunur. Kod tabanının
+  // yerleşik deyimi (ozel_fiyat/ozel_ad ile aynı): Ayarlar > Mağazalar'dan numara değişince
+  // tüm gönderiler kendiliğinden güncellenir, 20 otomasyon tek tek düzeltilmez.
+  // numara DOLU = o gönderiye özel, mağaza kaydından bağımsız numara.
+  //
+  // baslik NULL = varsayılan "<Mağaza> WhatsApp Sipariş Hattı"; kullanıcı istediğinde
+  // gönderi bazında değiştirebilir (istek: "başlıklar istenildiğinde değiştirilebilsin").
+  // Mağazaya ID ile DEĞİL ADLA bağlanır: lokasyonlar tablosu PC'ler arası senkronlanmıyor
+  // (yerel kayıt), dolayısıyla id'lerin her makinede aynı olduğu garanti değil. Mağaza adı
+  // ("Tencerecim Gölcük") her PC'de aynı → hat, ikinci PC'de de doğru numarayı bulur.
+  db.exec(`CREATE TABLE IF NOT EXISTS sosyal_otomasyon_numaralar (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    otomasyon_id INTEGER NOT NULL REFERENCES sosyal_otomasyonlar(id) ON DELETE CASCADE,
+    lokasyon_ad TEXT,
+    baslik TEXT,
+    numara TEXT,
+    sira INTEGER DEFAULT 0
+  );`)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sosyal_oto_numara ON sosyal_otomasyon_numaralar(otomasyon_id)")
+
+  // Tek numaradan çoklu hatta TAŞIMA — tek seferlik, yerel.
+  // sosyal_otomasyonlar.whatsapp SİLİNMEZ: taşıma yanlış eşleşirse geri dönülecek kaynak odur
+  // ve güncellenmemiş 2. PC hâlâ o kolonu okuyor ([[sil-yeniden-yaz-tuzagi]]).
+  // Numara mağaza kaydıyla eşleşirse (yalnız RAKAMLAR karşılaştırılır — kayıtlarda
+  // "0545 151 60 77", "0 545 151 60 77", "05451516077" biçimleri bir arada) lokasyona
+  // BAĞLANIR ve numara NULL bırakılır → canlı okuma kazanılır. Eşleşmezse numara aynen taşınır.
+  try {
+    db.exec("CREATE TABLE IF NOT EXISTS yerel_onarimlar (ad TEXT PRIMARY KEY, tarih TEXT)")
+    if (!db.prepare('SELECT 1 FROM yerel_onarimlar WHERE ad = ?').get('whatsapp_coklu_hat_2026_08')) {
+      const rakam = t => (t || '').replace(/\D/g, '').replace(/^90/, '').replace(/^0/, '')
+      const loklar = db.prepare('SELECT ad, telefon FROM lokasyonlar').all()
+      const otolar = db.prepare(`SELECT id, whatsapp FROM sosyal_otomasyonlar
+        WHERE whatsapp IS NOT NULL AND TRIM(whatsapp) != ''`).all()
+      const ekle = db.prepare(`INSERT INTO sosyal_otomasyon_numaralar
+        (otomasyon_id, lokasyon_ad, baslik, numara, sira) VALUES (?,?,?,?,0)`)
+      for (const o of otolar) {
+        // Zaten taşınmışsa (senkronla gelmiş olabilir) dokunma.
+        const varMi = db.prepare('SELECT 1 FROM sosyal_otomasyon_numaralar WHERE otomasyon_id = ?').get(o.id)
+        if (varMi) continue
+        const lok = loklar.find(l => rakam(l.telefon) && rakam(l.telefon) === rakam(o.whatsapp))
+        ekle.run(o.id, lok ? lok.ad : null, null, lok ? null : o.whatsapp)
+      }
+      db.prepare("INSERT INTO yerel_onarimlar (ad, tarih) VALUES (?, datetime('now','localtime'))")
+        .run('whatsapp_coklu_hat_2026_08')
+    }
+  } catch (e) { console.error('whatsapp coklu hat tasima:', e.message) }
 
   // PERFORMANS index'leri:
   // online-siparisler:listele her satır için kargolar'dan son takip no'yu alt sorguyla çekiyor;

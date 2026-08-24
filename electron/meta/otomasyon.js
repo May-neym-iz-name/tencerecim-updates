@@ -2,7 +2,7 @@
 // Ayrı dosya: meta/index.js zaten çekme/gönderme ile dolu; bu iş kendi güvenlik kurallarına sahip.
 // Polling turunun SONUNDA çalışır (yorumlar çekildikten sonra).
 const { getDb } = require('../db/database')
-const { _adaylar, _sablonlariCoz, _gonderiUrunleriCoz } = require('../db/sosyal-otomasyon')
+const { _adaylar, _sablonlariCoz, _gonderiUrunleriCoz, _numaralariCoz } = require('../db/sosyal-otomasyon')
 const { mesajOlustur, gonderiMesajiOlustur } = require('./sablon-mesaj')
 const client = require('./client')
 
@@ -50,7 +50,12 @@ function _otomasyonMetni(db, otomasyonId) {
   const o = db.prepare('SELECT ozel_aciklama, whatsapp FROM sosyal_otomasyonlar WHERE id = ?').get(otomasyonId)
   const urunler = _gonderiUrunleriCoz(db, otomasyonId)
   if (urunler.length || (o?.ozel_aciklama || '').trim()) {
-    return gonderiMesajiOlustur({ aciklama: o.ozel_aciklama, urunler, whatsapp: o.whatsapp })
+    // numaralar (çoklu hat) doluysa o kazanır; boşsa eski tek `whatsapp` alanına düşülür
+    // → henüz hat eklenmemiş gönderiler bozulmadan çalışmaya devam eder.
+    return gonderiMesajiOlustur({
+      aciklama: o.ozel_aciklama, urunler, whatsapp: o.whatsapp,
+      numaralar: _numaralariCoz(db, otomasyonId),
+    })
   }
   return mesajOlustur({ sablonlar: _sablonlariCoz(db, otomasyonId) })
 }

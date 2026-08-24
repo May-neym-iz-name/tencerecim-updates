@@ -28,7 +28,10 @@ const TABLOLAR = {
   // barkod tüm PC'lerde AYNI ve UNIQUE → doğal anahtar, dedup garantili.
   urun_barkodlar: { kolonlar: ['barkod', 'aciklama', 'aktif'], fk: { urun_id: 'urunler' },
                     zorunluFk: ['urun_id'], dogal: ['barkod'], sonradanEklendi: true },
-  setler:       { kolonlar: ['ad', 'fiyat', 'aktif'], fk: {}, dogal: ['ad'] },
+  // sku sonradan eklendi (v1.2.176): ikas/bizimhesap'taki TNC.SET.000NN kodunun
+  // uygulamadaki karşılığı. Doğal anahtar OLARAK KULLANILMAZ — eski kayıtlarda boş,
+  // boş değer üzerinden dedup iki farklı seti birleştirir ([[sil-yeniden-yaz-tuzagi]]).
+  setler:       { kolonlar: ['ad', 'fiyat', 'aktif', 'sku'], fk: {}, dogal: ['ad'], sonradanEklendi: true },
   set_urunler:  { kolonlar: ['miktar'], fk: { set_id: 'setler', urun_id: 'urunler' }, zorunluFk: ['set_id', 'urun_id'], dogalCift: ['set_id', 'urun_id'] },
   // Sosyal medya otomasyon şablonları: içerik (metin/fiyat/link) — küçük, şişirmez.
   // urun_id/set_id ZORUNLU DEĞİL: çözülemezse null kalır ve şablon elle yazılmış
@@ -50,6 +53,23 @@ const TABLOLAR = {
                                 fk: { otomasyon_id: 'sosyal_otomasyonlar', sablon_id: 'sosyal_sablonlar' },
                                 zorunluFk: ['otomasyon_id', 'sablon_id'],
                                 dogalCift: ['otomasyon_id', 'sablon_id'], sonradanEklendi: true },
+
+  // Gönderiye eklenen WhatsApp sipariş hatları (v1.2.177). SENKRONLANMALI: otomasyonu yürüten
+  // PC başka bir makine olabilir (yurutucu.js tek PC'de çalışır) — hatlar yayılmazsa yürütücü
+  // numarasız mesaj gönderirdi.
+  //
+  // Doğal anahtar (otomasyon_id, sira): "bu gönderinin N. hattı" slotu. lokasyon adıyla
+  // eşleştirmek CAZİP ama YANLIŞ — mağazaya bağlı olmayan (elle numaralı) satırlarda NULL olur,
+  // NULL üzerinden dedup iki farklı hattı birleştirir ([[sil-yeniden-yaz-tuzagi]]).
+  // Slot anahtarının semantiği "son yazan kazanır"; hat listesi kısa ve tümü birlikte yazılır,
+  // bu yüzden iki PC'nin aynı slotu farklı doldurması içerik kaybına değil, beklenen üzerine
+  // yazmaya yol açar.
+  // lokasyon_ad düz METİN olarak senkronlanır, FK olarak DEĞİL: lokasyonlar senkron
+  // şemasında yok (yerel tablo, senk_id kolonu yok) → FK çözücü onu arayamaz.
+  sosyal_otomasyon_numaralar: { kolonlar: ['sira', 'baslik', 'numara', 'lokasyon_ad'],
+                                fk: { otomasyon_id: 'sosyal_otomasyonlar' },
+                                zorunluFk: ['otomasyon_id'],
+                                dogalCift: ['otomasyon_id', 'sira'], sonradanEklendi: true },
 
   // --- Faz 2: işlemsel veri (append-mostly). lokasyon_id her PC'de aynı seed → düz kolon. ---
   satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih', 'on_siparis', 'on_siparis_durum', 'on_siparis_not'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
@@ -100,7 +120,7 @@ const TABLOLAR = {
 const SIRA = [
   'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar', 'urun_barkodlar',
   'setler', 'set_urunler', 'sosyal_sablonlar',
-  'sosyal_otomasyonlar', 'sosyal_otomasyon_sablonlar',
+  'sosyal_otomasyonlar', 'sosyal_otomasyon_sablonlar', 'sosyal_otomasyon_numaralar',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',

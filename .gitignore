@@ -50,3 +50,6 @@ _*.js
 
 # UPS API dokumanlari (vendor PDF/XLS) — repoya girmez, yerel kalir
 UPS KARGO ENTEGRASYONU/
+
+# Reklam kampanyasi calisma dosyalari (butce/hedefleme/token notlari) — ticari, repoya girmez
+REKLAM-KAMPANYALARI/

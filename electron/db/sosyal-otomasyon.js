@@ -43,6 +43,41 @@ function _gonderiUrunleriCoz(db, otomasyonId) {
   `).all(otomasyonId).filter(u => u.ad)
 }
 
+// Gönderinin WhatsApp sipariş hatlarını çözer (v1.2.177).
+//
+// İki alanda da NULL "kaynağa sor" demek — kod tabanının ozel_fiyat/ozel_ad deyimi:
+//   numara → mağaza kaydındaki telefon KAZANIR (Ayarlar > Mağazalar): numara değişince
+//            20 otomasyonun hepsi kendiliğinden güncellenir. numara kolonu mağaza hatlarında
+//            ANLIK GÖRÜNTÜ olarak tutulur ve yalnız mağaza kaydı bulunamazsa devreye girer —
+//            lokasyonlar tablosu PC'ler arası SENKRONLANMIYOR, otomasyonu yürüten makinede
+//            o mağaza kaydı olmayabilir; anlık görüntü olmasaydı satır sessizce düşerdi.
+//            Mağazasız (elle) hatlarda lokasyon_ad NULL'dır, numara kullanıcının girdisidir.
+//   baslik NULL → "<Mağaza> WhatsApp Sipariş Hattı". Kullanıcı gönderi bazında
+//                 değiştirebilir; değiştirmediği sürece mağaza adını takip eder.
+//
+// Mağaza ADLA bağlanır (lokasyon_ad), id ile değil — lokasyonlar tablosu PC'ler arası
+// senkronlanmıyor, id'lerin her makinede aynı olduğu garanti değil.
+function _numaralariCoz(db, otomasyonId) {
+  return db.prepare(`
+    SELECT n.sira, n.lokasyon_ad, n.baslik AS ozel_baslik, n.numara AS ozel_numara,
+           COALESCE(n.baslik, l.ad || ' WhatsApp Sipariş Hattı') AS baslik,
+           COALESCE(l.telefon, n.numara) AS numara
+    FROM sosyal_otomasyon_numaralar n
+    LEFT JOIN lokasyonlar l ON l.ad = n.lokasyon_ad
+    WHERE n.otomasyon_id = ?
+    ORDER BY n.sira, n.id
+  `).all(otomasyonId)
+    .map(n => ({ ...n, baslik: n.ozel_baslik ? n.baslik : _basligiSadelestir(n.baslik) }))
+}
+
+// Mağaza adları depoda "Tencerecim Gölcük" diye kayıtlı; müşteriye giden mesajda
+// "Tencerecim Gölcük WhatsApp Sipariş Hattı" gereksiz uzun ve marka adı zaten belli.
+// Yalnız VARSAYILAN başlığa uygulanır — kullanıcının elle yazdığı başlığa dokunulmaz
+// (elle yazılan başlık zaten `baslik` kolonundan gelir ve bu ön ek onda bulunmaz).
+function _basligiSadelestir(baslik) {
+  return (baslik || '').replace(/^Tencerecim\s+/i, '')
+}
+
 // Cevaplanacak yorumlar. konuId verilirse yalnız o gönderi (açma onayındaki sayı için),
 // verilmezse aktif tüm otomasyonlar (çalıştırıcı için).
 //
@@ -89,7 +124,7 @@ function _adaylar(db, konuId = null) {
 //   listeyi göndermeyen bir çağrının (yalnız aç/kapat, ya da güncellenmemiş 2. PC)
 //   bağları sessizce yok etmesine yol açar. Boş dizi ise gerçekten temizlenir.
 function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_idler,
-  ozel_aciklama, whatsapp, urunler }, db) {
+  ozel_aciklama, whatsapp, urunler, numaralar }, db) {
   if (ozel_aciklama && ozel_aciklama.length > 1000) {
     throw new Error('Gönderi açıklaması 1000 karakteri aşamaz.')
   }
@@ -133,6 +168,23 @@ function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_id
         (otomasyon_id, sablon_id, sira) VALUES (?,?,?)`)
       sablon_idler.forEach((sid, i) => ekle.run(o.id, sid, i))
     }
+    // `urunler` ile AYNI kural: undefined = DOKUNMA, [] = temizle. Yalnız aç/kapat yapan
+    // (ya da güncellenmemiş 2. PC'den gelen) bir çağrı hatları sessizce silmemeli.
+    if (numaralar) {
+      db.prepare('DELETE FROM sosyal_otomasyon_numaralar WHERE otomasyon_id = ?').run(o.id)
+      const numEkle = db.prepare(`INSERT INTO sosyal_otomasyon_numaralar
+        (otomasyon_id, lokasyon_ad, baslik, numara, sira) VALUES (?,?,?,?,?)`)
+      const lokTel = db.prepare('SELECT telefon FROM lokasyonlar WHERE ad = ?')
+      numaralar.forEach((n, i) => {
+        const lokAd = (n.lokasyon_ad || '').trim() || null
+        // Mağaza hattında numara kullanıcıdan DEĞİL mağaza kaydından alınır (anlık görüntü).
+        // Elle hatta kullanıcının girdisi yazılır.
+        const numara = lokAd
+          ? ((lokTel.get(lokAd)?.telefon || '').trim() || null)
+          : ((n.numara || '').trim() || null)
+        numEkle.run(o.id, lokAd, (n.baslik || '').trim() || null, numara, i)
+      })
+    }
     if (urunler) {
       db.prepare('DELETE FROM sosyal_otomasyon_urunler WHERE otomasyon_id = ?').run(o.id)
       const urunEkle = db.prepare(`INSERT INTO sosyal_otomasyon_urunler
@@ -150,6 +202,7 @@ module.exports = {
   _adaylar,
   _sablonlariCoz,
   _gonderiUrunleriCoz,
+  _numaralariCoz,
   _otomasyonKaydet: otomasyonKaydet,
 
   // Şablon kütüphanesi. Bağlı kaynağın (ürün veya set) canlı fiyatını `kaynak_fiyati` olarak
@@ -249,6 +302,10 @@ module.exports = {
       LEFT JOIN setler st ON st.id = ou.set_id
       WHERE ou.otomasyon_id = ? ORDER BY ou.sira, ou.id
     `).all(o.id)
+    // WhatsApp sipariş hatları. Panel hem ÇÖZÜLMÜŞ değeri (ne yazılacak) hem kullanıcının
+    // kendi girdisini (ozel_baslik/ozel_numara) alır: kutular boş görünüp altında mağazadan
+    // gelen canlı değer gösterilebilsin — "boş = mağazaya sor" görünür olsun.
+    o.numaralar = _numaralariCoz(db, o.id)
     o.bugun_giden = db.prepare(`SELECT COUNT(*) n FROM sosyal_mesajlar
       WHERE konu_id = ? AND date(ozel_mesaj_tarihi) = date('now','localtime')`).get(konu_id).n
     return o
@@ -262,7 +319,7 @@ module.exports = {
   // Panelin canlı önizlemesi. KAYDEDİLMEMİŞ seçim üzerinden çalışır (kaydetmeden görmek için),
   // ama metni gönderimle AYNI üreticiden alır → önizlemede görülen, müşteriye giden metindir.
   // Yetki istemez: yalnız metin döndürür, hiçbir şey göndermez/yazmaz.
-  'sosyal:gonderiOnizleme': ({ aciklama, whatsapp, urunler }) => {
+  'sosyal:gonderiOnizleme': ({ aciklama, whatsapp, urunler, numaralar }) => {
     const db = getDb()
     const secim = (urunler || []).map(u => {
       const r = u.set_id
@@ -275,9 +332,31 @@ module.exports = {
       const ozelA = (u.ozel_ad || '').trim() || null
       return { ...r, fiyat: ozelF ?? r.fiyat, ad: ozelA ?? r.ad }
     }).filter(Boolean)
+    // Hatlar KAYDEDİLMEDEN önizlenebilmeli → panelden gelen ham liste burada çözülür
+    // (mağaza seçilmişse numara/başlık canlı okunur). Çözüm mantığı _numaralariCoz ile
+    // aynı kalmalı; ikisi ayrışırsa önizleme ile giden mesaj ayrışır.
+    const hatlar = (numaralar || []).map(n => {
+      const lok = (n.lokasyon_ad || '').trim()
+        ? db.prepare('SELECT ad, telefon FROM lokasyonlar WHERE ad = ?').get(n.lokasyon_ad.trim())
+        : null
+      const ozelBaslik = (n.baslik || '').trim()
+      const varsayilan = lok ? _basligiSadelestir(`${lok.ad} WhatsApp Sipariş Hattı`) : ''
+      return {
+        baslik: ozelBaslik || varsayilan,
+        // Çözüm sırası _numaralariCoz ile AYNI: mağaza kaydı varsa o, yoksa elle girilen.
+        numara: (lok?.telefon || '').trim() || (n.numara || '').trim(),
+      }
+    })
     const { gonderiMesajiOlustur } = require('../meta/sablon-mesaj')
-    return gonderiMesajiOlustur({ aciklama, whatsapp, urunler: secim })
+    return gonderiMesajiOlustur({ aciklama, whatsapp, urunler: secim, numaralar: hatlar })
   },
+
+  // Panelin "+ Mağaza hattı ekle" seçicisi. Telefonu GİRİLMEMİŞ mağaza da listelenir —
+  // gizlemek, kullanıcıya numaranın neden çıkmadığını göstermez; panel uyarı basar.
+  // Yetki istemez: yalnız mağaza adı/telefonu döner, zaten Ayarlar'da görünen bilgi.
+  'sosyal:magazaNumaralari': () => getDb().prepare(
+    'SELECT ad, telefon FROM lokasyonlar WHERE aktif = 1 ORDER BY ad'
+  ).all(),
 
   // Açma onayı için: "bu gönderide kaç kişiye mesaj gidecek?"
   // Aday sorgusunun AYNISINI kullanır → gösterilen sayı gerçekte gidecek sayıdır.

@@ -53,6 +53,13 @@ beforeEach(() => {
     CREATE TABLE sosyal_otomasyon_urunler (id INTEGER PRIMARY KEY AUTOINCREMENT, otomasyon_id INTEGER,
       urun_id INTEGER, set_id INTEGER, sira INTEGER DEFAULT 0, ozel_fiyat REAL, ozel_ad TEXT);
     CREATE TABLE sosyal_mesajlar (id INTEGER PRIMARY KEY, konu_id TEXT, ozel_mesaj_tarihi TEXT);
+    CREATE TABLE lokasyonlar (id INTEGER PRIMARY KEY, ad TEXT, telefon TEXT, aktif INTEGER DEFAULT 1);
+    CREATE TABLE sosyal_otomasyon_numaralar (id INTEGER PRIMARY KEY AUTOINCREMENT, otomasyon_id INTEGER,
+      lokasyon_ad TEXT, baslik TEXT, numara TEXT, sira INTEGER DEFAULT 0);
+    INSERT INTO lokasyonlar (id, ad, telefon) VALUES
+      (1, 'Tencerecim Pendik', '0545 151 60 77'),
+      (2, 'Tencerecim Gölcük', '0537 288 12 41'),
+      (3, 'Tencerecim Depo', '');
     INSERT INTO urunler (id, ad, satis_fiyati, web_link) VALUES
       (1, 'Tava 24', 890, 'https://tencerecim.store/tava-24'),
       (2, 'Tava 26', 990, 'https://tencerecim.store/tava-26');
@@ -151,5 +158,106 @@ describe('_gonderiUrunleriCoz — canlı kaynak çözümü', () => {
   test('ozel_ad boş ise katalog adı kullanılır', () => {
     const { id } = kaydet({ konu_id: 'K1', platform: 'instagram', aktif: 0, urunler: [{ urun_id: 1, ozel_ad: '  ' }] })
     expect(mod._gonderiUrunleriCoz(db, id)[0].ad).toBe('Tava 24')
+  })
+})
+
+// v1.2.177 — gönderiye birden çok WhatsApp sipariş hattı.
+describe('WhatsApp sipariş hatları (çoklu numara)', () => {
+  const coz = (otoId) => mod._numaralariCoz(db, otoId)
+
+  test('mağaza seçilip numara boş bırakılırsa numara MAĞAZA KAYDINDAN gelir', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Gölcük' }],
+    })
+    expect(coz(id)).toEqual([expect.objectContaining({
+      baslik: 'Gölcük WhatsApp Sipariş Hattı', numara: '0537 288 12 41',
+    })])
+  })
+
+  test('mağaza numarası değişince gönderi kendiliğinden güncellenir (canlı okuma)', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Gölcük' }],
+    })
+    db.prepare("UPDATE lokasyonlar SET telefon = '0530 000 00 00' WHERE ad = 'Tencerecim Gölcük'").run()
+    expect(coz(id)[0].numara).toBe('0530 000 00 00')
+  })
+
+  test('başlık elle yazılırsa mağaza adı yerine o kullanılır', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Gölcük', baslik: 'Hızlı Sipariş' }],
+    })
+    expect(coz(id)[0].baslik).toBe('Hızlı Sipariş')
+  })
+
+  test('mağaza hattında MAĞAZA KAYDI kazanır (panelden gelen numara yok sayılır)', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Pendik', numara: '0500 111 22 33' }],
+    })
+    expect(coz(id)[0].numara).toBe('0545 151 60 77')
+  })
+
+  // lokasyonlar tablosu PC'ler arası senkronlanmıyor: otomasyonu YÜRÜTEN makinede mağaza
+  // kaydı olmayabilir. Anlık görüntü olmasaydı hat o makinede sessizce mesajdan düşerdi.
+  test('mağaza kaydı bulunmayan PC\'de anlık görüntüye düşülür — hat kaybolmaz', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Gölcük' }],
+    })
+    db.prepare("DELETE FROM lokasyonlar WHERE ad = 'Tencerecim Gölcük'").run()
+    expect(coz(id)[0].numara).toBe('0537 288 12 41')
+  })
+
+  test('mağazasız (elle) hatta kullanıcının numarası yazılır', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ baslik: 'Toptan Hattı', numara: '0500 111 22 33' }],
+    })
+    expect(coz(id)[0]).toEqual(expect.objectContaining({ baslik: 'Toptan Hattı', numara: '0500 111 22 33' }))
+  })
+
+  test('birden çok hat sırasıyla korunur', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Gölcük' }, { lokasyon_ad: 'Tencerecim Pendik' }],
+    })
+    expect(coz(id).map(n => n.numara)).toEqual(['0537 288 12 41', '0545 151 60 77'])
+  })
+
+  test('numaralar verilmezse mevcut hatlar KORUNUR (aç/kapat hattı silmez)', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Gölcük' }],
+    })
+    kaydet({ konu_id: 'K1', platform: 'instagram', aktif: 1 })
+    expect(coz(id)).toHaveLength(1)
+  })
+
+  test('numaralar boş dizi ise hatlar TEMİZLENİR', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Gölcük' }],
+    })
+    kaydet({ konu_id: 'K1', platform: 'instagram', aktif: 0, numaralar: [] })
+    expect(coz(id)).toEqual([])
+  })
+
+  test('telefonu boş mağaza seçilirse numara boş döner (mesajda satır yazılmaz)', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Tencerecim Depo' }],
+    })
+    expect((coz(id)[0].numara || '').trim()).toBe('')
+  })
+
+  test('hiç eşleşmeyen mağaza adında çökmez, numara boş döner (mesajda satır yazılmaz)', () => {
+    const { id } = kaydet({
+      konu_id: 'K1', platform: 'instagram', aktif: 0,
+      numaralar: [{ lokasyon_ad: 'Olmayan Mağaza' }],
+    })
+    expect(coz(id)[0].numara).toBe(null)
   })
 })

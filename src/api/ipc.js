@@ -229,6 +229,8 @@ export const sosyalApi = {
   otomasyonAdaySayisi: (v) => invoke('sosyal:otomasyonAdaySayisi', v),
   // Gönderiye özel mesajın canlı önizlemesi (kaydetmeden). Gönderimle aynı üreticiyi kullanır.
   gonderiOnizleme: (v) => invoke('sosyal:gonderiOnizleme', v),
+  // WhatsApp sipariş hattı seçicisi için kayıtlı mağaza numaraları (Ayarlar > Mağazalar).
+  magazaNumaralari: () => invoke('sosyal:magazaNumaralari'),
 }
 
 export const onlineSiparisApi = {

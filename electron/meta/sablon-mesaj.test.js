@@ -266,3 +266,63 @@ describe('gonderiMesajiOlustur — gönderiye özel açıklama + ürün listesi'
     expect(metin).toContain('18/10 paslanmaz çelik')
   })
 })
+
+// v1.2.177: gönderiye birden çok WhatsApp hattı eklenebiliyor (Gölcük + Pendik).
+// Tek numaralı eski davranış bozulmadı — `whatsapp` string alanı hâlâ çalışıyor.
+describe('gonderiMesajiOlustur — çoklu WhatsApp hattı', () => {
+  const { gonderiMesajiOlustur } = sablonMesaj
+  const urunler = [{ ad: 'Tava', fiyat: 1000 }]
+  const iki = [
+    { baslik: 'Gölcük WhatsApp Sipariş Hattı', numara: '0537 288 12 41' },
+    { baslik: 'Pendik WhatsApp Sipariş Hattı', numara: '0545 151 60 77' },
+  ]
+
+  test('her hat kendi başlığıyla ayrı satırda yazılır, sıra korunur', () => {
+    const { metin } = gonderiMesajiOlustur({ aciklama: 'x', urunler, numaralar: iki })
+    expect(metin).toContain('Gölcük WhatsApp Sipariş Hattı: 0537 288 12 41')
+    expect(metin).toContain('Pendik WhatsApp Sipariş Hattı: 0545 151 60 77')
+    expect(metin.indexOf('Gölcük')).toBeLessThan(metin.indexOf('Pendik'))
+  })
+
+  test('numarası boş satır atlanır (mağaza kaydında telefon girilmemiş)', () => {
+    const { metin } = gonderiMesajiOlustur({
+      aciklama: 'x', urunler,
+      numaralar: [{ baslik: 'Gölcük', numara: '' }, { baslik: 'Pendik', numara: '0545' }],
+    })
+    expect(metin).not.toContain('Gölcük')
+    expect(metin).toContain('Pendik: 0545')
+  })
+
+  test('başlık boşsa varsayılan etiket kullanılır', () => {
+    const { metin } = gonderiMesajiOlustur({ urunler, numaralar: [{ numara: '0545' }] })
+    expect(metin).toContain('Whatsapp Sipariş Hattı: 0545')
+  })
+
+  test('aynı numara iki kez eklenirse bir kez yazılır', () => {
+    const { metin } = gonderiMesajiOlustur({
+      urunler,
+      numaralar: [{ baslik: 'Pendik', numara: '0545 151 60 77' }, { baslik: 'Merkez', numara: '0545 151 60 77' }],
+    })
+    expect(metin.match(/0545 151 60 77/g).length).toBe(1)
+  })
+
+  test('numaralar verilmezse eski whatsapp alanı çalışmaya devam eder', () => {
+    const { metin } = gonderiMesajiOlustur({ urunler, whatsapp: '0545 151 60 77' })
+    expect(metin).toContain('Whatsapp Sipariş Hattı: 0545 151 60 77')
+  })
+
+  test('numaralar doluysa eski whatsapp alanı yok sayılır (çift satır olmaz)', () => {
+    const { metin } = gonderiMesajiOlustur({
+      urunler, whatsapp: '0545 151 60 77',
+      numaralar: [{ baslik: 'Gölcük', numara: '0537 288 12 41' }],
+    })
+    expect(metin).toContain('0537 288 12 41')
+    expect(metin).not.toContain('0545 151 60 77')
+  })
+
+  test('ürünsüz duyuruya da hatlar eklenir', () => {
+    const { metin } = gonderiMesajiOlustur({ aciklama: 'Yeni mağazamız açıldı!', numaralar: iki })
+    expect(metin.startsWith('Yeni mağazamız açıldı!')).toBe(true)
+    expect(metin).toContain('Gölcük WhatsApp Sipariş Hattı: 0537 288 12 41')
+  })
+})

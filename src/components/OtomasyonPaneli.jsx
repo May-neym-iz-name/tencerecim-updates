@@ -23,7 +23,12 @@ export default function OtomasyonPaneli({ konu }) {
   const [yurutucu, setYurutucu] = useState(null)
   const [urunler, setUrunler] = useState([])
   const [aciklama, setAciklama] = useState('')
-  const [whatsapp, setWhatsapp] = useState('')
+  // v1.2.177: gönderiye birden çok WhatsApp sipariş hattı eklenebilir (Gölcük + Pendik).
+  // Satırda TUTULAN, kullanıcının kendi girdisidir: lokasyon_ad + (boş bırakılabilen)
+  // baslik/numara. Boş bırakılan alan "mağazaya sor" demektir; gösterilen canlı değer
+  // yer tutucuda (placeholder) görünür → kullanıcı neyin nereden geldiğini görür.
+  const [numaralar, setNumaralar] = useState([])
+  const [magazalar, setMagazalar] = useState([])
   const [yanit, setYanit] = useState(VARSAYILAN_YANIT)
   const [onizleme, setOnizleme] = useState(null)
   const [secici, setSecici] = useState(false)
@@ -35,7 +40,9 @@ export default function OtomasyonPaneli({ konu }) {
       setOto(o)
       setUrunler(o?.urunler || [])
       setAciklama(o?.ozel_aciklama ?? '')
-      setWhatsapp(o?.whatsapp ?? '')
+      setNumaralar((o?.numaralar || []).map(n => ({
+        lokasyon_ad: n.lokasyon_ad || '', baslik: n.ozel_baslik || '', numara: n.ozel_numara || '',
+      })))
       setYanit(o?.acik_yanit_metni ?? VARSAYILAN_YANIT)
     }).catch(() => {})
   }, [konu?.konu_id])
@@ -43,20 +50,28 @@ export default function OtomasyonPaneli({ konu }) {
   // Otomasyonu hangi PC yürütüyor? Durum ortak ama yürütme tek PC'de (çift DM kilidi).
   useEffect(() => { sosyalApi.yurutucuDurum().then(setYurutucu).catch(() => {}) }, [])
 
+  // Kayıtlı mağaza numaraları (Ayarlar > 🏬 Mağazalar). Hat eklerken buradan seçilir —
+  // numara elle yazılmaz ki iki gönderide iki farklı biçimde ("0545…" / "0 545…") yazılıp
+  // aynı hat farklı sanılmasın (v1.2.173'te tam bu yüzden mesajda numara 3 kez çıkmıştı).
+  useEffect(() => { sosyalApi.magazaNumaralari().then(setMagazalar).catch(() => {}) }, [])
+
   // Canlı önizleme. Metni GÖNDERİMLE AYNI üreticiden alır (backend'de gonderiMesajiOlustur)
   // → burada görülen, müşteriye giden metnin ta kendisidir; iki yol asla ayrışamaz.
   const onizlemeTazele = useCallback(() => {
     if (!urunler.length && !aciklama.trim()) return setOnizleme(null)
     sosyalApi.gonderiOnizleme({
-      aciklama, whatsapp,
+      aciklama, numaralar,
       urunler: urunler.map(u => ({ urun_id: u.urun_id, set_id: u.set_id, ozel_fiyat: u.ozel_fiyat, ozel_ad: u.ozel_ad })),
     }).then(setOnizleme).catch(() => setOnizleme(null))
-  }, [urunler, aciklama, whatsapp])
+  }, [urunler, aciklama, numaralar])
 
   useEffect(() => {
     const t = setTimeout(onizlemeTazele, 300)
     return () => clearTimeout(t)
   }, [onizlemeTazele])
+
+  const guncelleHat = (i, degisiklik) =>
+    setNumaralar(numaralar.map((n, j) => (j === i ? { ...n, ...degisiklik } : n)))
 
   const kaydet = async (aktif) => {
     // Açarken KAÇ KİŞİYE gideceğini göster — körlemesine tetiklenmesin.
@@ -80,7 +95,7 @@ export default function OtomasyonPaneli({ konu }) {
         konu_id: konu.konu_id, platform: konu.platform, aktif,
         acik_yanit_metni: yanit,
         ozel_aciklama: aciklama,
-        whatsapp,
+        numaralar,
         urunler: urunler.map(u => ({ urun_id: u.urun_id, set_id: u.set_id, ozel_fiyat: u.ozel_fiyat, ozel_ad: u.ozel_ad })),
         // Şablon bağları YALNIZCA gönderi gerçekten yeni modele geçtiyse kaldırılır.
         // Koşulsuz [] göndermek, henüz taşınmamış bir gönderiyi sadece açıp kapatan
@@ -95,6 +110,9 @@ export default function OtomasyonPaneli({ konu }) {
       const o = await sosyalApi.otomasyonGetir({ konu_id: konu.konu_id })
       setOto(o)
       setUrunler(o?.urunler || [])
+      setNumaralar((o?.numaralar || []).map(n => ({
+        lokasyon_ad: n.lokasyon_ad || '', baslik: n.ozel_baslik || '', numara: n.ozel_numara || '',
+      })))
       toast.success(aktif ? 'Otomasyon açıldı' : 'Otomasyon kapatıldı')
     } catch (e) { toast.error(e.message) }
     finally { setMesgul(false) }
@@ -200,10 +218,61 @@ export default function OtomasyonPaneli({ konu }) {
         placeholder="Bu gönderiye özel metin — DM'de bir kez yazılır."
         className="w-full border rounded-lg px-2 py-1.5 text-xs mt-1 mb-2 disabled:bg-gray-100 disabled:text-gray-500" />
 
-      <label className="text-[11px] font-semibold text-gray-600">WhatsApp (mesajın sonunda tek satır)</label>
-      <input value={whatsapp} onChange={e => setWhatsapp(e.target.value)} disabled={!yonetebilir}
-        placeholder="0555 123 45 67"
-        className="w-full border rounded-lg px-2 py-1.5 text-xs mt-1 mb-2 disabled:bg-gray-100 disabled:text-gray-500" />
+      <label className="text-[11px] font-semibold text-gray-600">WhatsApp sipariş hatları</label>
+      <div className="space-y-1.5 mt-1 mb-2">
+        {numaralar.map((n, i) => {
+          const lok = magazalar.find(m => m.ad === n.lokasyon_ad)
+          const varsayilanBaslik = lok ? `${lok.ad.replace(/^Tencerecim\s+/i, '')} WhatsApp Sipariş Hattı` : ''
+          const telefonYok = lok && !(lok.telefon || '').trim()
+          return (
+            <div key={i} className="border rounded-lg p-1.5 bg-white">
+              <div className="flex gap-1">
+                <select value={n.lokasyon_ad} disabled={!yonetebilir}
+                  onChange={e => guncelleHat(i, { lokasyon_ad: e.target.value })}
+                  className="border rounded px-1 py-1 text-[11px] flex-1 min-w-0 disabled:bg-gray-100">
+                  <option value="">Mağazasız (elle numara)</option>
+                  {magazalar.map(m => <option key={m.ad} value={m.ad}>{m.ad}</option>)}
+                </select>
+                {yonetebilir && (
+                  <button onClick={() => setNumaralar(numaralar.filter((_, j) => j !== i))}
+                    className="text-red-600 text-[11px] px-1.5 hover:bg-red-50 rounded" title="Hattı kaldır">
+                    ✕
+                  </button>
+                )}
+              </div>
+              <input value={n.baslik} disabled={!yonetebilir}
+                onChange={e => guncelleHat(i, { baslik: e.target.value })}
+                placeholder={varsayilanBaslik || 'Başlık (ör. Gölcük Sipariş Hattı)'}
+                className="w-full border rounded px-1.5 py-1 text-[11px] mt-1 disabled:bg-gray-100" />
+              {/* Mağaza hattında numara ELLE GİRİLMEZ: kaynak mağaza kaydıdır, orada
+                  değişince tüm gönderiler kendiliğinden güncellenir. İki ayrı yerde
+                  düzenlenebilseydi hangisinin geçerli olduğu belirsizleşirdi. */}
+              {lok ? (
+                <div className="mt-1 px-1.5 py-1 text-[11px] bg-gray-50 border rounded text-gray-600">
+                  {(lok.telefon || '').trim() || <span className="text-red-600">telefon girilmemiş</span>}
+                  <span className="text-gray-400"> · Ayarlar &gt; Mağazalar</span>
+                </div>
+              ) : (
+                <input value={n.numara} disabled={!yonetebilir}
+                  onChange={e => guncelleHat(i, { numara: e.target.value })}
+                  placeholder="0555 123 45 67"
+                  className="w-full border rounded px-1.5 py-1 text-[11px] mt-1 disabled:bg-gray-100" />
+              )}
+              {telefonYok && (
+                <p className="text-[10px] text-red-600 mt-0.5">
+                  Bu mağazanın telefonu Ayarlar &gt; Mağazalar'da boş — hat mesajda ÇIKMAZ.
+                </p>
+              )}
+            </div>
+          )
+        })}
+        {yonetebilir && (
+          <button onClick={() => setNumaralar([...numaralar, { lokasyon_ad: '', baslik: '', numara: '' }])}
+            className="text-blue-600 text-xs font-medium hover:underline">
+            + WhatsApp hattı ekle
+          </button>
+        )}
+      </div>
 
       {onizleme?.metin && (
         <div className="mb-2">
