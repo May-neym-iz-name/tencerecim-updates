@@ -4,7 +4,7 @@ import { kargoApi, sistemApi, whatsappLink } from '../api/ipc'
 import { upsTakipUrl } from '../lib/kargo'
 import { ucretHesapla, tl, desiHesapla, IL_BOLGE } from '../lib/kargoUcret'
 import IlIlceSecici from '../components/IlIlceSecici'
-import { senkTetikle } from '../lib/veriSenk'
+import { senkTetikle, veriSenk } from '../lib/veriSenk'
 import { etiketIndir } from '../lib/etiketDepo'
 import { eslesirMi } from '../utils/arama'
 import { useAuth } from '../auth/AuthContext'
@@ -211,6 +211,18 @@ export default function Kargo() {
         try { pngler = await etiketIndir(k.etiket_storage_yol) }
         finally { toast.dismiss(bekle) }
       }
+      // Storage yolu henüz gelmemişse (kargo az önce başka PC'de oluşturuldu) bir tur
+      // senkron bekle ve TEKRAR dene. Yoksa aşağıdaki UPS linki yedeğine düşer ve
+      // termal şablon yerine tarayıcıda PDF açılır.
+      if (!pngler.length && !k.etiket_storage_yol) {
+        const bekle = toast.loading('Etiket senkronlanıyor…')
+        try {
+          await veriSenk()                      // senkTetikle() void döner, BEKLENEMEZ
+          const taze = await kargoApi.detay(k.id)   // detay k.* döndürür → yol dahil
+          if (taze?.etiket_storage_yol) pngler = await etiketIndir(taze.etiket_storage_yol)
+        } catch { /* yedeğe düş */ }
+        finally { toast.dismiss(bekle) }
+      }
       if (pngler.length) {
         if (zorlaOnizle) {
           await kargoApi.etiketOnizle(pngler, kargoSayfaBasinaOku(), kargoOlcuOku())
@@ -222,7 +234,9 @@ export default function Kargo() {
       } else if (k.etiket_link) {
         // Son çare: UPS linki (güvenilmez, oturum/sürede geçersiz olabilir).
         sistemApi.linkAc(k.etiket_link).catch(e => toast.error(e.message))
-        toast.success('UPS etiket sayfası açıldı')
+        toast('Etiket bu bilgisayarda yok — UPS sayfası (PDF) açıldı. Termal şablonla '
+          + 'basmak için etiketi oluşturan bilgisayarın senkronlanmasını bekleyin.',
+          { icon: '⚠️', duration: 6000 })
       } else {
         toast.error('Bu gönderinin etiketi bu bilgisayarda yok ve Storage\'a henüz yüklenmemiş. Etiketi oluşturan bilgisayar senkronladıktan sonra tekrar deneyin.')
       }

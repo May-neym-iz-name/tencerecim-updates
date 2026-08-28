@@ -78,6 +78,15 @@ export async function veriSenk() {
   if (calisiyor) { tekrarIstendi = true; return { atlandi: true } }
   calisiyor = true
   try {
+    // Etiket yüklemesi PUSH'tan ÖNCE olmalı: yükleme kargolar.etiket_storage_yol'u
+    // yazar, tetikleyici senk_guncelleme'yi tazeler ve satır AYNI turda gönderilir.
+    // Eskiden tur SONUNDA fire-and-forget çağrılıyordu → kargo satırı karşı PC'ye
+    // yol BOŞ gidiyor, o PC etiketi Storage'dan indiremiyor ve son çare UPS linkine
+    // (PDF) düşüyordu; termal şablon yerine tarayıcıda PDF açılmasının sebebi buydu.
+    // Yol bir sonraki tura kalıyordu (~30 sn+); kargoyu oluşturur oluşturmaz basan
+    // mağaza bu pencereye her seferinde yakalanıyordu.
+    try { await etiketleriYukle() } catch { /* yükleme hatası senkronu durdurmasın */ }
+
     // --- PUSH: imleçten beri değişen yerel satırları yükle ---
     const { deger: pushImlec } = await invoke('veri-senk:imlec-al', { anahtar: 'push' })
     const { degisen, enYeni } = await invoke('veri-senk:degisenler', { since: pushImlec || '' })
@@ -185,9 +194,7 @@ export async function veriSenk() {
       if (bekleyenKalan) console.warn(`Veri senkron: ${bekleyenKalan} kayıt ebeveyni gelmediği için bekliyor.`)
     }
 
-    // Bu PC'de oluşan yeni etiketleri Storage'a yükle (PC'ler arası basım). Sync'i
-    // yavaşlatmasın diye fire-and-forget; hata olursa sonraki turda tekrar dener.
-    etiketleriYukle().catch(() => {})
+    // (Etiket yüklemesi turun BAŞINDA yapılıyor — bkz. yukarıdaki not.)
 
     return { gonderilen, alinan }
   } finally {
