@@ -31,7 +31,11 @@ const TABLOLAR = {
   // sku sonradan eklendi (v1.2.176): ikas/bizimhesap'taki TNC.SET.000NN kodunun
   // uygulamadaki karşılığı. Doğal anahtar OLARAK KULLANILMAZ — eski kayıtlarda boş,
   // boş değer üzerinden dedup iki farklı seti birleştirir ([[sil-yeniden-yaz-tuzagi]]).
-  setler:       { kolonlar: ['ad', 'fiyat', 'aktif', 'sku'], fk: {}, dogal: ['ad'], sonradanEklendi: true },
+  // barkod da sonradan eklendi (v1.2.178): pazaryeri yüklemesi için dahili 29-serisi barkod.
+  // sku gibi doğal anahtar OLARAK KULLANILMAZ — eski kayıtlarda boş, boş değer üzerinden
+  // dedup iki farklı seti birleştirir. Supabase tarafı jsonb olduğundan yeni anahtarı
+  // tanımayan eski sürüm onu sessizce yok sayar, senkron kırılmaz.
+  setler:       { kolonlar: ['ad', 'fiyat', 'aktif', 'sku', 'barkod'], fk: {}, dogal: ['ad'], sonradanEklendi: true },
   set_urunler:  { kolonlar: ['miktar'], fk: { set_id: 'setler', urun_id: 'urunler' }, zorunluFk: ['set_id', 'urun_id'], dogalCift: ['set_id', 'urun_id'] },
   // Sosyal medya otomasyon şablonları: içerik (metin/fiyat/link) — küçük, şişirmez.
   // urun_id/set_id ZORUNLU DEĞİL: çözülemezse null kalır ve şablon elle yazılmış
