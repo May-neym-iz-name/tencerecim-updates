@@ -682,12 +682,13 @@ function kalemIkasLokId(db, kalem) {
 const WEB_SITESI = 'https://tencerecim.store'
 
 /**
- * ikas'taki tüm ürünlerin metaData.slug'ını çekip yerel urunler.web_link'e yazar.
+ * ikas'taki tüm ürünlerin metaData.slug'ını çekip yerel urunler.web_link ve setler.web_link'e yazar.
  * Eşleştirme SKU ile: uygulamadaki 2823 aktif ürünün tamamında SKU var ama yalnız 58'inde
  * ikas_urun_id dolu — ikas_urun_id'ye bağlanmak ürünlerin neredeyse tamamını linksiz bırakırdı.
  * Ad eşleştirmesi bilinçli olarak KULLANILMAZ (kulp/varyant farkları yanlış link üretir).
  * @returns {{yazilan: number, ikasToplam: number, ikasSku: number, eslesen: number,
- *            sitedeYokSayi: number, slugsuz: Array<string>, skusuz: Array<string>}}
+ *            sitedeYokSayi: number, slugsuz: Array<string>, skusuz: Array<string>,
+ *            setYazilan: number, setEslesen: number, setSitedeYokSayi: number}}
  */
 async function webLinkleriCek() {
   const db = getDb()
@@ -716,11 +717,17 @@ async function webLinkleriCek() {
 
   const yerel = db.prepare("SELECT id, sku, ad, web_link FROM urunler WHERE aktif=1 AND sku IS NOT NULL AND sku != ''").all()
   const yaz = db.prepare('UPDATE urunler SET web_link = ? WHERE id = ?')
+  // Setlerin de sitede kendi sayfası var ve SKU'ları ikas'takiyle aynı; ürünlerle aynı
+  // slug haritasından çözülürler. Ayrı tabloda durdukları için ayrı sorgu gerekiyor.
+  const yerelSet = db.prepare("SELECT id, sku, ad, web_link FROM setler WHERE aktif=1 AND sku IS NOT NULL AND sku != ''").all()
+  const yazSet = db.prepare('UPDATE setler SET web_link = ? WHERE id = ?')
   // "Eşleşmeyen" ürünlerin ÇOĞU hata değil: katalogda 2800+ ürün var, sitede yalnız ~400'ü
   // satılıyor. Bu yüzden sayı ayrı raporlanır ama uyarı diliyle sunulmaz; asıl uyarı,
   // ikas'ta OLUP stok kodu/slug'ı eksik olan ürünlerdir (skusuz/slugsuz) — onlar düzeltilebilir.
   const sitedeYok = []
+  const setSitedeYok = []
   let yazilan = 0
+  let setYazilan = 0
   const tx = db.transaction(() => {
     for (const u of yerel) {
       const slug = slugBySku.get(String(u.sku).trim())
@@ -730,10 +737,19 @@ async function webLinkleriCek() {
       yaz.run(link, u.id)
       yazilan++
     }
+    for (const s of yerelSet) {
+      const slug = slugBySku.get(String(s.sku).trim())
+      if (!slug) { setSitedeYok.push(`${s.sku} — ${s.ad}`); continue }
+      const link = `${WEB_SITESI}/${slug}`
+      if (s.web_link === link) continue
+      yazSet.run(link, s.id)
+      setYazilan++
+    }
   })
   tx()
   return { yazilan, ikasToplam, ikasSku: slugBySku.size, eslesen: yerel.length - sitedeYok.length,
-    sitedeYokSayi: sitedeYok.length, slugsuz, skusuz }
+    sitedeYokSayi: sitedeYok.length, slugsuz, skusuz,
+    setYazilan, setEslesen: yerelSet.length - setSitedeYok.length, setSitedeYokSayi: setSitedeYok.length }
 }
 
 // --- IPC handler'ları -------------------------------------------------------

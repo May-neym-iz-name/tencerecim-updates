@@ -218,7 +218,7 @@ export default function Urunler() {
       toast("ikas urun sayfalari taraniyor...", { icon: "⏳" })
       const r = await ikasApi.webLinkCek()
       setWebLinkSonuc(r)
-      toast.success(`${r.eslesen} urun eslesti, ${r.yazilan} link guncellendi.`)
+      toast.success(`${r.eslesen} urun + ${r.setEslesen} set eslesti, ${r.yazilan + r.setYazilan} link guncellendi.`)
       yukle()
     } catch (e) { toast.error(e.message) }
     setWebLinkMesgul(false)
@@ -305,6 +305,9 @@ export default function Urunler() {
             <div>
               <span className="font-medium">Web linkleri güncellendi:</span>{' '}
               {webLinkSonuc.eslesen} ürün sitede eşleşti, {webLinkSonuc.yazilan} linki değişti.
+              {webLinkSonuc.setEslesen > 0 && (
+                <> Ayrıca {webLinkSonuc.setEslesen} set eşleşti, {webLinkSonuc.setYazilan} set linki değişti.</>
+              )}
               <div className="text-xs text-gray-500 mt-0.5">
                 ikas'ta {webLinkSonuc.ikasToplam} ürün var, {webLinkSonuc.ikasSku} stok kodu okundu.
                 Kalan {webLinkSonuc.sitedeYokSayi} ürün sitede satılmıyor — linksiz olmaları normal.

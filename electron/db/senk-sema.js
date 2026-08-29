@@ -138,6 +138,31 @@ const SIRA = [
   'istek_listeleri', 'istek_listesi_kalemleri',
 ]
 
+/**
+ * Bir tabloyu "şimdi" damgalayıp yeniden push'a sokar — EBEVEYNLERİYLE BİRLİKTE.
+ *
+ * Neden ebeveyn de damgalanmalı: pull imleci (yuklenme) yalnız İLERİ gider. Çocuk satır
+ * taze damgayla buluta yeniden çıkar ama ebeveyni çıkmazsa, karşı PC ebeveynin ESKİ
+ * yüklenme zamanını çoktan geçmiş olur → çocuk gelir, ebeveyn asla gelmez, satır zorunlu
+ * FK'sı çözülemediği için sonsuza dek senk_bekleyen'de kalır ve 30 gün sonra sessizce
+ * silinir. 2026-08-29'da 3 BİGATTİ istek listesinin 9 kalemi tam olarak böyle bulundu:
+ * kalemler 07.08'de kopya temizliğinde yeniden damgalandı, istek_listeleri damgalanmadı.
+ *
+ * Yalnız FİİLEN REFERANS VERİLEN ebeveyn satırları damgalanır — tüm tabloyu damgalamak
+ * (ör. urunler'in 6600 satırı) gereksiz dev bir push üretirdi.
+ */
+function yenidenDamgala(db, tablo) {
+  const cfg = TABLOLAR[tablo]
+  if (!cfg) return
+  for (const [kolon, ebeveyn] of Object.entries(cfg.fk || {})) {
+    if (!TABLOLAR[ebeveyn]) continue
+    db.exec(`UPDATE ${ebeveyn} SET senk_guncelleme = ${NOWMS}
+      WHERE senk_id IS NOT NULL
+        AND id IN (SELECT ${kolon} FROM ${tablo} WHERE ${kolon} IS NOT NULL)`)
+  }
+  db.exec(`UPDATE ${tablo} SET senk_guncelleme = ${NOWMS} WHERE senk_id IS NOT NULL`)
+}
+
 function kur(db) {
   for (const tablo of Object.keys(TABLOLAR)) {
     try { db.exec(`ALTER TABLE ${tablo} ADD COLUMN senk_id TEXT`) } catch {}
@@ -206,7 +231,8 @@ function kur(db) {
           SELECT MIN(id) FROM istek_listesi_kalemleri WHERE urun_id IS NOT NULL
           GROUP BY istek_id, urun_id)`).run()
       if (changes) {
-        db.exec(`UPDATE istek_listesi_kalemleri SET senk_guncelleme = ${NOWMS}`)
+        // Ebeveyn istek_listeleri de damgalanır — bkz. yenidenDamgala() gerekçesi.
+        yenidenDamgala(db, 'istek_listesi_kalemleri')
         console.log(`istek listesi kopya temizliği: ${changes} satır silindi`)
       }
       db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('istek_kalem_kopya_temizlik', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
@@ -238,6 +264,33 @@ function kur(db) {
       db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('oksuz_stok_kuyruk_temizlik', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
     }
   } catch (e) { console.error('öksüz stok kuyruk temizlik:', e.message) }
+
+  // Bir kerelik: sonradanEklendi tabloların TEMEL damgada kalmış ebeveynlerini tazele.
+  //
+  // Yukarıdaki ilk damgalama çocuğu NOWMS, ebeveyni '2000-01-01' bırakabiliyor: çocuk
+  // push imlecini geçip buluta çıkar, ebeveyn imlecin GERİSİNDE kalıp hiç çıkmaz → karşı
+  // PC'de çocuk öksüz kalır (yenidenDamgala() gerekçesindeki vakanın ikinci yolu).
+  // Yalnız (a) sonradanEklendi bir çocuk tarafından FİİLEN referans verilen ve
+  // (b) hâlâ temel damgada olan ebeveyn satırları tazelenir — ölçüldüğünde 1 satır çıktı,
+  // yani dar ve ucuz. Koşullar olmasa tüm katalog gereksiz yere yeniden push'a girerdi.
+  try {
+    if (!db.prepare("SELECT deger FROM senk_durum WHERE anahtar = 'ebeveyn_temel_damga_onarim'").get()) {
+      let tazelenen = 0
+      for (const tablo of SIRA) {
+        const cfg = TABLOLAR[tablo]
+        if (!cfg?.sonradanEklendi) continue
+        for (const [kolon, ebeveyn] of Object.entries(cfg.fk || {})) {
+          if (!TABLOLAR[ebeveyn]) continue
+          const { changes } = db.prepare(`UPDATE ${ebeveyn} SET senk_guncelleme = ${NOWMS}
+            WHERE senk_id IS NOT NULL AND senk_guncelleme = '2000-01-01T00:00:00.000Z'
+              AND id IN (SELECT ${kolon} FROM ${tablo} WHERE ${kolon} IS NOT NULL)`).run()
+          tazelenen += changes
+        }
+      }
+      if (tazelenen) console.log(`ebeveyn temel damga onarımı: ${tazelenen} satır tazelendi`)
+      db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('ebeveyn_temel_damga_onarim', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
+    }
+  } catch (e) { console.error('ebeveyn temel damga onarım:', e.message) }
 }
 
-module.exports = { kur, TABLOLAR, SIRA }
+module.exports = { kur, TABLOLAR, SIRA, yenidenDamgala }
