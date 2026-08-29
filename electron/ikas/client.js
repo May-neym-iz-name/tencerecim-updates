@@ -56,13 +56,28 @@ async function tokenAl() {
     client_id: a.client_id,
     client_secret: a.client_secret,
   }).toString()
-  const { status, json } = await postJson(
+  // İKİ UÇ NOKTA (v1.2.180). 29.08.2026'da mağaza alt alan adı
+  // (<store>.myikas.com) Cloudflare 525 "origin SSL handshake failed" döndürürken
+  // MERKEZİ host aynı yolu sorunsuz sunuyordu. Tek uç noktaya bağlı kalmak, ikas'ın
+  // mağaza kenarı çöktüğünde uygulamanın TÜM ikas işlemlerini durduruyor (o gün
+  // havale siparişinde "Ödeme Alındı" bu yüzden çalışmadı). Sıra: merkez → mağaza.
+  let status = 0, json = null
+  for (const url of [
+    'https://api.myikas.com/api/admin/oauth/token',
     `https://${a.store_name}.myikas.com/api/admin/oauth/token`,
-    { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  )
+  ]) {
+    const y = await postJson(url, { 'Content-Type': 'application/x-www-form-urlencoded' }, body)
+    status = y.status; json = y.json
+    if (status >= 200 && status < 300 && json?.access_token) break
+  }
   if (status < 200 || status >= 300 || !json?.access_token) {
-    throw new Error(`ikas token alınamadı (HTTP ${status}). Mağaza adı/anahtarları kontrol edin.`)
+    // 5xx = ikas/Cloudflare tarafı. Kullanıcıyı anahtarlarını kurcalamaya yönlendirme:
+    // 29.08'de mesaj "mağaza adı/anahtarları kontrol edin" diyordu ama kimlik bilgileri
+    // sağlamdı, ikas kesintideydi — yanlış yere bakıldı.
+    throw new Error(status >= 500
+      ? `ikas'a şu an ulaşılamıyor (HTTP ${status}) — ikas tarafında geçici kesinti. `
+        + 'Kimlik bilgileriniz sağlam; birkaç dakika sonra tekrar deneyin.'
+      : `ikas token alınamadı (HTTP ${status}). Mağaza adı/anahtarları kontrol edin.`)
   }
   tokenCache = {
     store: a.store_name,
