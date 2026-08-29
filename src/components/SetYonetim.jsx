@@ -61,6 +61,8 @@ export default function SetYonetim({ baslangicArama = '' }) {
           <thead className="bg-gray-50 text-gray-600 text-left">
             <tr>
               <SiraliBaslik k="ad" {...sr}>Set Adı</SiraliBaslik>
+              <SiraliBaslik k="sku" {...sr}>Stok Kodu</SiraliBaslik>
+              <SiraliBaslik k="barkod" {...sr}>Barkod</SiraliBaslik>
               <SiraliBaslik k="fiyat" {...sr}>Set Fiyatı</SiraliBaslik>
               <SiraliBaslik k="parca" {...sr}>İçerik</SiraliBaslik>
               <th className="px-3 py-2 font-medium text-right">İşlem</th>
@@ -69,7 +71,17 @@ export default function SetYonetim({ baslangicArama = '' }) {
           <tbody>
             {sayfaSetler.map(s => (
               <tr key={s.id} className="border-t hover:bg-gray-50 align-top">
-                <td className="px-3 py-2 font-medium text-gray-800">🎁 {s.ad}</td>
+                <td className="px-3 py-2 font-medium text-gray-800">
+                  🎁 {s.ad}
+                  {s.marka_adi && <span className="ml-2 text-[10px] text-gray-400">{s.marka_adi}</span>}
+                </td>
+                {/* Eksik kod = pazaryeri/fatura eşleşmesi kopuk demek → göze batsın. */}
+                <td className="px-3 py-2 text-xs font-mono text-gray-600">
+                  {s.sku || <span className="text-amber-600 font-sans">eksik</span>}
+                </td>
+                <td className="px-3 py-2 text-xs font-mono text-gray-600">
+                  {s.barkod || <span className="text-amber-600 font-sans">eksik</span>}
+                </td>
                 <td className="px-3 py-2 font-bold text-green-700">₺{Number(s.fiyat).toFixed(2)}</td>
                 <td className="px-3 py-2 text-xs text-gray-500">
                   {s.bilesenler.map(b => `${b.ad}${b.miktar > 1 ? ` ×${b.miktar}` : ''}`).join(' + ') || '—'}
@@ -82,7 +94,7 @@ export default function SetYonetim({ baslangicArama = '' }) {
               </tr>
             ))}
             {setler.length === 0 && (
-              <tr><td colSpan={4} className="px-3 py-8 text-center text-gray-400">
+              <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">
                 {arama.trim()
                   ? `"${arama.trim()}" için set bulunamadı.`
                   : 'Henüz set yok. "+ Set Oluştur" ile mevcut ürünlerden set hazırlayın.'}
@@ -104,6 +116,15 @@ function SetFormu({ set, kapat, onTamam }) {
   const [ad, setAd] = useState(set?.ad || '')
   const [fiyat, setFiyat] = useState(set?.fiyat || '')
   const [webLink, setWebLink] = useState(set?.web_link || '')
+  // v1.2.180 — setin "ürün" alanları. SKU ve barkod OTOMATİK ÜRETİLMEZ: setin kodu
+  // ikas ve bizimhesap'ta zaten var, üçünün birebir aynı olması şart. Burada üretilen
+  // bir kod dördüncü, uyumsuz bir kimlik yaratırdı.
+  const [sku, setSku] = useState(set?.sku || '')
+  const [barkod, setBarkod] = useState(set?.barkod || '')
+  const [kdv, setKdv] = useState(set?.kdv_orani ?? '')
+  const [aciklama, setAciklama] = useState(set?.aciklama || '')
+  const [markaId, setMarkaId] = useState(set?.marka_id || '')
+  const [kategoriId, setKategoriId] = useState(set?.kategori_id || '')
   const [kalemler, setKalemler] = useState(set?.bilesenler?.map(b => ({ urun_id: b.urun_id, ad: b.ad, miktar: b.miktar })) || [])
   const [arama, setArama] = useState('')
   // Barkod okuyucu: kutuya tıklamadan okutulabilsin, her okutmada eskisi silinsin.
@@ -152,7 +173,21 @@ function SetFormu({ set, kapat, onTamam }) {
     if (kalemler.length === 0) { toast.error('Sete en az bir ürün ekleyin'); return }
     setKaydediliyor(true)
     try {
-      const veri = { ad: ad.trim(), fiyat: Number(fiyat), web_link: webLink.trim(), kalemler: kalemler.map(k => ({ urun_id: k.urun_id, miktar: k.miktar })) }
+      // Ürün alanları HER ZAMAN gönderilir (boş string dahil) — sunucu tarafı
+      // "gönderilmedi = dokunma, boş gönderildi = temizle" ayrımı yapıyor. Boş
+      // göndermeseydik yanlış girilmiş bir SKU'yu silmek mümkün olmazdı.
+      const veri = {
+        ad: ad.trim(),
+        fiyat: Number(fiyat),
+        web_link: webLink.trim(),
+        sku: sku.trim(),
+        barkod: barkod.trim(),
+        kdv_orani: kdv,
+        aciklama: aciklama.trim(),
+        marka_id: markaId || null,
+        kategori_id: kategoriId || null,
+        kalemler: kalemler.map(k => ({ urun_id: k.urun_id, miktar: k.miktar })),
+      }
       if (set?.id) await setApi.guncelle({ id: set.id, ...veri })
       else await setApi.olustur(veri)
       toast.success(set?.id ? 'Set güncellendi' : 'Set oluşturuldu')
@@ -177,11 +212,53 @@ function SetFormu({ set, kapat, onTamam }) {
             </label>
           </div>
 
-          {/* Setin web sitesi sayfası. Sosyal medya otomasyonunda "Online Sipariş Hattı"
-              satırı olarak gider. ikas'tan otomatik çekilemez — set ikas'ta ayrı ürün değil. */}
-          <label className="text-xs text-gray-500 mb-3 flex-shrink-0 block">Web Sitesi Linki
-            <input type="url" value={webLink} onChange={e => setWebLink(e.target.value)}
-              placeholder="https://tencerecim.store/set-adi" className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
+          {/* Setin "ürün" kimliği. Bu alanlar pazaryeri ilanı ve faturada ürünle
+              AYNI şeyleri istiyor; set ayrı bir kayıt olduğu için burada tutuluyor.
+              SKU/barkod kutuları bilerek boş açılır — kod ikas ve bizimhesap'tan
+              KOPYALANIR, burada üretilmez ([[sku-tek-kaynak-kurali]]). */}
+          <div className="grid grid-cols-4 gap-2 mb-3 flex-shrink-0">
+            <label className="text-xs text-gray-500">Stok Kodu (SKU)
+              <input value={sku} onChange={e => setSku(e.target.value)}
+                placeholder="TNC.SET.00001" className="border rounded px-2 py-1.5 text-sm w-full mt-0.5 font-mono" />
+            </label>
+            <label className="text-xs text-gray-500">Barkod
+              <input value={barkod} onChange={e => setBarkod(e.target.value)}
+                placeholder="2900000000000" className="border rounded px-2 py-1.5 text-sm w-full mt-0.5 font-mono" />
+            </label>
+            <label className="text-xs text-gray-500">KDV %
+              <input type="number" min="0" max="100" step="1" value={kdv} onChange={e => setKdv(e.target.value)}
+                placeholder="bileşenlerden" className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
+            </label>
+            {/* Setin web sitesi sayfası. Sosyal medya otomasyonunda "Online Sipariş
+                Hattı" satırı olarak gider. ikas'tan otomatik çekilemez — set ikas'ta
+                ayrı ürün değil, bizim paketimiz. */}
+            <label className="text-xs text-gray-500">Web Sitesi Linki
+              <input type="url" value={webLink} onChange={e => setWebLink(e.target.value)}
+                placeholder="https://tencerecim.store/..." className="border rounded px-2 py-1.5 text-sm w-full mt-0.5" />
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-3 flex-shrink-0">
+            <label className="text-xs text-gray-500 block">Marka
+              <div className="mt-0.5">
+                <AranabilirSecici secenekler={markalar.map(m => ({ deger: m.id, etiket: m.ad }))}
+                  deger={markaId} onChange={setMarkaId} placeholder="Marka seçilmedi" />
+              </div>
+            </label>
+            <label className="text-xs text-gray-500 block">Kategori
+              <div className="mt-0.5">
+                <AranabilirSecici secenekler={kategoriler.map(k => ({ deger: k.id, etiket: k.tam_yol || k.ad }))}
+                  deger={kategoriId} onChange={setKategoriId} placeholder="Kategori seçilmedi" />
+              </div>
+            </label>
+          </div>
+
+          {/* Pazaryeri ilan metninin kaynağı. Set içeriğini ADDAN türetmek yanlış
+              sonuç veriyor — açıklama tek güvenilir kaynak ([[urun-terimleri]]). */}
+          <label className="text-xs text-gray-500 mb-3 flex-shrink-0 block">Açıklama
+            <textarea value={aciklama} onChange={e => setAciklama(e.target.value)} rows={2}
+              placeholder="Setin içeriği ve pazaryeri ilan metni…"
+              className="border rounded px-2 py-1.5 text-sm w-full mt-0.5 resize-none" />
           </label>
 
           <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">

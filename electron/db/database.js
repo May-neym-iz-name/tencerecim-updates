@@ -532,6 +532,14 @@ function migrate() {
   // veriyoruz. Ürün barkodları gibi UNIQUE: aynı barkod iki sete verilemez.
   try { db.exec("ALTER TABLE setler ADD COLUMN barkod TEXT") } catch {}
   try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_setler_barkod ON setler(barkod) WHERE barkod IS NOT NULL") } catch {}
+  // setler — "normal ürün gibi düzenlenebilsin" (v1.2.180). Set artık yalnız ad+fiyat
+  // değil: KDV, açıklama, marka ve kategori de taşır. Gerekçe: pazaryeri ilanı ve fatura
+  // set için de ürünle AYNI alanları istiyor; bunlar yoksa her sette elle doldurulması
+  // gerekiyordu. kdv_orani NULL = "bileşenlerden hesapla" (eski davranış korunur).
+  try { db.exec("ALTER TABLE setler ADD COLUMN kdv_orani REAL") } catch {}
+  try { db.exec("ALTER TABLE setler ADD COLUMN aciklama TEXT") } catch {}
+  try { db.exec("ALTER TABLE setler ADD COLUMN marka_id INTEGER REFERENCES markalar(id)") } catch {}
+  try { db.exec("ALTER TABLE setler ADD COLUMN kategori_id INTEGER REFERENCES kategoriler(id)") } catch {}
   // online sipariş iadeleri — ikas'tan okunan iade gerçeği (v1.2.174).
   // ikas sipariş TOPLAMINI iade sonrası güncellemez (16.626 TL kalır) ve kargo etiketi
   // iade edilen ürünü listelemeye devam ederdi. Kalan tutarı/kalemi kendimiz tutuyoruz.

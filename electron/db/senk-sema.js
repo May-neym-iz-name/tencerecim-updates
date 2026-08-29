@@ -35,7 +35,12 @@ const TABLOLAR = {
   // sku gibi doğal anahtar OLARAK KULLANILMAZ — eski kayıtlarda boş, boş değer üzerinden
   // dedup iki farklı seti birleştirir. Supabase tarafı jsonb olduğundan yeni anahtarı
   // tanımayan eski sürüm onu sessizce yok sayar, senkron kırılmaz.
-  setler:       { kolonlar: ['ad', 'fiyat', 'aktif', 'sku', 'barkod'], fk: {}, dogal: ['ad'], sonradanEklendi: true },
+  // v1.2.180: set "normal ürün gibi" düzenlenebilir oldu → kdv_orani/aciklama/marka_id/
+  // kategori_id de senkrona girdi. web_link de BURAYA ŞİMDİ eklendi: v1.2.177'de sütun
+  // açılmış ama senkron listesine yazılmamıştı → bir PC'de girilen set web linki diğerine
+  // hiç ulaşmıyordu (sessiz veri kaybı, [[senkron-mimarisi]]).
+  setler:       { kolonlar: ['ad', 'fiyat', 'aktif', 'sku', 'barkod', 'kdv_orani', 'aciklama', 'web_link'],
+                  fk: { marka_id: 'markalar', kategori_id: 'kategoriler' }, dogal: ['ad'], sonradanEklendi: true },
   set_urunler:  { kolonlar: ['miktar'], fk: { set_id: 'setler', urun_id: 'urunler' }, zorunluFk: ['set_id', 'urun_id'], dogalCift: ['set_id', 'urun_id'] },
   // Sosyal medya otomasyon şablonları: içerik (metin/fiyat/link) — küçük, şişirmez.
   // urun_id/set_id ZORUNLU DEĞİL: çözülemezse null kalır ve şablon elle yazılmış

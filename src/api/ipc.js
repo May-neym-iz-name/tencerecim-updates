@@ -99,6 +99,8 @@ export const kategoriApi = {
 // Kendi setlerimiz (tek set fiyatlı ürün paketleri).
 export const setApi = {
   listele: (p) => invoke('setler:listele', p),
+  // Kasada set barkodu okutulunca kullanılır — bileşenler dahil set kaydını döndürür.
+  barkodla: (barkod) => invoke('setler:barkodla', barkod),
   olustur: (veri) => invoke('setler:olustur', veri),
   guncelle: (veri) => invoke('setler:guncelle', veri),
   sil: (id) => invoke('setler:sil', id),

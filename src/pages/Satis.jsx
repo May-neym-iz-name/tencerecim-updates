@@ -173,10 +173,19 @@ export default function Satis() {
   async function barkodSorgu(e) {
     e.preventDefault()
     if (!barkodInput.trim()) return
+    const kod = barkodInput.trim()
     try {
-      const urun = await urunlerApi.barkodla(barkodInput.trim())
+      // Önce ÜRÜN, bulunamazsa SET aranır (v1.2.180). Sıra önemli: ürün barkodları
+      // hem daha kalabalık hem daha sık okutuluyor — ikinci sorgu ancak gerçekten
+      // eşleşme yoksa atılır. İki havuzun çakışmadığını setler.js kaydederken
+      // garanti ediyor, dolayısıyla sıranın sonucu değiştirmesi mümkün değil.
+      const urun = await urunlerApi.barkodla(kod)
       if (urun) sepeteEkle(urun)
-      else toast.error('Barkod bulunamadı')
+      else {
+        const set = await setApi.barkodla(kod)
+        if (set) setSepeteEkle(set)
+        else toast.error('Barkod bulunamadı')
+      }
     } catch { toast.error('Ürün bulunamadı') }
     setBarkodInput('')
   }
