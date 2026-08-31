@@ -3,7 +3,11 @@ import { FIS_YAZICI_KEY, yaziciAyarOku, fisGenisligiOku } from '../lib/yaziciAya
 const invoke = async (channel, ...args) => {
   if (!window.api) throw new Error('Electron API bulunamadı')
   const result = await window.api.invoke(channel, ...args)
-  if (!result.ok) throw new Error(result.error)
+  if (!result.ok) {
+    const hata = new Error(result.error)
+    hata.kod = result.kod || null
+    throw hata
+  }
   return result.data
 }
 

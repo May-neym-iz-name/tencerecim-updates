@@ -79,7 +79,7 @@ function istekYap(yol, method, headers, gövdeMetni) {
         res.on('end', () => {
           let govde = null
           try { govde = ham ? JSON.parse(ham) : null } catch { govde = null }
-          cozumle({ status: res.statusCode, govde })
+          cozumle({ status: res.statusCode, govde, headers: res.headers })
         })
       },
     )
@@ -128,4 +128,37 @@ async function sec(tablo, sorgu, jwt) {
   return veri
 }
 
-module.exports = { rpc, sec, FaturaHatasi }
+// `Content-Range: 0-24/573` başlığından toplam satır sayısını çıkarır.
+// Toplam bilinmiyorsa (`*`) veya başlık yoksa null döner — çağıran kırpma
+// tespitini bu durumda yapamaz, sessizce atlar (yanlış uyarı vermek yerine).
+function contentRangeToplam(header) {
+  if (!header) return null
+  const toplamParcasi = String(header).split('/')[1]
+  if (!toplamParcasi || toplamParcasi === '*') return null
+  const n = Number(toplamParcasi)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Supabase REST SELECT sorgusu — `sec()` ile aynı istek, ama PostgREST'ten
+ * `Prefer: count=exact` ile toplam satır sayısını da ister. PostgREST'in
+ * sunucu tarafı `db-max-rows` tavanı `limit`ten bağımsız sessizce kırpabilir;
+ * bu fonksiyon o kırpmayı `satirlar.length < toplam` karşılaştırmasıyla
+ * tespit edilebilir kılar. `sec()`'in imzası/davranışı DEĞİŞMEDİ.
+ * @param {string} tablo - Tablo adı
+ * @param {string} sorgu - URL sorgu dizesi (kaçırma sorumluluğu çağırana ait)
+ * @param {string} jwt - Kimlik doğrulama tokeni
+ * @returns {Promise<{ satirlar: Array, toplam: number|null }>}
+ */
+async function secBasliklarla(tablo, sorgu, jwt) {
+  const basliklar_ = { ...basliklar(jwt, false), 'Prefer': 'count=exact' }
+  const { status, govde: veri, headers } = await istekYap(`/rest/v1/${tablo}?${sorgu}`, 'GET', basliklar_, null)
+  if (status < 200 || status >= 300) {
+    const mesajHam = veri?.message || 'Sunucu hatası'
+    const kod = hataSinifla(veri, status)
+    throw new FaturaHatasi(mesajUret(kod, mesajHam), kod, veri, status)
+  }
+  return { satirlar: veri || [], toplam: contentRangeToplam(headers?.['content-range']) }
+}
+
+module.exports = { rpc, sec, secBasliklarla, FaturaHatasi }

@@ -509,7 +509,9 @@ for (const mod of handlerModules) {
         return { ok: true, data: await handler(...args) }
       } catch (err) {
         console.error(`[IPC Error] ${channel}:`, err.message)
-        return { ok: false, error: err.message }
+        // kod: FaturaHatasi gibi sınıflandırılmış hatalarda renderer'ın karar
+        // verebilmesi için taşınır (ör. 'ag' => stok telafisi YAPMA, insan kontrolü iste).
+        return { ok: false, error: err.message, kod: err.kod || null }
       }
     })
   }

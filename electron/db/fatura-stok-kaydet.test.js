@@ -35,11 +35,12 @@ require.cache[databasePath] = {
 
 // --- ../yetki mock: yetkiKontrol hep geçer, kimlik sabit ---
 let aktifKimlikDeger = { uid: 'uid-1', eposta: 'muhasebe@tencerecim.com' }
+const sahteYetkiKontrol = vi.fn()
 const yetkiPath = require.resolve('../yetki')
 require.cache[yetkiPath] = {
   id: yetkiPath, filename: yetkiPath, loaded: true,
   exports: {
-    _yetkiKontrol: vi.fn(),
+    _yetkiKontrol: sahteYetkiKontrol,
     _aktifKimlik: () => aktifKimlikDeger,
   },
 }
@@ -84,12 +85,17 @@ function temelVeri(ekstra = {}) {
 beforeEach(() => {
   mockAlisKaydet.mockReset()
   mockAlisKaydet.mockResolvedValue({ ok: true })
+  sahteYetkiKontrol.mockReset()
   Object.keys(urunSenkMap).forEach(k => delete urunSenkMap[k])
   Object.keys(tedarikciMap).forEach(k => delete tedarikciMap[k])
   Object.keys(malKabulMap).forEach(k => delete malKabulMap[k])
   urunSenkMap[1] = { senk_id: 'urun-senk-1' }
   aktifKimlikDeger = { uid: 'uid-1', eposta: 'muhasebe@tencerecim.com' }
 })
+
+function gecerliVeri(ekstra = {}) {
+  return temelVeri(ekstra)
+}
 
 describe('alis-fatura:kaydet', () => {
   test('urun_id → senk_id eşlemesi doğru yapılır', async () => {
@@ -191,5 +197,15 @@ describe('alis-fatura:kaydet', () => {
     expect(yakalanan).toBeDefined()
     expect(yakalanan.message).toMatch(/doğrulanamadı/)
     expect(yakalanan.message).not.toMatch(/kaydedilmedi/)
+  })
+})
+
+// Güvenlik regresyon koruması: bu kontrol daha önce hiçbir handler testi
+// tarafından doğrulanmıyordu (fatura-stok.test.js sadece saf _durumBirlestir'i
+// sınıyor) — yetkiKontrol çağrısı silinse bile testler yeşil kalırdı.
+describe('yetki kontrolü', () => {
+  test('alis-fatura:kaydet fatura_stok_duzenle yetkisi ister', async () => {
+    await alisFaturaKaydet(gecerliVeri()).catch(() => {})
+    expect(sahteYetkiKontrol).toHaveBeenCalledWith('fatura_stok_duzenle')
   })
 })

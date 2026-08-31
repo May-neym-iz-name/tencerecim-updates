@@ -12,6 +12,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 // sadece bu dosyaya etki eder (başka testler etkilenmez).
 
 const mockSec = vi.fn()
+const mockSecBasliklarla = vi.fn()
 
 // Mock bulut modülünü cache'e yer (test dosyasının require() ÖNCE)
 const path = require.resolve('./bulut')
@@ -21,6 +22,7 @@ require.cache[path] = {
   loaded: true,
   exports: {
     sec: mockSec,
+    secBasliklarla: mockSecBasliklarla,
     FaturaHatasi: class extends Error {
       constructor(msg, kod) {
         super(msg)
@@ -35,14 +37,15 @@ const { faturaStokGetir, hareketGetir, alisFaturaGetir, alisKalemGetir } = requi
 
 beforeEach(() => {
   mockSec.mockClear()
+  mockSecBasliklarla.mockClear()
 })
 
 describe('faturaStokGetir', () => {
   test('fatura_stok tablosundan urun_senk_id ve miktar çeker', async () => {
-    mockSec.mockResolvedValue([{ urun_senk_id: 'u1', miktar: 12 }])
+    mockSecBasliklarla.mockResolvedValue({ satirlar: [{ urun_senk_id: 'u1', miktar: 12 }], toplam: 1 })
     const sonuc = await faturaStokGetir('jwt')
     expect(sonuc).toEqual([{ urun_senk_id: 'u1', miktar: 12 }])
-    const [tablo, sorgu, jwt] = mockSec.mock.calls[0]
+    const [tablo, sorgu, jwt] = mockSecBasliklarla.mock.calls[0]
     expect(tablo).toBe('fatura_stok')
     expect(sorgu).toContain('select=urun_senk_id,miktar')
     expect(jwt).toBe('jwt')
@@ -52,21 +55,34 @@ describe('faturaStokGetir', () => {
   // gönderilmeyen bir SELECT sessizce kırpılabilir — sonuç yanlışlıkla
   // "faturası eksik" gösterirdi (bkz. fatura-stok.js durumBirlestir).
   test('açık limit gönderir (kırpılmaya karşı)', async () => {
-    mockSec.mockResolvedValue([])
+    mockSecBasliklarla.mockResolvedValue({ satirlar: [], toplam: 0 })
     await faturaStokGetir('jwt')
-    const [, sorgu] = mockSec.mock.calls[0]
+    const [, sorgu] = mockSecBasliklarla.mock.calls[0]
     expect(sorgu).toMatch(/limit=\d+/)
   })
 
-  test('dönen satır sayısı limite eşitse kırpılma uyarısı loglar', async () => {
+  // Kırpma artık Content-Range başlığından okunan gerçek toplamla tespit
+  // edilir — dönen satır sayısı toplamdan azsa uyarılır (limit'e eşitlik
+  // artık şart değil, çünkü db-max-rows tavanı limit'ten bağımsız olabilir).
+  test('dönen satır sayısı toplamdan azsa kırpılma uyarısı loglar', async () => {
     const uyarSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    const sorguRef = { limit: null }
-    mockSec.mockImplementation((tablo, sorgu) => {
-      sorguRef.limit = Number(sorgu.match(/limit=(\d+)/)[1])
-      return Promise.resolve(Array.from({ length: sorguRef.limit }, () => ({})))
-    })
+    mockSecBasliklarla.mockResolvedValue({ satirlar: [{ urun_senk_id: 'u1', miktar: 1 }], toplam: 5000 })
     await faturaStokGetir('jwt')
     expect(uyarSpy).toHaveBeenCalled()
+    uyarSpy.mockRestore()
+  })
+
+  test('satirlar null dönerse çökmez, boş liste döner', async () => {
+    mockSecBasliklarla.mockResolvedValue({ satirlar: null, toplam: null })
+    const sonuc = await faturaStokGetir('jwt')
+    expect(sonuc).toEqual([])
+  })
+
+  test('toplam bilinmiyorsa (null) kırpılma uyarısı vermez', async () => {
+    const uyarSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockSecBasliklarla.mockResolvedValue({ satirlar: [{ urun_senk_id: 'u1', miktar: 1 }], toplam: null })
+    await faturaStokGetir('jwt')
+    expect(uyarSpy).not.toHaveBeenCalled()
     uyarSpy.mockRestore()
   })
 })

@@ -1,12 +1,12 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { EventEmitter } from 'events'
 const https = require('https')
-const { rpc, sec, FaturaHatasi } = require('./bulut')
+const { rpc, sec, secBasliklarla, FaturaHatasi } = require('./bulut')
 
 // https.request'i taklit eden yardımcı: sahte bir istek (EventEmitter, write/end/destroy
 // no-op'lar) döndürür ve çağrı üzerinden ayarlanan (statusCode, gövdeMetni) ile
 // yanıtı (veya zaman aşımını / hatayı) simüle eder.
-function sahteIstek({ status, gövdeMetni, hataMesaji, zamanAsimiTetikle } = {}) {
+function sahteIstek({ status, gövdeMetni, hataMesaji, zamanAsimiTetikle, headers } = {}) {
   return vi.spyOn(https, 'request').mockImplementation((opts, cb) => {
     const req = new EventEmitter()
     req.write = vi.fn()
@@ -23,6 +23,7 @@ function sahteIstek({ status, gövdeMetni, hataMesaji, zamanAsimiTetikle } = {})
       const res = new EventEmitter()
       cb(res)
       res.statusCode = status
+      res.headers = headers || {}
       queueMicrotask(() => {
         if (gövdeMetni != null) res.emit('data', gövdeMetni)
         res.emit('end')
@@ -170,5 +171,63 @@ describe('sec', () => {
     yakalananReq.emit('timeout')
     await promise
     expect(yakalananReq.destroy).toHaveBeenCalled()
+  })
+})
+
+describe('secBasliklarla', () => {
+  test('Content-Range başlığından toplamı ayrıştırır (0-24/573 → 573)', async () => {
+    sahteIstek({
+      status: 200,
+      gövdeMetni: JSON.stringify([{ id: '1' }]),
+      headers: { 'content-range': '0-24/573' },
+    })
+    await expect(secBasliklarla('tablo', 'select=*', 'jwt')).resolves.toEqual({
+      satirlar: [{ id: '1' }],
+      toplam: 573,
+    })
+  })
+
+  test('toplam bilinmiyorsa (*) null döner', async () => {
+    sahteIstek({
+      status: 200,
+      gövdeMetni: JSON.stringify([]),
+      headers: { 'content-range': '*/*' },
+    })
+    await expect(secBasliklarla('tablo', 'select=*', 'jwt')).resolves.toEqual({
+      satirlar: [],
+      toplam: null,
+    })
+  })
+
+  test('Content-Range başlığı hiç yoksa null döner', async () => {
+    sahteIstek({ status: 200, gövdeMetni: JSON.stringify([{ id: '1' }]) })
+    await expect(secBasliklarla('tablo', 'select=*', 'jwt')).resolves.toEqual({
+      satirlar: [{ id: '1' }],
+      toplam: null,
+    })
+  })
+
+  test('gövde null dönerse satirlar boş dizi olur (çökmez)', async () => {
+    sahteIstek({ status: 200, gövdeMetni: null, headers: { 'content-range': '*/0' } })
+    await expect(secBasliklarla('tablo', 'select=*', 'jwt')).resolves.toEqual({
+      satirlar: [],
+      toplam: 0,
+    })
+  })
+
+  test('Prefer: count=exact başlığını gönderir', async () => {
+    sahteIstek({ status: 200, gövdeMetni: JSON.stringify([]) })
+    await secBasliklarla('tablo', 'select=*', 'jwt')
+    const opts = https.request.mock.calls[0][0]
+    expect(opts.headers['Prefer']).toBe('count=exact')
+  })
+
+  test('hatalı durumda sec ile aynı şekilde kod atanır', async () => {
+    sahteIstek({ status: 500, gövdeMetni: JSON.stringify({ message: 'sunucu hatası' }) })
+    await expect(secBasliklarla('tablo', 'select=*', 'jwt')).rejects.toMatchObject({ kod: 'ag' })
+  })
+
+  test('jwt yoksa oturum hatasını atar', async () => {
+    await expect(secBasliklarla('tablo', 'select=*', null)).rejects.toMatchObject({ kod: 'oturum' })
   })
 })

@@ -1,6 +1,6 @@
 // Fatura verisinin OKUMA yolu. Asıl nüsha Supabase'de olduğu için doğrudan
 // oradan okunur — senkron motoru üzerinden DEĞİL (bkz. plan Ruling-5).
-const { sec } = require('./bulut')
+const { sec, secBasliklarla } = require('./bulut')
 
 // PostgREST varsayılan db-max-rows (tipik 1000) devredeyse, açık `limit`
 // gönderilmeyen bir SELECT sessizce kırpılabilir. Katalog ~3 bin ürün ve
@@ -16,10 +16,19 @@ function kirpilmaUyar(kaynak, satirSayisi, limit) {
 }
 
 // Ürün başına tek satır; katalog ~3 bin ürün olduğu için tek çekim yeterli.
+// `secBasliklarla` kullanılır: PostgREST'in sessiz `db-max-rows` kırpması
+// yalnız `satirlar.length === limit` eşitliğiyle YAKALANAMAZ (limit tavandan
+// düşükse asla eşitlenmez) — gerçek toplamı `Content-Range` başlığından okuyup
+// karşılaştırmak gerekir. `|| []`: sunucudan gövde beklenmedik biçimde boş/null
+// dönerse (`sec` null dönebiliyor) çökmeden boş liste ile devam edilir.
 async function faturaStokGetir(jwt) {
-  const satirlar = await sec('fatura_stok', `select=urun_senk_id,miktar&limit=${UST_LIMIT}`, jwt)
-  kirpilmaUyar('fatura_stok', satirlar.length, UST_LIMIT)
-  return satirlar
+  const { satirlar, toplam } = await secBasliklarla('fatura_stok', `select=urun_senk_id,miktar&limit=${UST_LIMIT}`, jwt)
+  const guvenliSatirlar = satirlar || []
+  if (toplam != null && guvenliSatirlar.length < toplam) {
+    console.warn(`[fatura/okuma] fatura_stok: dönen satır sayısı (${guvenliSatirlar.length}) toplamdan (${toplam}) az — ` +
+      `PostgREST db-max-rows kırpması OLABİLİR, veri eksik gelmiş olabilir`)
+  }
+  return guvenliSatirlar
 }
 
 async function hareketGetir({ urun_senk_id, limit = 200 } = {}, jwt) {
