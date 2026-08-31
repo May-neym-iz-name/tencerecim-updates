@@ -70,6 +70,14 @@ export const stokApi = {
   sayimIptal: (sayim_id) => invoke('sayim:iptal', sayim_id),
 }
 
+export const faturaStokApi = {
+  durum: (params) => invoke('fatura-stok:durum', params),
+  hareketler: (params) => invoke('fatura-stok:hareketler', params),
+  alisListele: (params) => invoke('alis-fatura:listele', params),
+  alisKalemler: (id) => invoke('alis-fatura:kalemler', id),
+  alisKaydet: (veri) => invoke('alis-fatura:kaydet', veri),
+}
+
 export const lokasyonApi = {
   listele: () => invoke('lokasyonlar:listele'),
   olustur: (veri) => invoke('lokasyonlar:olustur', veri),
