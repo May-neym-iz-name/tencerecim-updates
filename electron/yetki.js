@@ -28,6 +28,10 @@ const PERSONEL_VARSAYILAN = new Set([
   // 'on_siparis_yap' BİLEREK yok: ön sipariş stok yeterlilik kontrolünü ATLAR
   // (stokta olmayan ürün satılır). Yanlış kullanılırsa stok güvenilirliği sessizce
   // bozulur — kime açılacağına yönetici karar verir.
+  // Fatura yetkileri
+  'fatura_stok_goruntule',
+  'fatura_stok_duzenle',
+  'fatura_kes',
 ])
 
 // Supabase'den DOĞRULANMIŞ aktif kullanıcı profili (rol + izinler + izinli_lokasyonlar).

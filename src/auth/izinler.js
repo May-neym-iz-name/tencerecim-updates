@@ -20,6 +20,10 @@ const PERSONEL_VARSAYILAN = new Set([
   // 'sosyal_otomasyon_yonet' BİLEREK yok — bkz. electron/yetki.js'teki aynı not.
   'sosyal_medya_yonet',
   // 'on_siparis_yap' BİLEREK yok — bkz. electron/yetki.js'teki aynı not.
+  // Fatura yetkileri
+  'fatura_stok_goruntule',
+  'fatura_stok_duzenle',
+  'fatura_kes',
 ])
 
 /**

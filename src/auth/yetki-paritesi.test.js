@@ -41,6 +41,7 @@ const TUM_KODLAR = [
   'kasa_kullan', 'gider_yonet', 'rapor_goruntule',
   'ayarlar_duzenle', 'excel_ice_aktar', 'ikas_yonet', 'kullanici_yonetimi',
   'sosyal_medya_yonet', 'sosyal_otomasyon_yonet',
+  'fatura_stok_goruntule', 'fatura_stok_duzenle', 'fatura_kes',
 ]
 
 const ROLLER = ['super_admin', 'yonetici', 'personel', 'ozel']
