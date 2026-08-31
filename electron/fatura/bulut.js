@@ -1,6 +1,11 @@
 // Fatura alt sisteminin Supabase yazma yolu.
 // NEDEN AYRI: fatura tabloları senkron motoruna GİRMEZ (son-yazan-kazanır bayat
 // bakiyeyi buluta yazardı). Bu modül doğrudan REST/RPC konuşur.
+//
+// NEDEN https.request (fetch DEĞİL): Electron 22'nin ana sürecinde Node 16.17
+// çalışır, global fetch Node 18'de geldi — main process'te fetch YOK. Desen
+// oturum-canli.js'teki istek()'ten alındı.
+const https = require('https')
 const { SUPABASE_URL, SUPABASE_KEY } = require('../oturum-canli')
 
 const ZAMAN_ASIMI_MS = 20000
@@ -15,13 +20,15 @@ class FaturaHatasi extends Error {
   }
 }
 
-function basliklar(jwt) {
+function basliklar(jwt, postMu) {
   if (!jwt) throw new FaturaHatasi('Oturum bulunamadı, fatura işlemi yapılamaz', 'oturum', null, null)
-  return {
+  const h = {
     'apikey': SUPABASE_KEY,
     'Authorization': `Bearer ${jwt}`,
-    'Content-Type': 'application/json',
+    'Accept': 'application/json',
   }
+  if (postMu) h['Content-Type'] = 'application/json'
+  return h
 }
 
 // Postgres hata kodunu bizim sınıfımıza çevirir.
@@ -51,28 +58,53 @@ function mesajUret(kod, mesajHam) {
   return 'Sunucu hatası: ' + mesajHam
 }
 
-async function rpc(ad, govde, jwt) {
-  // jwt kontrolü try dışında — oturum hatası doğrudan throw olsun
-  const basliklar_ = basliklar(jwt)
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), ZAMAN_ASIMI_MS)
-  let yanit
-  try {
-    yanit = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${ad}`, {
-      method: 'POST', headers: basliklar_, body: JSON.stringify(govde || {}), signal: controller.signal,
+// Ortak https isteği: yol + method + başlıklar + (opsiyonel) gövde.
+// Çözümlenen değer { status, govde } — govde JSON ayrıştırılamazsa null.
+// Zaman aşımı ve ağ hatası AYNI şekilde reddedilir ('ag' koduyla main tarafta
+// sınıflanır) — ikisi de "sunucuya ulaşamadım" demek.
+function istekYap(yol, method, headers, gövdeMetni) {
+  return new Promise((cozumle, reddet) => {
+    const url = new URL(yol, SUPABASE_URL)
+    const req = https.request(
+      {
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method,
+        headers,
+        timeout: ZAMAN_ASIMI_MS,
+      },
+      (res) => {
+        let ham = ''
+        res.on('data', (p) => { ham += p })
+        res.on('end', () => {
+          let govde = null
+          try { govde = ham ? JSON.parse(ham) : null } catch { govde = null }
+          cozumle({ status: res.statusCode, govde })
+        })
+      },
+    )
+    req.on('timeout', () => {
+      req.destroy(new Error('Sunucu zamanında yanıt vermedi'))
     })
-  } catch (e) {
-    // Hem AbortError (zaman aşımı) hem gerçek ağ hatası — sonuç belirsiz, telafi yapma
-    const mesaj = e.name === 'AbortError' ? 'Sunucu zamanında yanıt vermedi' : 'Sunucuya ulaşılamadı: ' + e.message
-    throw new FaturaHatasi(mesaj, 'ag', e, null)
-  } finally {
-    clearTimeout(timeoutId)
-  }
-  const veri = await yanit.json().catch(() => null)
-  if (!yanit.ok) {
+    req.on('error', (e) => {
+      const zamanAsimiMi = e.message === 'Sunucu zamanında yanıt vermedi'
+      const mesaj = zamanAsimiMi ? e.message : 'Sunucuya ulaşılamadı: ' + e.message
+      reddet(new FaturaHatasi(mesaj, 'ag', e, null))
+    })
+    if (gövdeMetni != null) req.write(gövdeMetni)
+    req.end()
+  })
+}
+
+async function rpc(ad, govde, jwt) {
+  // jwt kontrolü önce — oturum hatası doğrudan throw olsun
+  const basliklar_ = basliklar(jwt, true)
+  const gövdeMetni = JSON.stringify(govde || {})
+  const { status, govde: veri } = await istekYap(`/rest/v1/rpc/${ad}`, 'POST', basliklar_, gövdeMetni)
+  if (status < 200 || status >= 300) {
     const mesajHam = veri?.message || 'Sunucu hatası'
-    const kod = hataSinifla(veri, yanit.status)
-    throw new FaturaHatasi(mesajUret(kod, mesajHam), kod, veri, yanit.status)
+    const kod = hataSinifla(veri, status)
+    throw new FaturaHatasi(mesajUret(kod, mesajHam), kod, veri, status)
   }
   return veri
 }
@@ -85,25 +117,13 @@ async function rpc(ad, govde, jwt) {
  * @returns {Promise<Array>} Sonuç satırları
  */
 async function sec(tablo, sorgu, jwt) {
-  // jwt kontrolü try dışında — oturum hatası doğrudan throw olsun
-  const basliklar_ = basliklar(jwt)
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), ZAMAN_ASIMI_MS)
-  let yanit
-  try {
-    yanit = await fetch(`${SUPABASE_URL}/rest/v1/${tablo}?${sorgu}`, { headers: basliklar_, signal: controller.signal })
-  } catch (e) {
-    // Hem AbortError (zaman aşımı) hem gerçek ağ hatası — sonuç belirsiz, telafi yapma
-    const mesaj = e.name === 'AbortError' ? 'Sunucu zamanında yanıt vermedi' : 'Sunucuya ulaşılamadı: ' + e.message
-    throw new FaturaHatasi(mesaj, 'ag', e, null)
-  } finally {
-    clearTimeout(timeoutId)
-  }
-  const veri = await yanit.json().catch(() => null)
-  if (!yanit.ok) {
+  // jwt kontrolü önce — oturum hatası doğrudan throw olsun
+  const basliklar_ = basliklar(jwt, false)
+  const { status, govde: veri } = await istekYap(`/rest/v1/${tablo}?${sorgu}`, 'GET', basliklar_, null)
+  if (status < 200 || status >= 300) {
     const mesajHam = veri?.message || 'Sunucu hatası'
-    const kod = hataSinifla(veri, yanit.status)
-    throw new FaturaHatasi(mesajUret(kod, mesajHam), kod, veri, yanit.status)
+    const kod = hataSinifla(veri, status)
+    throw new FaturaHatasi(mesajUret(kod, mesajHam), kod, veri, status)
   }
   return veri
 }
