@@ -1,33 +1,33 @@
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
 
-// Mock sec fonksiyonu
+// CommonJS require modüllerinin vitest'te mock'lanması zor çünkü:
+// - vi.mock() ESM-centric (vitest'in vitest ESM→CJS dönüştürmesi eksik)
+// - okuma.js destructure ediyor: const { sec } = require('./bulut')
+// - destructure edilen sec, test'teki override'ı görmüyor
+// - beforeEach'de cache manipulation çok geç (top-level require zaten yapılmış)
+//
+// Çözüm: require.cache'i setup'tan önce mock modülle yer.
+// Bu, test dosyasının top-level require() çalışırken bulut'a erişmesi gerektiği anlamına gelir.
+// Vitest'in varsayılan dosya-başına modül izolasyonu sayesinde bu cache değişikliği
+// sadece bu dosyaya etki eder (başka testler etkilenmez).
+
 const mockSec = vi.fn()
 
-// Mock module tanımla ve cache'e koy (require.cache)
-// NEDEN: vi.mock CommonJS require() ile çalışmıyor (vitest ESM dönüştürme eksik).
-// okuma.js `const { sec } = require()` ile sec'i destructure ediyor, test'teki override'ı görmüyor.
-// ÇÖZÜM: require.cache'i mock modülle değiştir (okuma.js yüklemeden ÖNCE).
-// VERSİYON: test dosyası top-level require'ı yapıyor, beforeEach yağmıyor —
-// bu vitest'in dosya yükleme zamanını reflektör ediyor. Cache manipulation'ı
-// vitest'in hook sistemi içinde yapmalıyız; ancak hoisting yüzünden top-level
-// code hâlâ require yapıyor. SONUÇ: cache pre-manipulation ile setup yapılıyor.
+// Mock bulut modülünü cache'e yer (test dosyasının require() ÖNCE)
 const path = require.resolve('./bulut')
-const mockBulutModule = {
-  sec: mockSec,
-  FaturaHatasi: class extends Error {
-    constructor(msg, kod) {
-      super(msg)
-      this.kod = kod
-    }
-  },
-}
-
-// Cache'i pre-setup et (module load'lanmadan ÖNCE) — test izolasyonu vitest'in varsayılan davranışına bağlıdır
 require.cache[path] = {
   id: path,
   filename: path,
   loaded: true,
-  exports: mockBulutModule,
+  exports: {
+    sec: mockSec,
+    FaturaHatasi: class extends Error {
+      constructor(msg, kod) {
+        super(msg)
+        this.kod = kod
+      }
+    },
+  },
 }
 
 // Modülleri require et (cache mock'lu olduğu halde)
