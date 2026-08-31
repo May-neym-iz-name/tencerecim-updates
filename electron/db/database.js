@@ -25,6 +25,14 @@ function init() {
   seedLokasyonlar()
   seedUpsSehirIlce()
   backfillStok()
+  // Secret'ları diskte şifrele (ikas client_secret, UPS şifresi, Meta token'ı).
+  // En fazla 4 satıra dokunur, açılışı ölçülebilir şekilde geciktirmez —
+  // agirBakim() gibi ertelenmesine gerek yok. Tekrar çalıştırmak güvenlidir.
+  try {
+    const sonuc = require('./gizli-alan-canli').gecisYap(db)
+    const toplam = Object.values(sonuc).reduce((a, b) => a + b, 0)
+    if (toplam) console.log('[güvenlik] diskte şifrelenen secret alanı:', sonuc)
+  } catch (e) { console.error('gizli alan geçişi:', e.message) }
   return db
 }
 

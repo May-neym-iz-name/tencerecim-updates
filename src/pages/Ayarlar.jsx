@@ -34,6 +34,8 @@ export default function Ayarlar() {
   ]
 
   const [yedekMesgul, setYedekMesgul] = useState('')
+  // Parola kutusu: { mod: 'al' | 'yukle', deger } veya null.
+  const [parolaKutusu, setParolaKutusu] = useState(null)
   const [senkMesgul, setSenkMesgul] = useState(false)
   async function veriSenkle() {
     setSenkMesgul(true)
@@ -43,19 +45,30 @@ export default function Ayarlar() {
     } catch (e) { toast.error('Senkron hatası: ' + e.message) }
     finally { setSenkMesgul(false) }
   }
-  async function yedekAl() {
+  // KVKK: yedek dosyası TÜM müşteri verisini (ad, telefon, adres) ve API
+  // secret'larını taşır. Masaüstünde/USB'de şifresiz durmasın diye önce parola
+  // sorulur. window.prompt Electron'da çalışmaz → kendi kutumuz.
+  async function yedekAl(parola) {
     setYedekMesgul('al')
     try {
-      const r = await yedekApi.olustur()
+      const r = await yedekApi.olustur(parola)
       if (r.iptal) return
-      toast.success(`Yedek alındı (${(r.boyut / 1048576).toFixed(1)} MB): ${r.yol}`)
+      toast.success(
+        `Yedek alındı (${(r.boyut / 1048576).toFixed(1)} MB): ${r.yol}` +
+        (r.sifreli ? ' — şifreli' : ''),
+      )
     } catch (e) { toast.error('Yedek alınamadı: ' + e.message) }
     finally { setYedekMesgul('') }
   }
-  async function yedekGeriYukle() {
+  async function yedekGeriYukle(parola) {
     setYedekMesgul('yukle')
     try {
-      const r = await yedekApi.geriYukle()
+      const r = await yedekApi.geriYukle(parola)
+      // Şifreli yedek seçildi ama parola girilmemiş → kutuyu tekrar aç.
+      if (r.parolaGerekli) {
+        toast.error('Bu yedek şifreli. Parolayı girip tekrar deneyin.')
+        setParolaKutusu({ mod: 'yukle', deger: '' })
+      }
       if (r.iptal) setYedekMesgul('')
       // Başarılıysa uygulama yeniden başlar; mesgul kalması önemsiz.
     } catch (e) { toast.error('Geri yükleme başarısız: ' + e.message); setYedekMesgul('') }
@@ -206,6 +219,20 @@ export default function Ayarlar() {
     setIkasMesgul('fiyat')
     try { const r = await ikasApi.fiyatGonder(); toast.success(`${r.gonderilen} ürün fiyatı ikas\'a gönderildi`) }
     catch (e) { toast.error('Fiyat gönderim hatası: ' + e.message) }
+    finally { setIkasMesgul('') }
+  }
+
+  // Yalnız ALIŞ fiyatını gönderir. Satış fiyatı ikas'tan okunup aynen geri
+  // yazılır; mağazadaki güncel satış fiyatları bayat yerel fiyatlarla EZİLMEZ.
+  async function ikasAlisFiyatiGonder() {
+    if (!confirm("Alış (maliyet) fiyatları ikas'a yazılacak. Satış fiyatlarına DOKUNULMAZ. Devam edilsin mi?")) return
+    setIkasMesgul('alisFiyat')
+    try {
+      const r = await ikasApi.alisFiyatiGonder()
+      const atlandi = r.atlanan?.length ? ` (${r.atlanan.length} ürün atlandı: ikas satış fiyatı okunamadı)` : ''
+      toast.success(`${r.gonderilen} ürünün alış fiyatı ikas'a gönderildi${atlandi}`)
+    }
+    catch (e) { toast.error('Alış fiyatı gönderim hatası: ' + e.message) }
     finally { setIkasMesgul('') }
   }
 
@@ -614,6 +641,11 @@ export default function Ayarlar() {
               className="bg-teal-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-teal-700 disabled:opacity-50">
               {ikasMesgul === 'fiyat' ? 'Gönderiliyor…' : 'Tüm Fiyatı ikas\'a Gönder'}
             </button>
+            <button onClick={ikasAlisFiyatiGonder} disabled={!!ikasMesgul}
+              title="Yalnız alış (maliyet) fiyatını yazar; ikas'taki satış fiyatına dokunmaz."
+              className="bg-teal-700 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-teal-800 disabled:opacity-50">
+              {ikasMesgul === 'alisFiyat' ? 'Gönderiliyor…' : "Alış Fiyatlarını ikas'a Gönder"}
+            </button>
             <button onClick={ikasUrunEsle} disabled={!!ikasMesgul}
               className="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50">
               {ikasMesgul === 'urunEsle' ? 'Eşleşiyor…' : 'Ürünleri SKU/Barkod ile Eşle'}
@@ -747,8 +779,11 @@ export default function Ayarlar() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="border rounded-xl p-4">
               <p className="text-sm font-medium text-gray-700 mb-1">Yedek Al</p>
-              <p className="text-xs text-gray-400 mb-3">Mevcut tüm verinin tek dosyalık (.db) bir kopyasını kaydeder.</p>
-              <button onClick={yedekAl} disabled={!yonetici || !!yedekMesgul}
+              <p className="text-xs text-gray-400 mb-3">
+                Mevcut tüm verinin tek dosyalık şifreli (.tncyedek) kopyasını kaydeder.
+                Parola olmadan açılamaz — parolayı kaybederseniz yedek kurtarılamaz.
+              </p>
+              <button onClick={() => setParolaKutusu({ mod: 'al', deger: '' })} disabled={!yonetici || !!yedekMesgul}
                 className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50">
                 {yedekMesgul === 'al' ? 'Alınıyor…' : '⬇️ Yedek Al'}
               </button>
@@ -756,7 +791,7 @@ export default function Ayarlar() {
             <div className="border rounded-xl p-4">
               <p className="text-sm font-medium text-gray-700 mb-1">Yedekten Geri Yükle</p>
               <p className="text-xs text-red-500 mb-3">Dikkat: Mevcut tüm veriler seçilen yedekle değiştirilir, uygulama yeniden başlar.</p>
-              <button onClick={yedekGeriYukle} disabled={!yonetici || !!yedekMesgul}
+              <button onClick={() => setParolaKutusu({ mod: 'yukle', deger: '' })} disabled={!yonetici || !!yedekMesgul}
                 className="bg-orange-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-orange-700 disabled:opacity-50">
                 {yedekMesgul === 'yukle' ? 'Yükleniyor…' : '⬆️ Geri Yükle'}
               </button>
@@ -764,6 +799,80 @@ export default function Ayarlar() {
           </div>
         </div>
       )}
+
+      {parolaKutusu && (
+        <YedekParolaKutusu
+          mod={parolaKutusu.mod}
+          onIptal={() => setParolaKutusu(null)}
+          onOnay={(parola) => {
+            const mod = parolaKutusu.mod
+            setParolaKutusu(null)
+            if (mod === 'al') yedekAl(parola)
+            else yedekGeriYukle(parola)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Yedek parolası kutusu. window.prompt Electron renderer'ında çalışmaz ve
+// confirm() gibi tarayıcı diyalogları girdi odağını kilitleyebiliyor
+// (sayım ekranında bir kez yaşandı) — bu yüzden kendi kutumuz.
+function YedekParolaKutusu({ mod, onIptal, onOnay }) {
+  const [parola, setParola] = useState('')
+  const [tekrar, setTekrar] = useState('')
+  const alirken = mod === 'al'
+  // Yedek alırken parola iki kez istenir: yanlış yazılan parola, kurtarılamaz
+  // bir yedek demektir (çözecek bir "şifremi unuttum" yolu YOK).
+  const hazir = parola.length >= 6 && (!alirken || parola === tekrar)
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl p-5 w-full max-w-sm shadow-xl">
+        <h3 className="font-semibold mb-1">
+          {alirken ? '🔒 Yedek Parolası Belirleyin' : '🔓 Yedek Parolasını Girin'}
+        </h3>
+        <p className="text-xs text-gray-500 mb-3">
+          {alirken
+            ? 'Yedek dosyası tüm müşteri bilgilerini içerir. Bu parola olmadan açılamaz; ' +
+              'parolayı kaybederseniz yedek KURTARILAMAZ. En az 6 karakter.'
+            : 'Şifresiz eski (.db) bir yedek seçecekseniz bu alanı boş bırakıp Devam edin.'}
+        </p>
+
+        <input
+          type="password" autoFocus value={parola}
+          onChange={(e) => setParola(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && (hazir || !alirken)) onOnay(parola) }}
+          placeholder="Parola"
+          className="w-full border rounded-lg px-3 py-2 text-sm mb-2"
+        />
+        {alirken && (
+          <input
+            type="password" value={tekrar}
+            onChange={(e) => setTekrar(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && hazir) onOnay(parola) }}
+            placeholder="Parola (tekrar)"
+            className="w-full border rounded-lg px-3 py-2 text-sm mb-2"
+          />
+        )}
+        {alirken && parola && tekrar && parola !== tekrar && (
+          <p className="text-xs text-red-500 mb-2">Parolalar aynı değil.</p>
+        )}
+
+        <div className="flex justify-end gap-2 mt-3">
+          <button onClick={onIptal} className="px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50">
+            Vazgeç
+          </button>
+          <button
+            onClick={() => onOnay(parola)}
+            disabled={alirken ? !hazir : false}
+            className="bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50"
+          >
+            Devam
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

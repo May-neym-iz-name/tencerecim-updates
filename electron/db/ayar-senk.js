@@ -13,10 +13,13 @@ const GONDERICI_ALANLAR = ['ad', 'yetkili', 'adres', 'il', 'il_kodu', 'ilce', 'i
 
 function topla() {
   const db = getDb()
+  // ÇÖZEREK topla: secret'lar DİSKTE Windows DPAPI ile şifreli duruyor
+  // (db/gizli-alan.js). Şifreli hâlini buluta gönderirsek diğer PC onu ASLA
+  // çözemez (DPAPI makineye/kullanıcıya bağlı) ve entegrasyonlar sessizce ölür.
   const kv = (tablo) => {
     const o = {}
     for (const r of db.prepare(`SELECT anahtar, deger FROM ${tablo}`).all()) o[r.anahtar] = r.deger
-    return o
+    return require('./gizli-alan-canli').objeCoz(tablo, o)
   }
   const ikas = kv('ikas_ayarlar')
   for (const k of IKAS_YEREL_ANAHTARLAR) delete ikas[k]
@@ -54,7 +57,13 @@ function uygula(veri = {}) {
   const upsertKv = (tablo, obj) => {
     if (!obj) return
     const st = db.prepare(`INSERT INTO ${tablo} (anahtar, deger) VALUES (?, ?) ON CONFLICT(anahtar) DO UPDATE SET deger = excluded.deger`)
-    const tx = db.transaction(() => { for (const [a, d] of Object.entries(obj)) st.run(a, d == null ? '' : String(d)) })
+    // Buluttan düz metin gelir; diske ŞİFRELEYEREK yaz (bkz. kv() notu).
+    const gizli = require('./gizli-alan-canli')
+    const tx = db.transaction(() => {
+      for (const [a, d] of Object.entries(obj)) {
+        st.run(a, gizli.yazmaDegeri(tablo, a, d == null ? '' : String(d)))
+      }
+    })
     tx()
   }
   upsertKv('ups_ayarlar', veri.ups)

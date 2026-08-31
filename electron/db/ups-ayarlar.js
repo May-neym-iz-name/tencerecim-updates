@@ -2,11 +2,12 @@
 const { getDb } = require('./database')
 
 // Tüm UPS ayarlarını obje olarak döndürür.
+// sifre DİSKTE şifreli durur (bkz. db/gizli-alan.js); burada çözülür.
 function ayarlariGetir() {
   const satirlar = getDb().prepare('SELECT anahtar, deger FROM ups_ayarlar').all()
   const obj = {}
   for (const s of satirlar) obj[s.anahtar] = s.deger
-  return obj
+  return require('./gizli-alan-canli').objeCoz('ups_ayarlar', obj)
 }
 
 // Birden çok ayarı topluca kaydeder (upsert).
@@ -18,7 +19,8 @@ function ayarlariKaydet(veri) {
   )
   const toplu = db.transaction((girisler) => {
     for (const [anahtar, deger] of girisler) {
-      upsert.run({ anahtar, deger: deger === null || deger === undefined ? '' : String(deger) })
+      const duz = deger === null || deger === undefined ? '' : String(deger)
+      upsert.run({ anahtar, deger: require('./gizli-alan-canli').yazmaDegeri('ups_ayarlar', anahtar, duz) })
     }
   })
   toplu(Object.entries(veri || {}))

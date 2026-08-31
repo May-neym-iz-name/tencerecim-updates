@@ -128,8 +128,47 @@ Electron'u yükseltin.
 Bu bölümler ilgili fazlar tamamlandıkça doldurulacak. Tasarım:
 `docs/superpowers/specs/2026-08-31-guvenlik-sertlestirme-design.md`
 
-- **Faz C** — yerel veritabanındaki API secret'larının şifrelenmesi + parolalı yedek
 - **Faz D** — KVKK dışa aktarım denetim kaydı
+
+### Faz C — Diskteki secret'lar + parolalı yedek (TAMAMLANDI)
+
+**C1 — Secret alanları diskte şifreli.** `userData/tencerecim.db` düz SQLite;
+içinde ikas `client_secret`, UPS `sifre` ve Meta `app_secret` / `sayfa_token`
+düz metin duruyordu. Artık bu alanlar Windows DPAPI (Electron `safeStorage`) ile
+şifrelenip `gzl1:` önekiyle saklanıyor. Dosya başka bir makineye kopyalanırsa
+çözülemez.
+
+> ⚠️ **En kritik tuzak:** `ikas_ayarlar` ve `ups_ayarlar` Supabase'e
+> **senkronlanıyor** (`ayar-senk.js`). Şifreli değer buluta giderse diğer PC onu
+> ASLA çözemez (DPAPI makineye/kullanıcıya bağlıdır) ve entegrasyonlar sessizce
+> ölür. Bu yüzden şifreleme **yalnızca diskte**: `ayar-senk.topla()` çözerek
+> okur, `uygula()` şifreleyerek yazar. Yeni bir secret alanı eklerken
+> `gizli-alan.js > HASSAS_ANAHTARLAR`'a ekleyin ve senkron yollarının hâlâ düz
+> metin taşıdığını doğrulayın.
+
+Geçiş açılışta tek seferde yapılır (`database.js > init`), en fazla 4 satıra
+dokunur, tekrar çalıştırmak güvenlidir. Çözülemeyen değer boş döner —
+bozuk secret'la API'ye gitmektense "ayar girilmemiş" davranışı doğrudur.
+
+Şifrelenecek alanlar bilerek **dar** tutuldu: `store_name`, `client_id`,
+`kullanici_kodu` gibi tanımlayıcılar tek başlarına erişim vermez, şifrelemek
+senkron kırma riskini boşuna artırırdı.
+
+**C2 — Parolalı yedek.** `yedek:olustur` artık parola ister ve
+`.tncyedek` üretir: `scrypt` (N=32768) ile paroladan anahtar türetilir,
+`AES-256-GCM` ile şifrelenir. GCM aynı zamanda bütünlüğü doğrular — bozulmuş
+ya da kurcalanmış yedek sessizce geri yüklenemez. Tuz ve IV her seferinde
+rastgeledir.
+
+- Arayüz parolayı **iki kez** sorar: yanlış yazılan parola kurtarılamaz bir
+  yedek demektir; "şifremi unuttum" yolu YOKTUR.
+- Şifrelenmemiş ara dosya kullanıcının klasörüne asla yazılmaz (geçici dizinde
+  oluşturulup hemen silinir).
+- Eski şifresiz `.db` yedekleri geri yüklenebilir kalır.
+
+**Dosyalar:** `electron/db/gizli-alan.js` (+13 test),
+`electron/db/gizli-alan-canli.js`, `electron/yedek-sifre.js` (+9 test),
+`electron/yedek.js`, `src/pages/Ayarlar.jsx`.
 
 ### Faz B — Oturum doğrulama (TAMAMLANDI)
 

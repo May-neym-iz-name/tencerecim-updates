@@ -182,6 +182,7 @@ export const ikasApi = {
   siparisTazele: (id) => invoke('ikas:siparis-tazele', { id }),
   // Ek yetenekler (ekstra.js): fiyat senkronu, müşteri çekme, ürün eşleştirme, paket durumu.
   fiyatGonder: () => invoke('ikas:fiyat-gonder'),
+  alisFiyatiGonder: () => invoke('ikas:alis-fiyati-gonder'),
   musteriCek: () => invoke('ikas:musteri-cek'),
   urunEsle: () => invoke('ikas:urun-esle'),
   siparisPaketler: (id) => invoke('ikas:siparis-paketler', { id }),
@@ -281,8 +282,10 @@ export const panelApi = {
 }
 
 export const yedekApi = {
-  olustur: () => invoke('yedek:olustur'),
-  geriYukle: () => invoke('yedek:geri-yukle'),
+  // KVKK: yedek tüm müşteri verisini taşır. Parola verilirse dosya
+  // AES-256-GCM ile şifrelenir (.tncyedek); verilmezse eski .db davranışı.
+  olustur: (parola) => invoke('yedek:olustur', { parola: parola || null }),
+  geriYukle: (parola) => invoke('yedek:geri-yukle', { parola: parola || null }),
 }
 
 export const kasaApi = {

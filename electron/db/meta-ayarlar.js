@@ -4,11 +4,13 @@ const { getDb } = require('./database')
 
 const HASSAS = new Set(['app_secret', 'sayfa_token'])
 
+// app_secret ve sayfa_token DİSKTE şifreli durur (bkz. db/gizli-alan.js);
+// burada çözülür, yani client.js hep düz metin görür.
 function ayarlariGetir() {
   const satirlar = getDb().prepare('SELECT anahtar, deger FROM meta_ayarlar').all()
   const obj = {}
   for (const s of satirlar) obj[s.anahtar] = s.deger
-  return obj
+  return require('./gizli-alan-canli').objeCoz('meta_ayarlar', obj)
 }
 
 // Renderer'a giderken hassas değerleri maskeler (girilmiş mi bilgisini korur).
@@ -25,7 +27,10 @@ function ayarKaydetTek(anahtar, deger) {
   getDb().prepare(
     'INSERT INTO meta_ayarlar (anahtar, deger) VALUES (?, ?) ' +
     'ON CONFLICT(anahtar) DO UPDATE SET deger = excluded.deger'
-  ).run(anahtar, deger == null ? '' : String(deger))
+  ).run(
+    anahtar,
+    require('./gizli-alan-canli').yazmaDegeri('meta_ayarlar', anahtar, deger == null ? '' : String(deger)),
+  )
 }
 
 function ayarlariKaydet(veri) {
@@ -38,7 +43,8 @@ function ayarlariKaydet(veri) {
     for (const [anahtar, deger] of girisler) {
       // Maskeli değer geri gönderildiyse mevcut değeri koru (üzerine yazma).
       if (HASSAS.has(anahtar) && (deger === '********' || deger === '' || deger == null)) continue
-      upsert.run({ anahtar, deger: deger == null ? '' : String(deger) })
+      const duz = deger == null ? '' : String(deger)
+      upsert.run({ anahtar, deger: require('./gizli-alan-canli').yazmaDegeri('meta_ayarlar', anahtar, duz) })
     }
   })
   toplu(Object.entries(veri || {}))

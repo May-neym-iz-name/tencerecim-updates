@@ -4,11 +4,13 @@ const { getDb } = require('./database')
 // client_secret hassas olduğu için renderer'a maskeli döner; gerçek değer DB'de kalır.
 const HASSAS = new Set(['client_secret'])
 
+// client_secret DİSKTE şifreli durur (bkz. db/gizli-alan.js); burada çözülür,
+// yani uygulamanın geri kalanı hep düz metin görür.
 function ayarlariGetir() {
   const satirlar = getDb().prepare('SELECT anahtar, deger FROM ikas_ayarlar').all()
   const obj = {}
   for (const s of satirlar) obj[s.anahtar] = s.deger
-  return obj
+  return require('./gizli-alan-canli').objeCoz('ikas_ayarlar', obj)
 }
 
 // Renderer'a giderken secret'ı maskeler (girilmiş mi bilgisini korur).
@@ -31,7 +33,8 @@ function ayarlariKaydet(veri) {
     for (const [anahtar, deger] of girisler) {
       // Maskeli secret geri gönderildiyse mevcut değeri koru (üzerine yazma).
       if (HASSAS.has(anahtar) && (deger === '********' || deger === '' || deger == null)) continue
-      upsert.run({ anahtar, deger: deger == null ? '' : String(deger) })
+      const duz = deger == null ? '' : String(deger)
+      upsert.run({ anahtar, deger: require('./gizli-alan-canli').yazmaDegeri('ikas_ayarlar', anahtar, duz) })
     }
   })
   toplu(Object.entries(veri || {}))
