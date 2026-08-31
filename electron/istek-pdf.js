@@ -124,6 +124,14 @@ async function istekPdfKaydet(id) {
     await htmlYukle(win, html)
     const pdf = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4', margins: { marginType: 'default' } })
     fs.writeFileSync(sonuc.filePath, pdf)
+    // KVKK denetim kaydı: veri dosya olarak programdan çıktı.
+    const d = require('./db/disa-aktarim-canli')
+    d._kaydet({
+      tur: d._TURLER.PDF,
+      kapsam: `istek listesi #${id}`,
+      kayit_sayisi: Array.isArray(liste.kalemler) ? liste.kalemler.length : null,
+      dosya_adi: require('path').basename(sonuc.filePath),
+    })
     return { kaydedildi: true, yol: sonuc.filePath }
   } finally {
     if (!win.isDestroyed()) win.close()

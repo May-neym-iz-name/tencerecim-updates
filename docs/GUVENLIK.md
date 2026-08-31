@@ -125,10 +125,37 @@ Electron'u yükseltin.
 
 ## 3. Uygulama içi (Faz B–D)
 
-Bu bölümler ilgili fazlar tamamlandıkça doldurulacak. Tasarım:
+Dört fazın tamamı UYGULANDI (v1.2.183). Tasarım:
 `docs/superpowers/specs/2026-08-31-guvenlik-sertlestirme-design.md`
 
-- **Faz D** — KVKK dışa aktarım denetim kaydı
+### Faz D — Dışa aktarım denetim kaydı (TAMAMLANDI)
+
+Müşteri verisi programdan **dosya olarak** iki yoldan çıkabiliyor: veritabanı
+yedeği ve istek listesi PDF'i. Her ikisi de artık `disa_aktarim_log` tablosuna
+düşüyor: tarih, kullanıcı e-postası, uid, tür, kapsam, kayıt sayısı, dosya adı.
+
+Görüntüleme: **Ayarlar > 💾 Yedekleme > 🛡️ Dışa Aktarım Kayıtları**
+(`ayarlar_duzenle` yetkisi gerekir).
+
+Tasarım kararları:
+
+- **Kayıt YEREL.** `senk-sema`'ya bilerek eklenmedi: log'un kendisi kişisel veri
+  içerir ve her dışa aktarım senkron kuyruğunu şişirirdi.
+- **Silme arayüzü YOK.** Silinebilen bir denetim kaydı denetim kaydı değildir;
+  modül hiçbir sil/temizle fonksiyonu dışa vermez (test bunu doğruluyor).
+- **Log yazımı asıl işi çökertmez.** Denetim kaydı tutulamadı diye kullanıcının
+  yedeği iptal olmaz — hata konsola yazılır, iş devam eder.
+- Kullanıcı kimliği Faz B'deki **doğrulanmış** oturumdan gelir; renderer'ın
+  beyanından değil. Kimlik bilinmiyorsa kayıt yine düşer (`(bilinmiyor)`) —
+  kim olduğunu bilmemek, olayı hiç kaydetmemekten iyidir.
+
+**Dosyalar:** `electron/db/disa-aktarim-log.js` (+7 test),
+`electron/db/disa-aktarim-canli.js`, `electron/yedek.js`,
+`electron/istek-pdf.js`, `src/pages/Ayarlar.jsx`.
+
+> Not: Excel yalnızca **içe** aktarma için kullanılıyor (dışa aktarma yok), o
+> yüzden `TURLER.EXCEL` tanımlı ama henüz kullanılmıyor. Yeni bir dışa aktarım
+> özelliği eklerken oraya bir `_kaydet()` satırı eklemeyi unutmayın.
 
 ### Faz C — Diskteki secret'lar + parolalı yedek (TAMAMLANDI)
 

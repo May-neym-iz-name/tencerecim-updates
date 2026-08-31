@@ -25,6 +25,7 @@ function init() {
   seedLokasyonlar()
   seedUpsSehirIlce()
   backfillStok()
+  try { require('./disa-aktarim-log').tabloKur(db) } catch (e) { console.error('denetim tablosu:', e.message) }
   // Secret'ları diskte şifrele (ikas client_secret, UPS şifresi, Meta token'ı).
   // En fazla 4 satıra dokunur, açılışı ölçülebilir şekilde geciktirmez —
   // agirBakim() gibi ertelenmesine gerek yok. Tekrar çalıştırmak güvenlidir.

@@ -56,6 +56,7 @@ function olusturDogrulayici({ istek, onbellekOku, onbellekYaz, onbellekSil, simd
     if (typeof token !== 'string' || !token) return null
 
     let uidCevrimici = null
+    let epostaCevrimici = null
     let profil = null
 
     try {
@@ -69,6 +70,8 @@ function olusturDogrulayici({ istek, onbellekOku, onbellekYaz, onbellekSil, simd
         return null
       }
       uidCevrimici = kullanici.govde.id
+      // E-posta yalnızca denetim kaydı için (KVKK: kim dışa aktardı).
+      epostaCevrimici = kullanici.govde.email || null
 
       const yol = `/rest/v1/profiles?id=eq.${encodeURIComponent(uidCevrimici)}` +
         '&select=rol,izinler,izinli_lokasyonlar,aktif'
@@ -84,8 +87,8 @@ function olusturDogrulayici({ istek, onbellekOku, onbellekYaz, onbellekSil, simd
 
     if (!profil || !profil.aktif) return null
 
-    onbellekYaz({ uid: uidCevrimici, profil, dogrulanma: simdi() })
-    return { profil, kaynak: 'supabase' }
+    onbellekYaz({ uid: uidCevrimici, eposta: epostaCevrimici, profil, dogrulanma: simdi() })
+    return { profil, uid: uidCevrimici, eposta: epostaCevrimici, kaynak: 'supabase' }
   }
 
   function cevrimdisi(token) {
@@ -99,7 +102,12 @@ function olusturDogrulayici({ istek, onbellekOku, onbellekYaz, onbellekSil, simd
     if (!onbellek.profil.aktif) return null
 
     // BİLEREK tazelemiyoruz: çevrimdışı kullanım süreyi uzatmamalı.
-    return { profil: onbellek.profil, kaynak: 'onbellek' }
+    return {
+      profil: onbellek.profil,
+      uid: onbellek.uid,
+      eposta: onbellek.eposta || null,
+      kaynak: 'onbellek',
+    }
   }
 }
 

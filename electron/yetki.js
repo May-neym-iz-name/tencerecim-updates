@@ -30,8 +30,10 @@ const PERSONEL_VARSAYILAN = new Set([
   // bozulur — kime açılacağına yönetici karar verir.
 ])
 
-// Renderer'dan gelen aktif kullanıcı profili (rol + izinler + izinli_lokasyonlar).
+// Supabase'den DOĞRULANMIŞ aktif kullanıcı profili (rol + izinler + izinli_lokasyonlar).
 let aktifProfil = null
+// Denetim kaydı için kimlik (KVKK: kim dışa aktardı). Yetkiyi etkilemez.
+let aktifKimlik = { uid: null, eposta: null }
 
 function yetkiVar(profil, kod) {
   if (!profil || !profil.aktif) return false
@@ -88,6 +90,9 @@ module.exports = {
   // renderer bunu çağıramaz — gerçek yol her zaman auth:profil-ayarla'dır.
   _profilYazTestIcin: (profil) => { aktifProfil = profil || null },
 
+  // Denetim kaydı için: o an giriş yapmış kullanıcının kimliği.
+  _aktifKimlik: () => aktifKimlik,
+
   // Girdi: { access_token }. Profil BURADAN gelmez — Supabase'den doğrulanır.
   // Doğrulanamazsa aktifProfil null kalır, yani hiçbir yetki yoktur.
   'auth:profil-ayarla': async (girdi) => {
@@ -95,6 +100,7 @@ module.exports = {
     const { dogrula } = require('./oturum-canli')
     const sonuc = await dogrula(typeof token === 'string' ? token : null)
     aktifProfil = sonuc ? sonuc.profil : null
+    aktifKimlik = sonuc ? { uid: sonuc.uid || null, eposta: sonuc.eposta || null } : { uid: null, eposta: null }
     return {
       ok: !!sonuc,
       // Renderer bu bilgiyi kullanıcıya "çevrimdışı moddasınız" uyarısı
@@ -105,6 +111,7 @@ module.exports = {
 
   'auth:profil-temizle': () => {
     aktifProfil = null
+    aktifKimlik = { uid: null, eposta: null }
     // Çıkış yapan kullanıcının çevrimdışı önbelleği de düşsün: aksi halde
     // internet kesikken 12 saat boyunca onun yetkisiyle girilebilirdi.
     try { require('./oturum-canli').onbellekSil() } catch { /* test ortami */ }

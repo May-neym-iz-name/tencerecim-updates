@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi } from '../api/ipc'
+import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi, denetimApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { veriSenk } from '../lib/veriSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
@@ -36,6 +36,7 @@ export default function Ayarlar() {
   const [yedekMesgul, setYedekMesgul] = useState('')
   // Parola kutusu: { mod: 'al' | 'yukle', deger } veya null.
   const [parolaKutusu, setParolaKutusu] = useState(null)
+  const [denetimKayitlari, setDenetimKayitlari] = useState(null)
   const [senkMesgul, setSenkMesgul] = useState(false)
   async function veriSenkle() {
     setSenkMesgul(true)
@@ -796,6 +797,56 @@ export default function Ayarlar() {
                 {yedekMesgul === 'yukle' ? 'Yükleniyor…' : '⬆️ Geri Yükle'}
               </button>
             </div>
+          </div>
+
+          {/* KVKK denetim kaydı — müşteri verisinin dosya olarak çıktığı anlar */}
+          <div className="border rounded-xl p-4 mt-4">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-medium text-gray-700">🛡️ Dışa Aktarım Kayıtları (KVKK)</p>
+              <button
+                onClick={async () => {
+                  try { setDenetimKayitlari(await denetimApi.listele(500)) }
+                  catch (e) { toast.error('Kayıtlar okunamadı: ' + e.message) }
+                }}
+                disabled={!yonetici}
+                className="text-sm border px-3 py-1 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                {denetimKayitlari ? 'Yenile' : 'Göster'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Yedek ve PDF olarak dışarı çıkan verinin kim tarafından, ne zaman alındığı.
+              Bu kayıtlar uygulama içinden silinemez.
+            </p>
+
+            {denetimKayitlari && (denetimKayitlari.length === 0 ? (
+              <p className="text-xs text-gray-400">Henüz kayıt yok.</p>
+            ) : (
+              <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-gray-50 text-gray-500">
+                    <tr>
+                      <th className="text-left p-2">Tarih</th>
+                      <th className="text-left p-2">Kullanıcı</th>
+                      <th className="text-left p-2">Tür</th>
+                      <th className="text-left p-2">Kapsam</th>
+                      <th className="text-left p-2">Dosya</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {denetimKayitlari.map((k) => (
+                      <tr key={k.id} className="border-t">
+                        <td className="p-2 whitespace-nowrap">{k.tarih}</td>
+                        <td className="p-2">{k.kullanici_email}</td>
+                        <td className="p-2 uppercase">{k.tur}</td>
+                        <td className="p-2">{k.kapsam || '—'}</td>
+                        <td className="p-2 break-all">{k.dosya_adi || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
           </div>
         </div>
       )}

@@ -11,6 +11,16 @@ function dbYolu() {
   return path.join(app.getPath('userData'), 'tencerecim.db')
 }
 
+// KVKK: yedek TÜM müşteri verisini dışarı çıkarır → denetim kaydına düşer.
+function denetimKaydi(yol, sifreli) {
+  const d = require('./db/disa-aktarim-canli')
+  d._kaydet({
+    tur: d._TURLER.YEDEK,
+    kapsam: sifreli ? 'tum veritabani (sifreli)' : 'tum veritabani (SIFRESIZ)',
+    dosya_adi: path.basename(yol),
+  })
+}
+
 function tarihDamgasi() {
   const d = new Date()
   const p = (n) => String(n).padStart(2, '0')
@@ -42,6 +52,7 @@ module.exports = {
     if (!sifreliMi) {
       // better-sqlite3 backup() WAL'ı da dahil tutarlı kopya üretir.
       await getDb().backup(sonuc.filePath)
+      denetimKaydi(sonuc.filePath, false)
       return { iptal: false, yol: sonuc.filePath, boyut: fs.statSync(sonuc.filePath).size, sifreli: false }
     }
 
@@ -55,6 +66,7 @@ module.exports = {
     } finally {
       try { fs.unlinkSync(gecici) } catch { /* zaten silinmiş olabilir */ }
     }
+    denetimKaydi(sonuc.filePath, true)
     return { iptal: false, yol: sonuc.filePath, boyut: fs.statSync(sonuc.filePath).size, sifreli: true }
   },
 

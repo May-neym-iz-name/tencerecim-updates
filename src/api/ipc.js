@@ -281,6 +281,11 @@ export const panelApi = {
   dusukStok: (params) => invoke('stok:dusuk', params),
 }
 
+// KVKK denetim kaydı: müşteri verisinin dosya olarak dışarı çıktığı anlar.
+export const denetimApi = {
+  listele: (limit) => invoke('disa-aktarim-log:listele', limit),
+}
+
 export const yedekApi = {
   // KVKK: yedek tüm müşteri verisini taşır. Parola verilirse dosya
   // AES-256-GCM ile şifrelenir (.tncyedek); verilmezse eski .db davranışı.

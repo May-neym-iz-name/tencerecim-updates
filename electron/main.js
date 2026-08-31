@@ -497,6 +497,7 @@ const handlerModules = [
   require('./fis-yazdir'),
   require('./barkod-yazdir'),
   require('./auth'),
+  require('./db/disa-aktarim-canli'),
 ]
 
 for (const mod of handlerModules) {
