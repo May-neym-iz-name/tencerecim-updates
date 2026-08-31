@@ -172,6 +172,20 @@ describe('alis-fatura:kaydet', () => {
       .rejects.toThrow('Bu fatura numarası bu tedarikçi için zaten girilmiş.')
   })
 
+  // Regresyon koruması: Türkçe mesaja çevrilirken `kod` alanı yeni Error
+  // nesnesine kopyalanmazsa IPC sınırını geçen `kod` her zaman null olur —
+  // Faz 2'nin "'ag' ise stok telafisi yapma" kararı bu alana dayanıyor.
+  test('kod=cakisma çeviriden sonra da hata.kod korunur', async () => {
+    mockAlisKaydet.mockRejectedValue(new FaturaHatasi('duplicate key', 'cakisma', { code: '23505' }, 409))
+    let yakalanan
+    try {
+      await alisFaturaKaydet(temelVeri())
+    } catch (e) {
+      yakalanan = e
+    }
+    expect(yakalanan.kod).toBe('cakisma')
+  })
+
   test('kod=dogrulama (SATIR_TOPLAM_UYUSMUYOR) Türkçe mesaja çevrilir, yetersiz_stok ile KARIŞMAZ', async () => {
     mockAlisKaydet.mockRejectedValue(
       new FaturaHatasi('Sunucu hatası: SATIR_TOPLAM_UYUSMUYOR', 'dogrulama', { message: 'SATIR_TOPLAM_UYUSMUYOR' }, 400))
@@ -197,6 +211,10 @@ describe('alis-fatura:kaydet', () => {
     expect(yakalanan).toBeDefined()
     expect(yakalanan.message).toMatch(/doğrulanamadı/)
     expect(yakalanan.message).not.toMatch(/kaydedilmedi/)
+    // IPC sınırını geçmesi için: main.js'teki catch bloğu err.kod'u okuyup
+    // renderer'a taşıyor. Türkçe mesaja çevrilirken bu alan KAYBOLURSA
+    // ('ag' ise stok telafisi yapma kararı) renderer hep kod=null görür.
+    expect(yakalanan.kod).toBe('ag')
   })
 })
 

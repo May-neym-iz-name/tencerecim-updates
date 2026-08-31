@@ -154,7 +154,8 @@ module.exports = {
         mesaj = e.message
       }
       const hata = new Error(mesaj)
-      hata.cause = e
+      hata.kod = e.kod          // IPC sınırını geçmesi için (main.js err.kod || null)
+      hata.cause = e            // ham ayrıntı teşhis için
       throw hata
     }
   },
