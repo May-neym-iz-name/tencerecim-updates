@@ -79,26 +79,40 @@ ele geçirildiğinde zararlı kodun sessizce gelmesi demektir.
 Sürüm yükseltmek artık bilinçli bir karar: `package.json`'ı elle düzenle,
 `npm install` çalıştır, `npm test` ve `npm run guvenlik:denetle` ile doğrula.
 
-### Bilinen açık: `xlsx` (SheetJS)
+### `xlsx` (SheetJS) — kapatıldı (31.08.2026)
 
-`npm audit` şu an **1 high** bulgu veriyor:
+npm registry'deki `xlsx@0.18.5` terk edilmiş ve iki high açığı vardı
+(prototype pollution + ReDoS). Bu **gerçek bir risktı**: uygulama
+tedarikçilerden gelen Excel dosyalarını ayrıştırıyor
+(`electron/db/excel-import.js`) — yani *güvenilmeyen girdi*.
+
+SheetJS npm'den ayrıldı, yamalı sürüm kendi CDN'lerinde. Kurulan sürüm:
 
 ```
-xlsx  *  Prototype Pollution + ReDoS   (npm registry'deki 0.18.5 terk edilmiş)
+"xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
 ```
 
-Bu **gerçek bir risk**: uygulama tedarikçilerden gelen Excel dosyalarını
-(`electron/db/excel-import.js`) ayrıştırıyor — yani *güvenilmeyen girdi*.
+`package.json`'daki bu satır bir sürüm aralığı değil, **tam bir dosya adresi** —
+yani kendiliğinden değişmez. Yükseltmek için adresteki sürüm numarasını elle
+değiştirip `npm install && npm test` çalıştırın.
 
-SheetJS npm registry'den ayrıldı; yamalı sürüm kendi CDN'lerinde. Düzeltme:
+**Üretim bağımlılıklarında artık 0 açık var** (`npm audit --omit=dev`).
 
-```bash
-npm install https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
-npm test
-```
+### Kalan açıklar yalnızca GELİŞTİRME araçlarında
 
-Bu komut **henüz çalıştırılmadı** (kayıt dışı kaynaktan kurulum onay ister).
-Çalıştırıldığında `npm run guvenlik:denetle` yeşile döner.
+`npm audit` (dev dahil) 19 bulgu gösteriyor. Hepsi **çalışan uygulamaya
+girmeyen** araçlarda: `electron-builder` zinciri (`app-builder-lib`, `tar`,
+`builder-util`), `vite`, `postcss`, `concurrently`. Bunlar yalnızca senin
+bilgisayarında derleme sırasında çalışır; mağaza PC'lerine kurulan pakete
+girmezler.
+
+Bilerek düzeltilmiyorlar:
+- `electron-builder` **24.13.1'e kilitli** — yükseltmek yayın akışını kırıyor.
+- `electron@22` yukarıdaki gerekçeyle eski tutuluyor.
+
+Yayın öncesi kapı (`npm run guvenlik:denetle`) bu yüzden `--omit=dev` ile
+çalışır: üretime giden koda odaklanır ve **yeşil kalır**. Hep kırmızı yanan bir
+kapı, kimsenin bakmadığı bir kapıdır.
 
 ### `js-yaml` — kapatıldı
 
