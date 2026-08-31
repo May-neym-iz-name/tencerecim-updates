@@ -79,7 +79,7 @@ function onbellekSil() {
   try { fs.unlinkSync(onbellekYolu()) } catch { /* zaten yok */ }
 }
 
-const dogrula = olusturDogrulayici({
+const dogrulaHam = olusturDogrulayici({
   istek,
   onbellekOku,
   onbellekYaz,
@@ -87,4 +87,25 @@ const dogrula = olusturDogrulayici({
   simdi: () => Date.now(),
 })
 
-module.exports = { dogrula, onbellekSil, SUPABASE_URL, SUPABASE_KEY }
+// Doğrulanmış oturumun ham access_token'ı — SADECE main process içinde,
+// bellekte tutulur (diske yazılmaz, IPC ile dışarı verilmez). Fatura modülü
+// gibi bulut çağrısı yapan modüller renderer'dan JWT PARAMETRESİ ALAMAZ
+// (ele geçirilmiş bir renderer istediği kimliği taklit edebilirdi); bunun
+// yerine main'in kendi doğruladığı jetonu buradan okur.
+let aktifToken = null
+
+async function dogrula(token) {
+  const sonuc = await dogrulaHam(token)
+  aktifToken = sonuc ? token : null
+  return sonuc
+}
+
+function aktifJwt() {
+  return aktifToken
+}
+
+function aktifTokenTemizle() {
+  aktifToken = null
+}
+
+module.exports = { dogrula, onbellekSil, aktifJwt, _aktifTokenTemizle: aktifTokenTemizle, SUPABASE_URL, SUPABASE_KEY }

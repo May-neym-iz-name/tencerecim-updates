@@ -119,7 +119,11 @@ module.exports = {
     aktifKimlik = { uid: null, eposta: null }
     // Çıkış yapan kullanıcının çevrimdışı önbelleği de düşsün: aksi halde
     // internet kesikken 12 saat boyunca onun yetkisiyle girilebilirdi.
-    try { require('./oturum-canli').onbellekSil() } catch { /* test ortami */ }
+    try {
+      const oturumCanli = require('./oturum-canli')
+      oturumCanli.onbellekSil()
+      oturumCanli._aktifTokenTemizle()
+    } catch { /* test ortami */ }
     return { ok: true }
   },
 }
