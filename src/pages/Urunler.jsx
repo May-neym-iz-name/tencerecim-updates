@@ -14,6 +14,7 @@ import KategoriYonetim from '../components/KategoriYonetim'
 import MarkaYonetim from '../components/MarkaYonetim'
 import SetYonetim from '../components/SetYonetim'
 import AranabilirSecici from '../components/AranabilirSecici'
+import { kdvDahil, paraYaz } from '../utils/kdv'
 
 // Kategori ağacını girintili etiketlerle aranabilir seçici seçeneklerine çevirir.
 const kategoriSecenekleri = (kategoriler) =>
@@ -419,7 +420,18 @@ export default function Urunler() {
                 <td className="px-3 py-2 text-xs">{u.marka_adi||'—'}</td>
                 <td className="px-3 py-2 text-xs text-gray-500 max-w-[160px] truncate" title={u.kategori_yol}>{u.kategori_yol||'—'}</td>
                 <td className="px-3 py-2 text-xs text-gray-500">{u.tedarikci_adi||'—'}</td>
-                <td className="px-3 py-2 text-gray-500 whitespace-nowrap">₺{(u.alis_fiyati||0).toFixed(2)}</td>
+                {/* Alış KDV HARİÇ tutulur; kullanıcı kararı gereği KDV dahil
+                    karşılığı da hep görünür (ürünün kendi kdv_orani ile türetilir). */}
+                <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                  {u.alis_fiyati > 0 ? (
+                    <>
+                      <div>{paraYaz(u.alis_fiyati)}</div>
+                      <div className="text-[11px] text-gray-400" title={`KDV %${u.kdv_orani ?? 20} dahil`}>
+                        {paraYaz(kdvDahil(u.alis_fiyati, u.kdv_orani))} <span className="text-gray-300">dhl</span>
+                      </div>
+                    </>
+                  ) : '—'}
+                </td>
                 <td className="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">₺{u.satis_fiyati?.toFixed(2)}</td>
                 <td className={`px-3 py-2 font-semibold whitespace-nowrap ${(u.toplam_stok || 0) > 0 ? 'text-blue-700' : 'text-gray-300'}`}>{u.toplam_stok || 0}</td>
                 <td className="px-3 py-2 text-gray-500">%{u.kdv_orani}</td>
@@ -514,6 +526,13 @@ export default function Urunler() {
                       disabled={fiyatKilitli} title={fiyatKilitli ? 'Fiyat değiştirme yetkiniz yok' : undefined}
                       value={form[name]} onChange={e => setForm(f=>({...f,[name]:e.target.value}))}
                       className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-400" />
+                    {/* Alış fiyatı KDV HARİÇ girilir; dahil karşılığı anında altta gösterilir
+                        (KDV oranı alanı değişince de kendiliğinden güncellenir). */}
+                    {name === 'alis_fiyati' && kdvDahil(form.alis_fiyati, form.kdv_orani) != null && (
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        KDV %{form.kdv_orani || 20} dahil: <strong>{paraYaz(kdvDahil(form.alis_fiyati, form.kdv_orani))}</strong>
+                      </p>
+                    )}
                   </div>
                 )})}
 

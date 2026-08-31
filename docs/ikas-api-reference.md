@@ -392,7 +392,12 @@ hsCode: String
 - `saveProduct(input: ProductInput!)` — create/update product (incl. variants, barcode, SKU, metaData/SEO).
 - `deleteProductList(idList: [String!]!)`
 - `bulkUpdateProducts(input: BulkUpdateProductsInput!)` — batch updates.
-- `saveVariantPrices(input: SaveVariantPricesInput!)` — `priceListId` + `variantPriceInputs { productId variantId buyPrice sellPrice }`.
+- `saveVariantPrices(input: SaveVariantPricesInput!)` — `priceListId` + `variantPriceInputs: [VariantPriceInput!]!`.
+  **DIKKAT (31.08.2026 introspection ile dogrulandi):** fiyat alanlari DUZ DEGIL, `price` nesnesi icindedir.
+  `VariantPriceInput { productId! variantId! price: ProductPriceInput! deleted }`
+  `ProductPriceInput { sellPrice! buyPrice discountPrice currency priceListId }`
+  `sellPrice` ZORUNLU: yalniz alis fiyatini guncellerken bile ikas'taki mevcut satis fiyati okunup geri yazilmalidir,
+  yoksa istek reddedilir. `discountPrice`/`currency` gonderilmezse SILINIR.
 - `updateProductSalesChannelStatus` — channel visibility.
 - Categories: `saveCategory` / `productCategory` (with their own `metaData` SEO).
 - **Image upload is REST, not GraphQL:** `POST /api/v1/admin/product/upload/image` with `productImage { variantIds(required), order, isMain, url|base64 }` (also `categoryImage`, `brandImage`).

@@ -41,8 +41,29 @@ async function varsayilanFiyatListesiId() {
   return id
 }
 
+// SATIŞ FİYATI SIFIR SÜZGECİ — saf karar, G/Ç yok (bu yüzden mocksuz test edilir).
+//
+// saveVariantPrices sellPrice'ı olduğu gibi yazar. Yerelde satış fiyatı
+// girilmemiş bir ürünü göndermek ikas'taki CANLI satış fiyatını 0'a düşürür,
+// yani ürün mağazada bedavaya düşer. Alış fiyatı çalışmasında (2026-08)
+// fiyat yazılan 205 ürünün 64'ünde yerel satış fiyatı boştu.
+function fiyatSuz(satirlar) {
+  const gonderilecek = [], atlanan = []
+  for (const s of satirlar) {
+    if (Number(s.sellPrice) > 0) gonderilecek.push(s)
+    else atlanan.push({ id: s.id, sku: s.sku, ad: s.ad })
+  }
+  return { gonderilecek, atlanan }
+}
+
 // Verilen ürün id'lerinin (boşsa tüm eşleşmiş ürünlerin) yerel fiyatlarını
 // ikas'a yazar. sellPrice = satis_fiyati, buyPrice = alis_fiyati.
+//
+// SATIŞ FİYATI 0 OLAN ÜRÜN GÖNDERİLMEZ. saveVariantPrices sellPrice'ı olduğu
+// gibi yazar; yerelde satış fiyatı girilmemiş bir ürünü göndermek ikas'taki
+// CANLI satış fiyatını 0'a düşürür. Alış fiyatı çalışmasında 64 ürünün yerel
+// satış fiyatı boştu — koruma olmasa bu ürünler mağazada bedavaya düşerdi.
+// Atlananlar `atlanan` ile raporlanır ki sessizce kaybolmasınlar.
 async function pushUrunFiyat(urunIdler) {
   const db = getDb()
   let where = 'WHERE u.aktif = 1 AND u.ikas_urun_id IS NOT NULL AND u.ikas_varyant_id IS NOT NULL'
@@ -51,12 +72,14 @@ async function pushUrunFiyat(urunIdler) {
     where += ` AND u.id IN (${urunIdler.map(() => '?').join(',')})`
     params.push(...urunIdler)
   }
-  const satirlar = db.prepare(`
-    SELECT u.ikas_urun_id AS productId, u.ikas_varyant_id AS variantId,
+  const hepsi = db.prepare(`
+    SELECT u.id, u.sku, u.ad,
+           u.ikas_urun_id AS productId, u.ikas_varyant_id AS variantId,
            u.satis_fiyati AS sellPrice, u.alis_fiyati AS buyPrice
     FROM urunler u ${where}
   `).all(...params)
-  if (!satirlar.length) return { gonderilen: 0 }
+  const { gonderilecek: satirlar, atlanan } = fiyatSuz(hepsi)
+  if (!satirlar.length) return { gonderilen: 0, atlanan }
 
   const priceListId = await varsayilanFiyatListesiId()
   const mutation = `mutation Fiyat($input: SaveVariantPricesInput!) {
@@ -64,16 +87,104 @@ async function pushUrunFiyat(urunIdler) {
   }`
   let gonderilen = 0
   for (let i = 0; i < satirlar.length; i += FIYAT_PARTI) {
+    // ŞEMA: VariantPriceInput { productId!, variantId!, price: ProductPriceInput! }
+    // ProductPriceInput { sellPrice!, buyPrice, discountPrice, currency }.
+    // sellPrice/buyPrice DÜZ alan olarak gönderilirse ikas isteği tümden
+    // reddeder — bu uç uzun süre böyle yazılmış ve hiç çalışmamıştı
+    // (31.08.2026'da introspection ile doğrulandı; docs/ikas-api-reference.md
+    // de yanlış yazıyordu).
     const variantPriceInputs = satirlar.slice(i, i + FIYAT_PARTI).map(s => ({
       productId: s.productId,
       variantId: s.variantId,
-      sellPrice: Number(s.sellPrice) || 0,
-      buyPrice: Number(s.buyPrice) || 0,
+      price: { sellPrice: Number(s.sellPrice) || 0, buyPrice: Number(s.buyPrice) || 0 },
     }))
     await graphql(mutation, { input: { priceListId, variantPriceInputs } })
     gonderilen += variantPriceInputs.length
   }
-  return { gonderilen }
+  return { gonderilen, atlanan }
+}
+
+// ALIŞ FİYATI GÖNDERİMİ — ikas'taki satış fiyatına DOKUNMADAN buyPrice yazar.
+//
+// Neden ayrı uç: pushUrunFiyat sellPrice'ı da YEREL değerle üzerine yazar. Alış
+// maliyetini taşımak isterken mağazadaki güncel satış fiyatlarının bayat yerel
+// fiyatlarla ezilmesi kabul edilemez. Bu yüzden ikas'ın KENDİ sellPrice'ı
+// okunup aynen geri gönderilir; değişen tek alan buyPrice olur.
+//
+// ikas'ta satış fiyatı okunamayan (0/boş) varyant ATLANIR — geri yazacak
+// güvenli bir sellPrice olmadan gönderim fiyatı sıfırlardı.
+const VARYANT_FIYAT_SORGU = `query VaryantFiyat($page: Int, $limit: Int) {
+  listProduct(pagination: { page: $page, limit: $limit }) {
+    count hasNext page limit
+    data { id variants { id prices { sellPrice buyPrice discountPrice currency priceListId } } }
+  }
+}`
+
+// ikas varyant id -> TEMEL fiyat kaydı (priceListId = null).
+//
+// Mağazada pazaryeri fiyat listeleri var (TRENDYOL, HEPSİBURADA). Alış maliyeti
+// bir pazaryerine ait değil, ürünün KENDİ alanıdır; bu yüzden hedef, fiyat
+// listesine bağlı olmayan temel kayıttır. (varsayilanFiyatListesiId() listenin
+// İLKİNİ döndürür ve o "TRENDYOL FİYAT LİSTESİ" çıkıyor — maliyet oraya
+// yazılırsa ürünün ana maliyet alanı boş kalır.)
+//
+// sellPrice dışındaki alanlar da saklanır: gönderimde geri yazılmazsa ikas
+// bunları siler (emsal: saveProduct'ta variants.images gönderilmeyince
+// görsellerin silinmesi). İndirimli fiyat ve para birimi böylece korunur.
+async function ikasTemelFiyatlar() {
+  const harita = new Map()
+  let page = 1
+  for (;;) {
+    const data = await graphql(VARYANT_FIYAT_SORGU, { page, limit: SAYFA_LIMIT })
+    const liste = data?.listProduct
+    for (const p of (liste?.data || [])) {
+      for (const v of (p.variants || [])) {
+        const f = (v.prices || []).find(x => x.priceListId == null)
+        if (f && Number(f.sellPrice) > 0) harita.set(v.id, f)
+      }
+    }
+    if (!liste?.hasNext) break
+    page++
+  }
+  return harita
+}
+
+async function pushAlisFiyati() {
+  const db = getDb()
+  const yerel = db.prepare(`
+    SELECT u.id, u.sku, u.ad, u.ikas_urun_id AS productId, u.ikas_varyant_id AS variantId,
+           u.alis_fiyati AS buyPrice
+    FROM urunler u
+    WHERE u.aktif = 1 AND u.alis_fiyati > 0
+      AND u.ikas_urun_id IS NOT NULL AND u.ikas_varyant_id IS NOT NULL
+  `).all()
+  if (!yerel.length) return { gonderilen: 0, atlanan: [], eslesmeyen: 0 }
+
+  const ikasFiyat = await ikasTemelFiyatlar()
+
+  const gonderilecek = [], atlanan = []
+  for (const u of yerel) {
+    const f = ikasFiyat.get(u.variantId)
+    if (!f || !(Number(f.sellPrice) > 0)) {
+      atlanan.push({ id: u.id, sku: u.sku, ad: u.ad, sebep: 'ikas satış fiyatı okunamadı' }); continue
+    }
+    // ikas'ın kendi fiyat kaydı aynen geri yazılır; DEĞİŞEN TEK ALAN buyPrice.
+    const price = { sellPrice: Number(f.sellPrice), buyPrice: Number(u.buyPrice) }
+    if (f.discountPrice != null) price.discountPrice = Number(f.discountPrice)
+    if (f.currency) price.currency = f.currency
+    gonderilecek.push({ productId: u.productId, variantId: u.variantId, price })
+  }
+  if (!gonderilecek.length) return { gonderilen: 0, atlanan, eslesmeyen: 0 }
+
+  const mutation = `mutation Fiyat($input: SaveVariantPricesInput!) { saveVariantPrices(input: $input) }`
+  let gonderilen = 0
+  for (let i = 0; i < gonderilecek.length; i += FIYAT_PARTI) {
+    const variantPriceInputs = gonderilecek.slice(i, i + FIYAT_PARTI)
+    // priceListId GÖNDERİLMEZ: hedef, pazaryeri listeleri değil temel fiyat kaydı.
+    await graphql(mutation, { input: { variantPriceInputs } })
+    gonderilen += variantPriceInputs.length
+  }
+  return { gonderilen, atlanan, aday: yerel.length }
 }
 
 // Fiyat değişince arka planda (await edilmeden) ikas'a gönderir.
@@ -241,7 +352,16 @@ async function siparisPaketleri(ikasSiparisId) {
 module.exports = {
   // urunler.js fiyat değişiminde arka plan push için (main.js _ önekini atlar).
   _pushFiyatArkaPlan: pushFiyatArkaPlan,
+  _fiyatSuz: fiyatSuz,
+  _pushAlisFiyati: pushAlisFiyati,
+  _urunEsle: urunEsle,
   _pushUrunFiyat: pushUrunFiyat,
+
+  // Yalnız ALIŞ fiyatını gönderir; ikas'taki satış fiyatına dokunmaz.
+  'ikas:alis-fiyati-gonder': async () => {
+    const { _yetkiKontrol } = require('../yetki'); _yetkiKontrol('ikas_yonet')
+    return pushAlisFiyati()
+  },
 
   // Tüm eşleşmiş ürünlerin fiyatını ikas'a gönderir (manuel tam senkron).
   'ikas:fiyat-gonder': async () => {
