@@ -1,24 +1,33 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 
-// Mock bulut.js modülü
-vi.mock('./bulut.js', () => {
-  const mockSec = vi.fn()
-  return {
-    sec: mockSec,
-    FaturaHatasi: class extends Error {
-      constructor(msg, kod) {
-        super(msg)
-        this.kod = kod
-      }
-    },
-  }
-})
+// Mock sec fonksiyonu
+const mockSec = vi.fn()
 
-// Import'u after mock tanımla
-import { faturaStokGetir, hareketGetir, alisFaturaGetir } from './okuma.js'
-import * as buluKir from './bulut.js'
+// Mock module tanımla ve cache'e koy (require.cache)
+import Module from 'module'
+const bulutModule = new Module()
+bulutModule.exports = {
+  sec: mockSec,
+  FaturaHatasi: class extends Error {
+    constructor(msg, kod) {
+      super(msg)
+      this.kod = kod
+    }
+  },
+  rpc: vi.fn(),
+}
 
-const mockSec = vi.mocked((await import('./bulut.js')).sec)
+// Resolv edilen path'i bul ve cache'e ekle
+const path = require.resolve('./bulut')
+require.cache[path] = {
+  id: path,
+  filename: path,
+  loaded: true,
+  exports: bulutModule.exports,
+}
+
+// Şimdi okuma'yı require et (bulut zaten cache'te)
+const { faturaStokGetir, hareketGetir, alisFaturaGetir, alisKalemGetir } = require('./okuma')
 
 beforeEach(() => {
   mockSec.mockClear()
