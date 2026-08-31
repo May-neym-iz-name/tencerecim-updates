@@ -161,9 +161,9 @@ export default function FaturaStogu() {
     setYukleniyor(true)
     setHata(null)
     try {
-      // Arama sunucu tarafında uygulanmıyor: burada boş bırakılır, filtre
-      // aşağıda istemcide yapılır.
-      const veri = await faturaStokApi.durum({ arama: '', sadece_eksik: sadeceEksik })
+      // Arama sunucu tarafında uygulanmıyor (ölü parametre kaldırıldı,
+      // bkz. electron/db/fatura-stok.js): filtre aşağıda istemcide yapılır.
+      const veri = await faturaStokApi.durum({ sadece_eksik: sadeceEksik })
       setSatirlar(veri)
     } catch (e) {
       setHata(e.message)
@@ -417,7 +417,12 @@ export default function FaturaStogu() {
         </>
       )}
 
-      {duzenleYetkisi && (
+      {/* Form yalnız açıkken mount edilir — AlisFaturaFormu state'i (tedarikçi,
+          fatura no, kalemler) sadece İLK render'da useState ile okur, `acik`
+          sonradan false olduğunda state sıfırlanmaz. Koşullu mount + `key`
+          ile her açılışta bileşen sıfırdan kurulur, önceki faturanın
+          kalemleri bir sonraki girişe sızmaz (bkz. MalKabul.jsx aynı desen). */}
+      {duzenleYetkisi && formAcik && (
         <AlisFaturaFormu
           acik={formAcik}
           kapat={() => setFormAcik(false)}

@@ -9,7 +9,7 @@ class FaturaHatasi extends Error {
   constructor(mesaj, kod, ayrinti, status) {
     super(mesaj)
     this.name = 'FaturaHatasi'
-    this.kod = kod            // 'cakisma' | 'yetersiz_stok' | 'ag' | 'bilinmeyen' | 'oturum'
+    this.kod = kod            // 'cakisma' | 'yetersiz_stok' | 'dogrulama' | 'ag' | 'bilinmeyen' | 'oturum'
     this.ayrinti = ayrinti
     this.status = status
   }
@@ -25,11 +25,16 @@ function basliklar(jwt) {
 }
 
 // Postgres hata kodunu bizim sınıfımıza çevirir.
-// Sınıflandırma sırası: cakisma > yetersiz_stok > oturum > ag (belirsiz) > bilinmeyen
+// Sınıflandırma sırası: cakisma > yetersiz_stok/dogrulama > oturum > ag (belirsiz) > bilinmeyen
 function hataSinifla(govde, status) {
   if (govde?.code === '23505') return 'cakisma'
-  if (typeof govde?.message === 'string' && (govde.message.includes('YETERSIZ_STOK') || govde.message.includes('SATIR_TOPLAM_UYUSMUYOR'))) {
+  // İki ayrı iş hatası — aynı koda düşürülürse tüketici ham Postgres metnini
+  // yeniden ayrıştırmak zorunda kalır (kod alanının varlık sebebini iptal eder).
+  if (typeof govde?.message === 'string' && govde.message.includes('YETERSIZ_STOK')) {
     return 'yetersiz_stok'
+  }
+  if (typeof govde?.message === 'string' && govde.message.includes('SATIR_TOPLAM_UYUSMUYOR')) {
+    return 'dogrulama'
   }
   // Jeton süresi dolmuş/geçersiz — main'in kendi jetonu tazelemesi lazım, kullanıcı
   // ham "JWT expired" görmemeli (bkz. task-5 incelemesi bulgu 6).

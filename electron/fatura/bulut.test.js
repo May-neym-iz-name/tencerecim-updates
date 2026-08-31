@@ -49,12 +49,15 @@ describe('rpc', () => {
     await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'yetersiz_stok' })
   })
 
-  test('SATIR_TOPLAM_UYUSMUYOR mesajını yetersiz_stok olarak sınıflar', async () => {
+  // I4: SATIR_TOPLAM_UYUSMUYOR ayrı bir iş hatası — stok yetersizliğiyle
+  // karıştırılırsa tüketici ('kod' alanı yerine) ham Postgres metnini yeniden
+  // ayrıştırmak zorunda kalıyordu (bkz. fatura-stok.js).
+  test('SATIR_TOPLAM_UYUSMUYOR mesajını AYRI bir kod (dogrulama) olarak sınıflar', async () => {
     global.fetch.mockResolvedValue({
       ok: false, status: 400,
       json: async () => ({ message: 'SATIR_TOPLAM_UYUSMUYOR' }),
     })
-    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'yetersiz_stok' })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'dogrulama' })
   })
 
   test('jwt yoksa oturum hatasını atar', async () => {

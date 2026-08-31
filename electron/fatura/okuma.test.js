@@ -47,6 +47,28 @@ describe('faturaStokGetir', () => {
     expect(sorgu).toContain('select=urun_senk_id,miktar')
     expect(jwt).toBe('jwt')
   })
+
+  // I3: PostgREST'in varsayılan db-max-rows'u devredeyse açık limit
+  // gönderilmeyen bir SELECT sessizce kırpılabilir — sonuç yanlışlıkla
+  // "faturası eksik" gösterirdi (bkz. fatura-stok.js durumBirlestir).
+  test('açık limit gönderir (kırpılmaya karşı)', async () => {
+    mockSec.mockResolvedValue([])
+    await faturaStokGetir('jwt')
+    const [, sorgu] = mockSec.mock.calls[0]
+    expect(sorgu).toMatch(/limit=\d+/)
+  })
+
+  test('dönen satır sayısı limite eşitse kırpılma uyarısı loglar', async () => {
+    const uyarSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const sorguRef = { limit: null }
+    mockSec.mockImplementation((tablo, sorgu) => {
+      sorguRef.limit = Number(sorgu.match(/limit=(\d+)/)[1])
+      return Promise.resolve(Array.from({ length: sorguRef.limit }, () => ({})))
+    })
+    await faturaStokGetir('jwt')
+    expect(uyarSpy).toHaveBeenCalled()
+    uyarSpy.mockRestore()
+  })
 })
 
 describe('hareketGetir', () => {
@@ -66,6 +88,16 @@ describe('hareketGetir', () => {
     const [, sorgu] = mockSec.mock.calls[0]
     expect(sorgu).not.toContain('urun_senk_id=eq')
   })
+
+  // I3: geçersiz limit `Number(limit)` ile NaN'a dönüşüp PostgREST'e
+  // `limit=NaN` göndermesin — varsayılana düşmeli.
+  test('geçersiz limit verilince NaN üretmez, varsayılana düşer', async () => {
+    mockSec.mockResolvedValue([])
+    await hareketGetir({ limit: 'abc' }, 'jwt')
+    const [, sorgu] = mockSec.mock.calls[0]
+    expect(sorgu).not.toContain('limit=NaN')
+    expect(sorgu).toContain('limit=200')
+  })
 })
 
 describe('alisFaturaGetir', () => {
@@ -75,6 +107,13 @@ describe('alisFaturaGetir', () => {
     const [tablo, sorgu] = mockSec.mock.calls[0]
     expect(tablo).toBe('alis_faturalari')
     expect(sorgu).toContain('order=fatura_tarihi.desc')
+  })
+
+  test('açık limit gönderir (kırpılmaya karşı)', async () => {
+    mockSec.mockResolvedValue([])
+    await alisFaturaGetir({}, 'jwt')
+    const [, sorgu] = mockSec.mock.calls[0]
+    expect(sorgu).toMatch(/limit=\d+/)
   })
 })
 

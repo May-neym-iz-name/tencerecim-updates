@@ -116,8 +116,15 @@ alis_fatura_kalemleri
   miktar, birim_fiyat, kdv_orani, satir_toplam
 ```
 
-Yerel SQLite'ta bu tabloların **salt-okunur aynası** tutulur (liste hızlı açılsın
-diye). Karar anında asla aynaya bakılmaz.
+**Ruling-5 ile GÜNCELLENDİ:** Yerel SQLite'ta bu tabloların aynası TUTULMAZ —
+okuma da yazma da doğrudan Supabase REST/RPC ile yapılır (bkz.
+`electron/fatura/okuma.js`, `bulut.js`, `alis.js`). Sebep: senkron motoru
+varlık başına tablo değil TEK `senk_kayitlar` tablosu üzerinden çalışıyor, bu
+yüzden gerçek Postgres tabloları (`fatura_stok`, `alis_faturalari`, ...) pull
+ile zaten yerel SQLite'a inmiyor — "salt-okunur ayna" tutmak ayrı bir
+senkron/pull mekanizması gerektirirdi ki bu da §⑤'te iptal edilen tasarımdı.
+Karar anında (durumBirlestir) bu yüzden zaten aynaya değil, canlı bulut
+sorgusuna bakılıyor.
 
 `mal_kabul_id`'nin nullable olması bilinçli: "mal geldi fatura gelmedi" ve "fatura
 geldi mal gelmedi" durumlarının ikisi de gerçek ve ikisi de temsil edilebilmeli.
@@ -348,18 +355,21 @@ Supabase'deki doğru bakiyeyi **ezebilir** — mükerrer fatura engelinin altın
 
 Bu yüzden fatura tabloları **çift yönlü senkrona girmez**:
 
-- **Yalnız-çekme aynası** (pull-only; yerelden ASLA push edilmez):
+- **Senkron motoruna hiç girmez** (ne pull ne push):
   `kesilen_faturalar`, `kesilen_fatura_kalemleri`, `fatura_stok`,
   `fatura_stok_hareketler`, `alis_faturalari`, `alis_fatura_kalemleri`
-  → Yerel kopya sadece listeleri hızlı açmak için. Tüm **yazma** işlemleri
-  doğrudan Supabase REST/RPC ile yapılır (`oturum-canli.js`'teki fetch deseni),
-  senkron kuyruğu üzerinden değil.
+  → **Ruling-5 ile GÜNCELLENDİ:** yerel aynı bir "salt-okunur ayna" da
+  tutulmuyor; hem okuma hem yazma doğrudan Supabase REST/RPC ile yapılır
+  (`electron/fatura/okuma.js`, `bulut.js`). Sebep: senkron motoru varlık
+  başına ayrı tablo değil TEK `senk_kayitlar` tablosunu pull/push ediyor, bu
+  yüzden gerçek Postgres tabloları (`fatura_stok` vb.) zaten hiçbir pull ile
+  yerel SQLite'a inmiyor — "yalnız-çekme aynası" fikri bu motorla uyumsuzdu.
 - Senkron **tamamen dışında**: `trendyol_siparisler`, `trendyol_siparis_kalemleri`
   (operasyonel + `goruldu` PC bazlı olmalı)
 
-`senk-sema.js`'te bu ayrım açıkça yazılır; yalnız-çekme tabloları için
-`yalnizCekme: true` bayrağı eklenir ve `senk-veri.js` bu bayraklı tabloları
-`degisenler` (push) toplamasına dahil etmez.
+**İPTAL EDİLDİ:** `senk-sema.js`'e `yalnizCekme: true` bayrağı eklenmedi —
+yukarıdaki sebeple gereksiz kaldı; fatura tabloları `senk-sema.js`'e hiç
+girmiyor.
 
 ## Modül yapısı
 

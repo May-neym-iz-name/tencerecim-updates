@@ -1,7 +1,6 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const okuma = require('../fatura/okuma')
-const { eslesirMi } = require('./tr-arama')
 
 // Fatura stoğu Supabase'de (asıl nüsha), ürün + gerçek stok yerel SQLite'ta.
 // Birleştirme burada, JS tarafında yapılır. Bkz. plan Ruling-5.
@@ -10,7 +9,9 @@ const { eslesirMi } = require('./tr-arama')
 // aktarılır: main.js modüldeki `_` ile başlamayan HER anahtarı otomatik IPC
 // kanalı olarak kaydediyor (bkz. main.js:504-506), bu saf fonksiyon renderer'a
 // AÇILMAMALI.
-function durumBirlestir(urunler, faturaStokSatirlari, { arama, sadece_eksik } = {}) {
+// NOT: `arama` parametresi BİLEREK yok — arama artık istemcide `eslesirMi` ile
+// yapılıyor (bkz. FaturaStogu.jsx), burada ikinci kez filtrelemek ölü koddu.
+function durumBirlestir(urunler, faturaStokSatirlari, { sadece_eksik } = {}) {
   const havuz = new Map()
   for (const r of faturaStokSatirlari || []) havuz.set(r.urun_senk_id, Number(r.miktar) || 0)
 
@@ -21,10 +22,6 @@ function durumBirlestir(urunler, faturaStokSatirlari, { arama, sadece_eksik } = 
       return { ...u, fatura_miktar, gercek_miktar, fark: fatura_miktar - gercek_miktar }
     })
     .filter(s => !sadece_eksik || s.fark < 0)
-    // Ortak Türkçe-duyarlı arama modülü kullanılır (bkz. tr-arama.js) — ham
-    // toLocaleLowerCase('tr') "LINES" (ASCII I) yazan kullanıcının "LİNES"
-    // ürününü bulamamasına yol açardı.
-    .filter(s => eslesirMi([s.urun_adi, s.sku, s.barkod].filter(Boolean).join(' '), arama))
 }
 
 // Ana süreçteki aktif oturumun JWT'si. Renderer'dan ASLA alınmaz.
@@ -48,9 +45,9 @@ module.exports = {
 
   // Yetki kontrolü BİLEREK yok: sipariş ekranındaki "fatura stoğu yok" kilidinin
   // sebebini, fatura yetkisi olmayan kasiyer de görebilmeli.
-  'fatura-stok:durum': async ({ arama, sadece_eksik } = {}) => {
+  'fatura-stok:durum': async ({ sadece_eksik } = {}) => {
     const bulut = await okuma.faturaStokGetir(jwtAl())
-    return durumBirlestir(yerelUrunler(), bulut, { arama, sadece_eksik })
+    return durumBirlestir(yerelUrunler(), bulut, { sadece_eksik })
   },
 
   'fatura-stok:hareketler': async ({ urun_id, limit = 200 } = {}) => {
@@ -108,9 +105,32 @@ module.exports = {
       if (!ted?.senk_id) throw new Error(`Tedarikçi buluta henüz eşitlenmemiş: ${ted?.ad || veri.tedarikci_id}`)
       tedarikciSenkId = ted.senk_id
     }
+    // mal_kabul_id → senk_id eşlemesi. Tedarikçi/ürünün aksine bu bağ OPSİYONEL
+    // (Task 9 "mal kabulden devral" özelliği yalnız bir kolaylık, faturanın
+    // muhasebesel doğruluğunu etkilemiyor) — bu yüzden senk_id yoksa faturayı
+    // DURDURMUYORUZ, null geçiyoruz. Ama sessiz de kalmıyoruz: teşhis
+    // edilebilsin diye logluyoruz, aksi halde neden bağın koptuğu anlaşılmaz.
+    let malKabulSenkId = null
+    if (veri.mal_kabul_id) {
+      const mk = getDb().prepare('SELECT senk_id FROM mal_kabuller WHERE id = ?').get(veri.mal_kabul_id)
+      if (mk?.senk_id) {
+        malKabulSenkId = mk.senk_id
+      } else {
+        console.warn(`[fatura-stok] mal_kabul_id=${veri.mal_kabul_id} buluta henüz eşitlenmemiş, ` +
+          `mal_kabul_senk_id NULL kaydedilecek (bağ kaybolur, fatura yine de girilir)`)
+      }
+    }
+    // Denetim kaydı: fatura stoğunu kim değiştirdi (KVKK/muhasebe izi). Renderer'dan
+    // ALINMAZ — aktif oturumun kimliği main tarafında tutulur (bkz. yetki.js).
+    const kimlik = require('../yetki')._aktifKimlik()
     try {
-      return await alis.kaydet({ ...veri, tedarikci_senk_id: tedarikciSenkId, urunSenkIdler: idler },
-                                jwtAl())
+      return await alis.kaydet({
+        ...veri,
+        tedarikci_senk_id: tedarikciSenkId,
+        mal_kabul_senk_id: malKabulSenkId,
+        kullanici: kimlik.eposta || null,
+        urunSenkIdler: idler,
+      }, jwtAl())
     } catch (e) {
       if (!(e instanceof FaturaHatasi)) throw e
       // Ham sunucu/Postgres metni kullanıcıya gitmesin — Türkçe, anlaşılır mesaja
@@ -118,15 +138,18 @@ module.exports = {
       let mesaj
       if (e.kod === 'cakisma') {
         mesaj = 'Bu fatura numarası bu tedarikçi için zaten girilmiş.'
-      } else if (e.kod === 'yetersiz_stok' && typeof e.ayrinti?.message === 'string'
-                 && e.ayrinti.message.includes('SATIR_TOPLAM_UYUSMUYOR')) {
+      } else if (e.kod === 'dogrulama') {
         mesaj = 'Satır tutarları uyuşmuyor, lütfen miktar ve birim fiyatları kontrol edin.'
       } else if (e.kod === 'yetersiz_stok') {
         mesaj = 'Stok yetersiz, fatura kaydedilemedi.'
       } else if (e.kod === 'oturum') {
         mesaj = e.message // zaten Türkçe ve anlaşılır
       } else if (e.kod === 'ag') {
-        mesaj = 'Sunucuya ulaşılamadı, fatura kaydedilmedi. İnternet bağlantınızı kontrol edip tekrar deneyin.'
+        // 'ag' hem gerçek ağ hatasını hem 20sn zaman aşımını kapsıyor — ikinci
+        // durumda RPC sunucuda commit olmuş OLABİLİR (bkz. bulut.js: "sonuç
+        // belirsiz, telafi yapma"). "Kaydedilmedi" demek yanlış kesinlik iddia
+        // eder; gerçeği yansıtan mesaj sonucu doğrulanamadığını söyler.
+        mesaj = 'Sunucuya ulaşılamadı, işlemin sonucu doğrulanamadı. Tekrar denemeden önce alış faturaları listesini kontrol edin.'
       } else {
         mesaj = e.message
       }
