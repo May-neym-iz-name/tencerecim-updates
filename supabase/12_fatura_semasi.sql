@@ -35,7 +35,8 @@ create table if not exists alis_faturalari (
   notlar text,
   kullanici text,
   senk_guncelleme timestamptz not null default now(),
-  unique (tedarikci_senk_id, fatura_no)
+  -- Mükerrer alış faturasını engelle: tedarikci boş bile olsa fatura_no ile kontrol et
+  unique nulls not distinct (tedarikci_senk_id, fatura_no)
 );
 
 create table if not exists alis_fatura_kalemleri (
@@ -109,6 +110,24 @@ begin
   returning senk_id into v_fatura_id;
 
   for v_kalem in select * from jsonb_array_elements(p_kalemler) loop
+    -- Satır tutarını sunucu tarafında doğrula: miktar × birim_fiyat
+    declare
+      v_hesaplanan_tutar numeric(14,2);
+      v_gelen_tutar numeric(14,2);
+      v_fark numeric(14,2);
+    begin
+      v_gelen_tutar := (v_kalem->>'satir_toplam')::numeric;
+      v_hesaplanan_tutar := round(
+        (v_kalem->>'miktar')::numeric * (v_kalem->>'birim_fiyat')::numeric, 2
+      );
+      v_fark := abs(v_hesaplanan_tutar - v_gelen_tutar);
+
+      if v_fark > 0.01 then
+        raise exception 'SATIR_TOPLAM_UYUSMUYOR: "%" (beklenen %, gelen %)',
+          v_kalem->>'urun_adi', v_hesaplanan_tutar, v_gelen_tutar;
+      end if;
+    end;
+
     insert into alis_fatura_kalemleri
       (alis_fatura_senk_id, urun_senk_id, urun_adi, miktar, birim_fiyat, kdv_orani, satir_toplam)
     values (
@@ -157,6 +176,10 @@ begin
 end;
 $$;
 
+-- Alış faturası RPC: yalnızca authenticated kullanıcılar çağırabilir
+revoke execute on function alis_faturasi_kaydet(uuid, text, date, uuid, text, text, jsonb) from anon, public;
+grant execute on function alis_faturasi_kaydet(uuid, text, date, uuid, text, text, jsonb) to authenticated;
+
 alter table fatura_stok             enable row level security;
 alter table fatura_stok_hareketler  enable row level security;
 alter table alis_faturalari         enable row level security;
@@ -170,8 +193,9 @@ begin
   foreach t in array array['fatura_stok','fatura_stok_hareketler','alis_faturalari',
                            'alis_fatura_kalemleri','kesilen_faturalar','kesilen_fatura_kalemleri']
   loop
+    execute format('drop policy if exists %I_aktif_personel on %I', t, t);
     execute format(
       'create policy %I_aktif_personel on %I for all to authenticated
-       using (aktif_personel_mi()) with check (aktif_personel_mi())', t, t);
+       using (public.aktif_personel_mi()) with check (public.aktif_personel_mi())', t, t);
   end loop;
 end $$;
