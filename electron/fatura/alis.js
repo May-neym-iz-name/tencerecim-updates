@@ -7,7 +7,12 @@ const { yuvarla } = require('../db/satis-hesapla')
 function kalemleriHesapla(girdiler) {
   let kdvToplam = 0, genelToplam = 0
   const kalemler = (girdiler || []).map(k => {
-    const satirToplam = yuvarla(Number(k.miktar) * Number(k.birim_fiyat))
+    // Sunucu satir_toplam'i gonderilen (yuvarlanmis) birim_fiyat'tan yeniden
+    // hesaplayip karsilastirir (SATIR_TOPLAM_UYUSMUYOR). Istemci ile sunucu AYNI
+    // girdiden AYNI sonucu uretsin diye once birim fiyat yuvarlanir, satir toplami
+    // o yuvarlanmis degerden hesaplanir — ham (yuvarlanmamis) fiyattan degil.
+    const birimFiyat = yuvarla(Number(k.birim_fiyat))
+    const satirToplam = yuvarla(Number(k.miktar) * birimFiyat)
     const oran = Number(k.kdv_orani)
     const kdv = yuvarla(satirToplam * oran / (100 + oran))
     kdvToplam += kdv
@@ -16,7 +21,7 @@ function kalemleriHesapla(girdiler) {
       urun_id: k.urun_id,
       urun_adi: k.urun_adi,
       miktar: Number(k.miktar),
-      birim_fiyat: yuvarla(Number(k.birim_fiyat)),
+      birim_fiyat: birimFiyat,
       kdv_orani: oran,
       satir_toplam: satirToplam,
     }

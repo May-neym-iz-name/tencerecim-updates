@@ -92,6 +92,7 @@ module.exports = {
   'alis-fatura:kaydet': async (veri) => {
     yetkiKontrol('fatura_stok_duzenle')
     const alis = require('../fatura/alis')
+    const { FaturaHatasi } = require('../fatura/bulut')
     // urun_id → senk_id eşlemesi (bulut tarafı senk_id ile çalışır)
     const idler = {}
     for (const k of veri.kalemler) {
@@ -99,10 +100,39 @@ module.exports = {
       if (!r?.senk_id) throw new Error(`Ürün buluta henüz eşitlenmemiş: ${k.urun_adi}`)
       idler[k.urun_id] = r.senk_id
     }
-    const ted = veri.tedarikci_id
-      ? getDb().prepare('SELECT senk_id FROM tedarikciler WHERE id = ?').get(veri.tedarikci_id)
-      : null
-    return alis.kaydet({ ...veri, tedarikci_senk_id: ted?.senk_id || null, urunSenkIdler: idler },
-                       jwtAl())
+    let tedarikciSenkId = null
+    if (veri.tedarikci_id) {
+      const ted = getDb().prepare('SELECT ad, senk_id FROM tedarikciler WHERE id = ?').get(veri.tedarikci_id)
+      // Ürün kontrolündeki gibi: tedarikçi seçilmiş ama buluta eşitlenmemişse
+      // faturayı SESSİZCE "tedarikçisiz" kaydetme — muhasebesel yanlış atıf olur.
+      if (!ted?.senk_id) throw new Error(`Tedarikçi buluta henüz eşitlenmemiş: ${ted?.ad || veri.tedarikci_id}`)
+      tedarikciSenkId = ted.senk_id
+    }
+    try {
+      return await alis.kaydet({ ...veri, tedarikci_senk_id: tedarikciSenkId, urunSenkIdler: idler },
+                                jwtAl())
+    } catch (e) {
+      if (!(e instanceof FaturaHatasi)) throw e
+      // Ham sunucu/Postgres metni kullanıcıya gitmesin — Türkçe, anlaşılır mesaja
+      // çevrilir. Teşhis için ham ayrıntı 'cause' olarak korunur.
+      let mesaj
+      if (e.kod === 'cakisma') {
+        mesaj = 'Bu fatura numarası bu tedarikçi için zaten girilmiş.'
+      } else if (e.kod === 'yetersiz_stok' && typeof e.ayrinti?.message === 'string'
+                 && e.ayrinti.message.includes('SATIR_TOPLAM_UYUSMUYOR')) {
+        mesaj = 'Satır tutarları uyuşmuyor, lütfen miktar ve birim fiyatları kontrol edin.'
+      } else if (e.kod === 'yetersiz_stok') {
+        mesaj = 'Stok yetersiz, fatura kaydedilemedi.'
+      } else if (e.kod === 'oturum') {
+        mesaj = e.message // zaten Türkçe ve anlaşılır
+      } else if (e.kod === 'ag') {
+        mesaj = 'Sunucuya ulaşılamadı, fatura kaydedilmedi. İnternet bağlantınızı kontrol edip tekrar deneyin.'
+      } else {
+        mesaj = e.message
+      }
+      const hata = new Error(mesaj)
+      hata.cause = e
+      throw hata
+    }
   },
 }

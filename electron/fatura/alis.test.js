@@ -26,4 +26,17 @@ describe('kalemleriHesapla', () => {
     expect(s.genelToplam).toBe(0)
     expect(s.kalemler).toEqual([])
   })
+
+  test('satir_toplam gönderilen (yuvarlanmış) birim_fiyat ile tutarlı olmalı (sunucu SATIR_TOPLAM_UYUSMUYOR regresyonu)', () => {
+    // miktar=7, birim_fiyat=10.005 → ham fiyattan hesaplanan satir_toplam (70.04)
+    // ile yuvarlanmış birim_fiyat'tan (10.01) sunucunun yeniden hesaplayacağı
+    // değer (70.07) arasında sunucunun reddedeceği fark oluşuyordu.
+    const s = kalemleriHesapla([
+      { urun_id: 1, urun_adi: 'A', miktar: 7, birim_fiyat: 10.005, kdv_orani: 20 },
+    ])
+    const kalem = s.kalemler[0]
+    // İlişki kontrolü: dönen satir_toplam, dönen (yuvarlanmış) birim_fiyat'tan
+    // yeniden hesaplanınca AYNI çıkmalı — sunucunun yapacağı doğrulamanın aynısı.
+    expect(kalem.satir_toplam).toBe(Math.round(kalem.miktar * kalem.birim_fiyat * 100) / 100)
+  })
 })
