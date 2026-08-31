@@ -316,159 +316,7 @@ git commit -m "feat: fatura yetki kodlari"
 
 ---
 
-### Task 3: Yerel ayna tabloları ve yalnız-çekme senkron bayrağı
-
-**Files:**
-- Modify: `electron/db/database.js` (tablo tanımlarının olduğu `init()` bloğu)
-- Modify: `electron/db/senk-sema.js`
-- Modify: `electron/db/senk-veri.js`
-- Test: `electron/db/senk-sema.test.js` (mevcut dosyaya test ekle)
-
-**Interfaces:**
-- Consumes: Task 1'in Supabase tabloları.
-- Produces: Yerel `fatura_stok`, `fatura_stok_hareketler`, `alis_faturalari`, `alis_fatura_kalemleri` tabloları; `TABLOLAR[x].yalnizCekme === true` bayrağı; `pushEdilecekTablolar()` fonksiyonu.
-
-- [ ] **Step 1: Önce başarısız testi yaz**
-
-`electron/db/senk-sema.test.js` dosyasının sonuna ekle:
-
-```js
-describe('yalnizCekme bayrağı', () => {
-  test('fatura tabloları push listesinde YER ALMAZ', () => {
-    const { pushEdilecekTablolar } = require('./senk-sema')
-    const liste = pushEdilecekTablolar()
-    expect(liste).not.toContain('fatura_stok')
-    expect(liste).not.toContain('alis_faturalari')
-  })
-
-  test('normal tablolar push listesinde yer alır', () => {
-    const { pushEdilecekTablolar } = require('./senk-sema')
-    expect(pushEdilecekTablolar()).toContain('urunler')
-  })
-})
-```
-
-- [ ] **Step 2: Testi çalıştır, başarısız olduğunu gör**
-
-Run: `npm test -- senk-sema`
-Expected: FAIL — `pushEdilecekTablolar is not a function`
-
-- [ ] **Step 3: senk-sema.js'e tabloları ve fonksiyonu ekle**
-
-`TABLOLAR` nesnesine ekle (mevcut girdilerin biçimini izleyerek):
-
-```js
-  // --- Fatura alt sistemi: YALNIZ ÇEKME ---
-  // Asıl nüsha Supabase'de. Yerelden push edilirse son-yazan-kazanır upsert
-  // bayat bakiyeyi buluta yazar ve mükerrer fatura engelinin altını oyar.
-  fatura_stok:            { kolonlar: ['miktar'], fk: { urun_id: 'urunler' },
-                            zorunluFk: ['urun_id'], dogal: [], yalnizCekme: true },
-  fatura_stok_hareketler: { kolonlar: ['miktar', 'kaynak_tip', 'kaynak_id', 'aciklama', 'kullanici'],
-                            fk: { urun_id: 'urunler' }, zorunluFk: ['urun_id'],
-                            dogal: [], yalnizCekme: true },
-  alis_faturalari:        { kolonlar: ['fatura_no', 'fatura_tarihi', 'ara_toplam', 'kdv_toplam',
-                                       'genel_toplam', 'notlar', 'kullanici'],
-                            fk: { tedarikci_id: 'tedarikciler' }, dogal: [], yalnizCekme: true },
-  alis_fatura_kalemleri:  { kolonlar: ['urun_adi', 'miktar', 'birim_fiyat', 'kdv_orani', 'satir_toplam'],
-                            fk: { alis_fatura_id: 'alis_faturalari', urun_id: 'urunler' },
-                            zorunluFk: ['alis_fatura_id'], dogal: [], yalnizCekme: true },
-```
-
-Dosyanın export satırına `pushEdilecekTablolar` ekle ve fonksiyonu tanımla:
-
-```js
-// Push (yerel → bulut) toplamasına girecek tablolar. yalnizCekme olanlar HARİÇ.
-function pushEdilecekTablolar() {
-  return Object.keys(TABLOLAR).filter(t => !TABLOLAR[t].yalnizCekme)
-}
-```
-
-- [ ] **Step 4: Testi çalıştır, geçtiğini gör**
-
-Run: `npm test -- senk-sema`
-Expected: PASS
-
-- [ ] **Step 5: senk-veri.js'i push listesini kullanacak şekilde değiştir**
-
-`senk-veri.js` içinde `veri-senk:degisenler` handler'ı tabloları dolaşırken
-`SIRA` veya `Object.keys(TABLOLAR)` yerine `pushEdilecekTablolar()` kullanmalı.
-Import satırını güncelle:
-
-```js
-const { TABLOLAR, SIRA, pushEdilecekTablolar } = require('./senk-sema')
-```
-
-ve push döngüsünün kaynağını `pushEdilecekTablolar()` yap. Pull (uygula) tarafı
-DEĞİŞMEZ — yalnız-çekme tabloları çekilmeye devam etmeli.
-
-- [ ] **Step 6: Yerel ayna tablolarını database.js'e ekle**
-
-`init()` içindeki `db.exec(...)` bloğuna, mevcut tabloların yanına:
-
-```sql
-CREATE TABLE IF NOT EXISTS fatura_stok (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  urun_id INTEGER NOT NULL UNIQUE REFERENCES urunler(id),
-  miktar INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS fatura_stok_hareketler (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  urun_id INTEGER NOT NULL REFERENCES urunler(id),
-  miktar INTEGER NOT NULL,
-  kaynak_tip TEXT NOT NULL,
-  kaynak_id INTEGER,
-  aciklama TEXT,
-  kullanici TEXT,
-  tarih TEXT DEFAULT (datetime('now','localtime'))
-);
-CREATE INDEX IF NOT EXISTS idx_fatura_hareket_urun ON fatura_stok_hareketler(urun_id);
-
-CREATE TABLE IF NOT EXISTS alis_faturalari (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  tedarikci_id INTEGER REFERENCES tedarikciler(id),
-  fatura_no TEXT NOT NULL,
-  fatura_tarihi TEXT NOT NULL,
-  ara_toplam REAL DEFAULT 0,
-  kdv_toplam REAL DEFAULT 0,
-  genel_toplam REAL DEFAULT 0,
-  mal_kabul_id INTEGER REFERENCES mal_kabuller(id),
-  notlar TEXT,
-  kullanici TEXT,
-  olusturma_tarihi TEXT DEFAULT (datetime('now','localtime')),
-  UNIQUE(tedarikci_id, fatura_no)
-);
-
-CREATE TABLE IF NOT EXISTS alis_fatura_kalemleri (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  alis_fatura_id INTEGER NOT NULL REFERENCES alis_faturalari(id),
-  urun_id INTEGER NOT NULL REFERENCES urunler(id),
-  urun_adi TEXT,
-  miktar INTEGER NOT NULL,
-  birim_fiyat REAL NOT NULL,
-  kdv_orani INTEGER DEFAULT 20,
-  satir_toplam REAL NOT NULL
-);
-```
-
-- [ ] **Step 7: Uygulamayı açıp tabloların oluştuğunu doğrula**
-
-Run: `npm run dev`
-Uygulama açıldıktan sonra kapat. Hata çıkmamalı.
-
-> `npm run dev` iki sessiz sebeple ölebilir (Vite'ın `dist-electron` izlemesi +
-> tek-örnek kilidi). Açılmazsa çalışan Electron süreçlerini kapatıp yeniden dene.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add electron/db/database.js electron/db/senk-sema.js electron/db/senk-veri.js electron/db/senk-sema.test.js
-git commit -m "feat: fatura stogu yerel ayna tablolari + yalniz-cekme senkron bayragi"
-```
-
----
-
-### Task 4: Supabase yazma istemcisi
+### Task 3: Supabase istemcisi (okuma + yazma)
 
 **Files:**
 - Create: `electron/fatura/bulut.js`
@@ -596,68 +444,201 @@ git commit -m "feat: fatura supabase yazma istemcisi"
 
 ---
 
-### Task 5: Fatura stoğu okuma katmanı (durum listesi)
+### Task 4: Fatura verisi okuma katmanı (Supabase)
+
+> **Plan düzeltmesi (Ruling-5):** İlk taslak fatura tablolarını senkron motoruna
+> ekleyip yerel aynadan okuyordu. Canlı şema incelemesinde görüldü ki Supabase'de
+> varlık başına tablo YOK — senkron motoru her şeyi tek `senk_kayitlar` tablosunda
+> tutuyor. Dolayısıyla mevcut pull, gerçek Postgres tablolarını yerele hiç
+> getirmezdi ve arayüz sürekli boş görünürdü. Fatura alt sistemi senkron motoruna
+> HİÇ girmez; verisini doğrudan Supabase'den okur.
+
+**Files:**
+- Create: `electron/fatura/okuma.js`
+- Test: `electron/fatura/okuma.test.js`
+
+**Interfaces:**
+- Consumes: `sec` ve `FaturaHatasi` (`./bulut`, Task 3).
+- Produces:
+  - `faturaStokGetir(jwt)` → `Promise<Array<{urun_senk_id, miktar}>>`
+  - `hareketGetir({urun_senk_id, limit}, jwt)` → `Promise<Array>`
+  - `alisFaturaGetir({tedarikci_senk_id}, jwt)` → `Promise<Array>`
+  - `alisKalemGetir(alis_fatura_senk_id, jwt)` → `Promise<Array>`
+
+- [ ] **Step 1: Başarısız testi yaz**
+
+`electron/fatura/okuma.test.js`:
+
+```js
+import { describe, test, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('./bulut', () => ({
+  sec: vi.fn(),
+  FaturaHatasi: class extends Error {},
+}))
+
+const { sec } = require('./bulut')
+const { faturaStokGetir, hareketGetir, alisFaturaGetir } = require('./okuma')
+
+beforeEach(() => { sec.mockReset() })
+
+describe('faturaStokGetir', () => {
+  test('fatura_stok tablosundan urun_senk_id ve miktar çeker', async () => {
+    sec.mockResolvedValue([{ urun_senk_id: 'u1', miktar: 12 }])
+    const sonuc = await faturaStokGetir('jwt')
+    expect(sonuc).toEqual([{ urun_senk_id: 'u1', miktar: 12 }])
+    const [tablo, sorgu] = sec.mock.calls[0]
+    expect(tablo).toBe('fatura_stok')
+    expect(sorgu).toContain('select=urun_senk_id,miktar')
+  })
+})
+
+describe('hareketGetir', () => {
+  test('ürün filtresi verilince sorguya eq koşulu ekler', async () => {
+    sec.mockResolvedValue([])
+    await hareketGetir({ urun_senk_id: 'u1', limit: 50 }, 'jwt')
+    const [, sorgu] = sec.mock.calls[0]
+    expect(sorgu).toContain('urun_senk_id=eq.u1')
+    expect(sorgu).toContain('limit=50')
+  })
+
+  test('ürün filtresi yoksa eq koşulu KOYMAZ', async () => {
+    sec.mockResolvedValue([])
+    await hareketGetir({}, 'jwt')
+    expect(sec.mock.calls[0][1]).not.toContain('urun_senk_id=eq')
+  })
+})
+
+describe('alisFaturaGetir', () => {
+  test('fatura tarihine göre tersten sıralar', async () => {
+    sec.mockResolvedValue([])
+    await alisFaturaGetir({}, 'jwt')
+    expect(sec.mock.calls[0][1]).toContain('order=fatura_tarihi.desc')
+  })
+})
+```
+
+- [ ] **Step 2: Testi çalıştır, başarısız olduğunu gör**
+
+Run: `npm test -- fatura/okuma`
+Expected: FAIL — `./okuma` modülü bulunamadı
+
+- [ ] **Step 3: okuma.js'i yaz**
+
+```js
+// Fatura verisinin OKUMA yolu. Asıl nüsha Supabase'de olduğu için doğrudan
+// oradan okunur — senkron motoru üzerinden DEĞİL (bkz. plan Ruling-5).
+const { sec } = require('./bulut')
+
+// Ürün başına tek satır; katalog ~3 bin ürün olduğu için tek çekim yeterli.
+async function faturaStokGetir(jwt) {
+  return sec('fatura_stok', 'select=urun_senk_id,miktar', jwt)
+}
+
+async function hareketGetir({ urun_senk_id, limit = 200 } = {}, jwt) {
+  const parcalar = [
+    'select=*',
+    'order=senk_guncelleme.desc',
+    `limit=${Number(limit)}`,
+  ]
+  if (urun_senk_id) parcalar.push(`urun_senk_id=eq.${encodeURIComponent(urun_senk_id)}`)
+  return sec('fatura_stok_hareketler', parcalar.join('&'), jwt)
+}
+
+async function alisFaturaGetir({ tedarikci_senk_id } = {}, jwt) {
+  const parcalar = ['select=*', 'order=fatura_tarihi.desc']
+  if (tedarikci_senk_id) {
+    parcalar.push(`tedarikci_senk_id=eq.${encodeURIComponent(tedarikci_senk_id)}`)
+  }
+  return sec('alis_faturalari', parcalar.join('&'), jwt)
+}
+
+async function alisKalemGetir(alis_fatura_senk_id, jwt) {
+  return sec('alis_fatura_kalemleri',
+    `select=*&alis_fatura_senk_id=eq.${encodeURIComponent(alis_fatura_senk_id)}`, jwt)
+}
+
+module.exports = { faturaStokGetir, hareketGetir, alisFaturaGetir, alisKalemGetir }
+```
+
+- [ ] **Step 4: Testi çalıştır, geçtiğini gör**
+
+Run: `npm test -- fatura/okuma`
+Expected: PASS (4 test)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add electron/fatura/okuma.js electron/fatura/okuma.test.js
+git commit -m "feat: fatura verisi supabase okuma katmani"
+```
+
+---
+
+### Task 5: Fatura stoğu IPC katmanı (bulut + yerel birleştirme)
+
+> **Plan düzeltmesi (Ruling-5):** Fatura stoğu Supabase'de, ürün ve gerçek stok
+> yerel SQLite'ta. Bu görev ikisini **JS tarafında birleştirir**. Yerel `fatura_stok`
+> tablosu YOKTUR ve oluşturulmayacaktır.
 
 **Files:**
 - Create: `electron/db/fatura-stok.js`
 - Test: `electron/db/fatura-stok.test.js`
-- Modify: `electron/main.js:456` civarındaki handler modül listesi
+- Modify: `electron/main.js` (handler modül listesi, `require('./db/stok'),` satırının altı)
 
 **Interfaces:**
-- Consumes: `getDb()` (`./database`), `yetkiKontrol` (`../yetki`).
-- Produces: IPC kanalları `fatura-stok:durum`, `fatura-stok:hareketler`, `alis-fatura:listele`.
-  `fatura-stok:durum` şu şekilli satırlar döndürür:
-  `{ urun_id, urun_adi, sku, barkod, fatura_miktar, gercek_miktar, fark }`
+- Consumes: `faturaStokGetir`, `hareketGetir`, `alisFaturaGetir`, `alisKalemGetir` (`../fatura/okuma`, Task 4); `getDb()` (`./database`); `_yetkiKontrol` (`../yetki`).
+- Produces:
+  - Saf fonksiyon `durumBirlestir(urunler, faturaStokSatirlari, { arama, sadece_eksik })` → `Array<{urun_id, urun_adi, sku, barkod, senk_id, fatura_miktar, gercek_miktar, fark}>`
+  - IPC kanalları: `fatura-stok:durum`, `fatura-stok:hareketler`, `alis-fatura:listele`, `alis-fatura:kalemler`
 
 - [ ] **Step 1: Başarısız testi yaz**
+
+Birleştirme mantığı saf bir fonksiyona ayrıldığı için test ne DB'ye ne ağa
+ihtiyaç duyar — hızlı ve kırılgan olmayan bir test.
 
 `electron/db/fatura-stok.test.js`:
 
 ```js
-import { describe, test, expect, beforeEach } from 'vitest'
-const Database = require('better-sqlite3')
+import { describe, test, expect } from 'vitest'
+const { durumBirlestir } = require('./fatura-stok')
 
-// Test için bellek içi DB kurup modüle enjekte ediyoruz.
-let db
-const handlers = require('./fatura-stok')
+// urunler: yerel SQLite'tan gelen satırlar (gercek_miktar tüm lokasyonların toplamı)
+const URUNLER = [
+  { urun_id: 1, urun_adi: 'Tencere', sku: 'TNC.LAV.00001', barkod: '869001', senk_id: 'u1', gercek_miktar: 9 },
+  { urun_id: 2, urun_adi: 'Tava',    sku: 'TNC.LAV.00002', barkod: '869002', senk_id: 'u2', gercek_miktar: 4 },
+]
 
-beforeEach(() => {
-  db = new Database(':memory:')
-  db.exec(`
-    CREATE TABLE urunler (id INTEGER PRIMARY KEY, ad TEXT, sku TEXT, barkod TEXT, aktif INTEGER DEFAULT 1);
-    CREATE TABLE urun_stoklar (id INTEGER PRIMARY KEY, urun_id INTEGER, lokasyon_id INTEGER, miktar INTEGER);
-    CREATE TABLE fatura_stok (id INTEGER PRIMARY KEY, urun_id INTEGER UNIQUE, miktar INTEGER DEFAULT 0);
-  `)
-  db.prepare("INSERT INTO urunler (id, ad, sku) VALUES (1, 'Tencere', 'TNC.LAV.00001')").run()
-  db.prepare("INSERT INTO urunler (id, ad, sku) VALUES (2, 'Tava', 'TNC.LAV.00002')").run()
-  // Tencere: fatura 12, gerçek 9 → fark +3
-  db.prepare('INSERT INTO fatura_stok (urun_id, miktar) VALUES (1, 12)').run()
-  db.prepare('INSERT INTO urun_stoklar (urun_id, lokasyon_id, miktar) VALUES (1, 1, 5)').run()
-  db.prepare('INSERT INTO urun_stoklar (urun_id, lokasyon_id, miktar) VALUES (1, 2, 4)').run()
-  // Tava: fatura stoğu YOK, gerçek 4 → fark −4
-  db.prepare('INSERT INTO urun_stoklar (urun_id, lokasyon_id, miktar) VALUES (2, 1, 4)').run()
-  handlers._dbAyarla(db)
-})
-
-describe('fatura-stok:durum', () => {
-  test('fatura stoğu ile gerçek stoğu yan yana verir ve farkı hesaplar', () => {
-    const satirlar = handlers['fatura-stok:durum']({})
-    const tencere = satirlar.find(s => s.urun_id === 1)
+describe('durumBirlestir', () => {
+  test('senk_id üzerinden fatura stoğunu eşleştirir ve farkı hesaplar', () => {
+    const s = durumBirlestir(URUNLER, [{ urun_senk_id: 'u1', miktar: 12 }], {})
+    const tencere = s.find(x => x.urun_id === 1)
     expect(tencere.fatura_miktar).toBe(12)
-    expect(tencere.gercek_miktar).toBe(9)   // iki lokasyon toplamı
+    expect(tencere.gercek_miktar).toBe(9)
     expect(tencere.fark).toBe(3)
   })
 
-  test('fatura stoğu hiç olmayan ürünü 0 sayar ve negatif fark verir', () => {
-    const satirlar = handlers['fatura-stok:durum']({})
-    const tava = satirlar.find(s => s.urun_id === 2)
+  test('bulutta karşılığı olmayan ürünü 0 sayar ve negatif fark verir', () => {
+    const s = durumBirlestir(URUNLER, [{ urun_senk_id: 'u1', miktar: 12 }], {})
+    const tava = s.find(x => x.urun_id === 2)
     expect(tava.fatura_miktar).toBe(0)
     expect(tava.fark).toBe(-4)
   })
 
-  test('sadece_eksik filtresi yalnız negatif farkları döndürür', () => {
-    const satirlar = handlers['fatura-stok:durum']({ sadece_eksik: true })
-    expect(satirlar.map(s => s.urun_id)).toEqual([2])
+  test('sadece_eksik yalnız negatif farkları döndürür', () => {
+    const s = durumBirlestir(URUNLER, [{ urun_senk_id: 'u1', miktar: 12 }], { sadece_eksik: true })
+    expect(s.map(x => x.urun_id)).toEqual([2])
+  })
+
+  test('senk_id henüz atanmamış ürün çökmez, fatura stoğu 0 sayılır', () => {
+    const s = durumBirlestir([{ urun_id: 3, urun_adi: 'Yeni', sku: null, barkod: null, senk_id: null, gercek_miktar: 2 }], [], {})
+    expect(s[0].fatura_miktar).toBe(0)
+    expect(s[0].fark).toBe(-2)
+  })
+
+  test('arama ürün adı, SKU ve barkodda Türkçe duyarlı eşleşir', () => {
+    const s = durumBirlestir(URUNLER, [], { arama: 'TENCERE' })
+    expect(s.map(x => x.urun_id)).toEqual([1])
   })
 })
 ```
@@ -665,88 +646,110 @@ describe('fatura-stok:durum', () => {
 - [ ] **Step 2: Testi çalıştır, başarısız olduğunu gör**
 
 Run: `npm test -- fatura-stok`
-Expected: FAIL — modül bulunamadı
+Expected: FAIL — `durumBirlestir is not a function`
 
 - [ ] **Step 3: fatura-stok.js'i yaz**
 
 ```js
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
+const okuma = require('../fatura/okuma')
 
-// Test enjeksiyonu: node:sqlite/better-sqlite3 bellek içi DB ile çalışabilmek için.
-let _testDb = null
-function db() { return _testDb || getDb() }
+// Fatura stoğu Supabase'de (asıl nüsha), ürün + gerçek stok yerel SQLite'ta.
+// Birleştirme burada, JS tarafında yapılır. Bkz. plan Ruling-5.
+
+// Saf birleştirme — test edilebilir olsun diye IO'dan ayrıldı.
+function durumBirlestir(urunler, faturaStokSatirlari, { arama, sadece_eksik } = {}) {
+  const havuz = new Map()
+  for (const r of faturaStokSatirlari || []) havuz.set(r.urun_senk_id, Number(r.miktar) || 0)
+
+  const kucult = (m) => String(m || '').toLocaleLowerCase('tr')
+  const aranan = kucult(arama)
+
+  return (urunler || [])
+    .map(u => {
+      const fatura_miktar = (u.senk_id && havuz.get(u.senk_id)) || 0
+      const gercek_miktar = Number(u.gercek_miktar) || 0
+      return { ...u, fatura_miktar, gercek_miktar, fark: fatura_miktar - gercek_miktar }
+    })
+    .filter(s => !sadece_eksik || s.fark < 0)
+    .filter(s => !aranan ||
+      kucult([s.urun_adi, s.sku, s.barkod].filter(Boolean).join(' ')).includes(aranan))
+}
+
+// Ana süreçteki aktif oturumun JWT'si. Renderer'dan ASLA alınmaz.
+function jwtAl() {
+  return require('../oturum-canli').aktifJwt?.() || null
+}
+
+function yerelUrunler() {
+  return getDb().prepare(`
+    SELECT u.id AS urun_id, u.ad AS urun_adi, u.sku, u.barkod, u.senk_id,
+           COALESCE((SELECT SUM(us.miktar) FROM urun_stoklar us WHERE us.urun_id = u.id), 0)
+             AS gercek_miktar
+      FROM urunler u
+     WHERE u.aktif = 1
+     ORDER BY u.ad
+  `).all()
+}
 
 module.exports = {
-  _dbAyarla: (d) => { _testDb = d },
+  durumBirlestir,
 
-  // Ürün bazında fatura stoğu vs gerçek stok. Gerçek stok TÜM lokasyonların toplamı,
-  // çünkü fatura stoğu tek havuzdur (lokasyon bazlı değil).
-  'fatura-stok:durum': ({ arama, sadece_eksik } = {}) => {
-    const satirlar = db().prepare(`
-      SELECT u.id AS urun_id, u.ad AS urun_adi, u.sku, u.barkod,
-             COALESCE(fs.miktar, 0) AS fatura_miktar,
-             COALESCE((SELECT SUM(us.miktar) FROM urun_stoklar us WHERE us.urun_id = u.id), 0)
-               AS gercek_miktar
-        FROM urunler u
-        LEFT JOIN fatura_stok fs ON fs.urun_id = u.id
-       WHERE u.aktif = 1
-       ORDER BY u.ad
-    `).all()
-
-    return satirlar
-      .map(s => ({ ...s, fark: s.fatura_miktar - s.gercek_miktar }))
-      .filter(s => !sadece_eksik || s.fark < 0)
-      .filter(s => !arama || [s.urun_adi, s.sku, s.barkod]
-        .filter(Boolean).join(' ').toLocaleLowerCase('tr').includes(arama.toLocaleLowerCase('tr')))
+  // Yetki kontrolü BİLEREK yok: sipariş ekranındaki "fatura stoğu yok" kilidinin
+  // sebebini, fatura yetkisi olmayan kasiyer de görebilmeli.
+  'fatura-stok:durum': async ({ arama, sadece_eksik } = {}) => {
+    const bulut = await okuma.faturaStokGetir(jwtAl())
+    return durumBirlestir(yerelUrunler(), bulut, { arama, sadece_eksik })
   },
 
-  'fatura-stok:hareketler': ({ urun_id, limit = 200 } = {}) => {
+  'fatura-stok:hareketler': async ({ urun_id, limit = 200 } = {}) => {
     yetkiKontrol('fatura_stok_goruntule')
-    const kosul = urun_id ? 'WHERE h.urun_id = ?' : ''
-    const params = urun_id ? [urun_id, limit] : [limit]
-    return db().prepare(`
-      SELECT h.*, u.ad AS urun_adi, u.sku
-        FROM fatura_stok_hareketler h
-        JOIN urunler u ON u.id = h.urun_id
-        ${kosul}
-       ORDER BY h.tarih DESC, h.id DESC
-       LIMIT ?
-    `).all(...params)
+    let urun_senk_id = null
+    if (urun_id) {
+      urun_senk_id = getDb().prepare('SELECT senk_id FROM urunler WHERE id = ?')
+        .get(urun_id)?.senk_id || null
+    }
+    const satirlar = await okuma.hareketGetir({ urun_senk_id, limit }, jwtAl())
+    // Ürün adını yerelden zenginleştir (bulut tarafında ad tutulmuyor).
+    const adlar = new Map(getDb().prepare('SELECT senk_id, ad, sku FROM urunler WHERE senk_id IS NOT NULL')
+      .all().map(u => [u.senk_id, u]))
+    return satirlar.map(h => ({
+      ...h,
+      urun_adi: adlar.get(h.urun_senk_id)?.ad || '(bilinmeyen ürün)',
+      sku: adlar.get(h.urun_senk_id)?.sku || null,
+    }))
   },
 
-  'alis-fatura:listele': ({ tedarikci_id } = {}) => {
+  'alis-fatura:listele': async ({ tedarikci_id } = {}) => {
     yetkiKontrol('fatura_stok_goruntule')
-    const kosul = tedarikci_id ? 'WHERE f.tedarikci_id = ?' : ''
-    const params = tedarikci_id ? [tedarikci_id] : []
-    return db().prepare(`
-      SELECT f.*, t.ad AS tedarikci_adi
-        FROM alis_faturalari f
-        LEFT JOIN tedarikciler t ON t.id = f.tedarikci_id
-        ${kosul}
-       ORDER BY f.fatura_tarihi DESC, f.id DESC
-    `).all(...params)
+    let tedarikci_senk_id = null
+    if (tedarikci_id) {
+      tedarikci_senk_id = getDb().prepare('SELECT senk_id FROM tedarikciler WHERE id = ?')
+        .get(tedarikci_id)?.senk_id || null
+    }
+    const faturalar = await okuma.alisFaturaGetir({ tedarikci_senk_id }, jwtAl())
+    const adlar = new Map(getDb().prepare('SELECT senk_id, ad FROM tedarikciler WHERE senk_id IS NOT NULL')
+      .all().map(t => [t.senk_id, t.ad]))
+    return faturalar.map(f => ({ ...f, tedarikci_adi: adlar.get(f.tedarikci_senk_id) || '—' }))
   },
 
-  'alis-fatura:kalemler': (alis_fatura_id) => {
+  'alis-fatura:kalemler': async (alis_fatura_senk_id) => {
     yetkiKontrol('fatura_stok_goruntule')
-    return db().prepare(`
-      SELECT k.*, u.sku FROM alis_fatura_kalemleri k
-        LEFT JOIN urunler u ON u.id = k.urun_id
-       WHERE k.alis_fatura_id = ? ORDER BY k.id
-    `).all(alis_fatura_id)
+    return okuma.alisKalemGetir(alis_fatura_senk_id, jwtAl())
   },
 }
 ```
 
-> `fatura-stok:durum` bilerek yetki kontrolü yapmaz — Trendyol/ikas sipariş
-> ekranındaki kilit rozeti bu veriyi okur ve `fatura_stok_goruntule` yetkisi
-> olmayan kasiyer de kilidin sebebini görebilmeli.
+> **`aktifJwt()` yoksa bu adımda eklenir.** `electron/oturum-canli.js`'i aç, aktif
+> oturumun access token'ını nasıl sakladığını gör ve `aktifJwt()` adında bir
+> dışa aktarım ekle. JWT'yi renderer'dan parametre olarak ALMAK YASAK — ele
+> geçirilmiş bir renderer istediği kimliği taklit edebilirdi.
 
 - [ ] **Step 4: Testi çalıştır, geçtiğini gör**
 
 Run: `npm test -- fatura-stok`
-Expected: PASS (3 test)
+Expected: PASS (5 test)
 
 - [ ] **Step 5: Modülü main.js'e kaydet**
 
@@ -756,11 +759,16 @@ Expected: PASS (3 test)
   require('./db/fatura-stok'),
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Tüm testleri çalıştır**
+
+Run: `npm test`
+Expected: Tüm testler PASS — mevcut testlerin hiçbiri kırılmamalı.
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add electron/db/fatura-stok.js electron/db/fatura-stok.test.js electron/main.js
-git commit -m "feat: fatura stogu okuma katmani (durum, hareketler, alis faturalari)"
+git add electron/db/fatura-stok.js electron/db/fatura-stok.test.js electron/main.js electron/oturum-canli.js
+git commit -m "feat: fatura stogu IPC katmani (bulut + yerel birlestirme)"
 ```
 
 ---
