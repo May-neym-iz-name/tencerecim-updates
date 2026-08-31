@@ -26,6 +26,25 @@ import AlisFaturaFormu from '../components/AlisFaturaFormu'
 // aramayı ise istemcide (ortak eslesirMi ile) filtreliyoruz. Debounce yerine
 // bu yaklaşım seçildi çünkü zaten elimizdeki listeyi filtrelemek anlık ve
 // ağ turu gerektirmiyor.
+//
+// Hareketler sekmesi de aynı ilkeyi izler: hareketler({ limit }) bir kez
+// çekilir, arama istemcide filtrelenir. `kaynak_tip` bulut değeri Türkçeye
+// burada çevrilir — okuma katmanı (Task 5) İngilizce/teknik değeri olduğu
+// gibi döndürür.
+const KAYNAK_ETIKETLERI = {
+  alis_faturasi: 'Alış faturası',
+  satis_faturasi: 'Satış faturası',
+  duzeltme: 'Düzeltme',
+  iade: 'İade',
+  telafi: 'Telafi',
+}
+
+function hareketTarihiGoster(iso) {
+  if (!iso) return '—'
+  const t = new Date(iso)
+  return Number.isNaN(t.getTime()) ? '—' : t.toLocaleString('tr-TR')
+}
+
 export default function FaturaStogu() {
   const { yetkiVar } = useAuth()
   const duzenleYetkisi = yetkiVar('fatura_stok_duzenle')
@@ -51,6 +70,12 @@ export default function FaturaStogu() {
   const [formVeriYukleniyor, setFormVeriYukleniyor] = useState(false)
   const [urunler, setUrunler] = useState(null)
   const [tedarikciler, setTedarikciler] = useState(null)
+
+  // --- Hareketler sekmesi ---
+  const [hareketArama, setHareketArama] = usePersistentState('fatura_stok_hareket_arama', '')
+  const [hareketler, setHareketler] = useState(null) // null = henüz veri gelmedi
+  const [hareketYukleniyor, setHareketYukleniyor] = useState(false)
+  const [hareketHata, setHareketHata] = useState(null)
 
   const alisYukle = useCallback(async () => {
     setAlisYukleniyor(true)
@@ -107,6 +132,30 @@ export default function FaturaStogu() {
       setFormVeriYukleniyor(false)
     }
   }
+
+  const hareketYukle = useCallback(async () => {
+    setHareketYukleniyor(true)
+    setHareketHata(null)
+    try {
+      const veri = await faturaStokApi.hareketler({ limit: 200 })
+      setHareketler(veri)
+    } catch (e) {
+      setHareketHata(e.message)
+      toast.error(e.message)
+    } finally {
+      setHareketYukleniyor(false)
+    }
+  }, [])
+
+  useEffect(() => { if (sekme === 'hareket') hareketYukle() }, [hareketYukle, sekme])
+
+  const hareketlerGorunur = useMemo(() => {
+    if (!hareketler) return []
+    return hareketler.filter(h => eslesirMi([h.urun_adi, h.sku, h.aciklama, h.kullanici].filter(Boolean).join(' '), hareketArama))
+  }, [hareketler, hareketArama])
+
+  const { dilim: hareketDilim, ...hareketSayfalama } = useSayfalama(hareketlerGorunur)
+  const hareketVeriGeldi = hareketler !== null
 
   const yukle = useCallback(async () => {
     setYukleniyor(true)
@@ -310,7 +359,62 @@ export default function FaturaStogu() {
       )}
 
       {sekme === 'hareket' && (
-        <p className="text-gray-500 py-4">Bu görünüm sonraki adımda doldurulacak.</p>
+        <>
+          <div className="flex gap-3 items-center mb-3 flex-wrap">
+            <input value={hareketArama} onChange={e => setHareketArama(e.target.value)}
+              placeholder="Ürün, SKU, açıklama veya kullanıcı ara" className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" />
+            <button type="button" onClick={hareketYukle} disabled={hareketYukleniyor}
+              className="px-3 py-2 rounded-lg text-sm border hover:bg-gray-50 disabled:opacity-50">
+              🔄 Tekrar Dene
+            </button>
+          </div>
+
+          {hareketYukleniyor && (
+            <p className="text-center text-gray-400 py-8">Yükleniyor…</p>
+          )}
+
+          {!hareketYukleniyor && hareketHata && (
+            <div className="text-center py-8">
+              <p className="text-red-600 font-medium mb-1">Veri alınamadı</p>
+              <p className="text-gray-500 text-sm">{hareketHata}</p>
+              <button type="button" onClick={hareketYukle}
+                className="mt-3 px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50">
+                Tekrar dene
+              </button>
+            </div>
+          )}
+
+          {!hareketYukleniyor && !hareketHata && hareketVeriGeldi && (
+            <>
+              <table className="w-full text-sm">
+                <thead><tr className="text-left border-b">
+                  <th className="py-2">Tarih</th><th>Ürün</th><th>Kaynak</th>
+                  <th className="text-right">Miktar</th><th>Açıklama</th><th>Kullanıcı</th>
+                </tr></thead>
+                <tbody>
+                  {hareketDilim.map(h => (
+                    <tr key={h.senk_id} className="border-b">
+                      <td className="py-2 text-gray-600">{hareketTarihiGoster(h.senk_guncelleme)}</td>
+                      <td>{h.urun_adi}{h.sku && <span className="text-gray-400 text-xs ml-1">({h.sku})</span>}</td>
+                      <td className="text-gray-600">{KAYNAK_ETIKETLERI[h.kaynak_tip] || h.kaynak_tip}</td>
+                      <td className={`text-right font-semibold ${h.miktar < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                        {h.miktar > 0 ? `+${h.miktar}` : h.miktar}
+                      </td>
+                      <td className="text-gray-600">{h.aciklama || '—'}</td>
+                      <td className="text-gray-500">{h.kullanici || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {hareketDilim.length === 0 && (
+                <p className="text-center text-gray-500 py-8">
+                  {hareketArama ? 'Aramayla eşleşen hareket yok.' : 'Henüz hiç fatura stoğu hareketi yok.'}
+                </p>
+              )}
+              <Sayfalama {...hareketSayfalama} />
+            </>
+          )}
+        </>
       )}
 
       {duzenleYetkisi && (

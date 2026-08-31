@@ -6,13 +6,36 @@ import { useSiralama } from '../hooks/useSiralama'
 import SiraliBaslik from '../components/SiraliBaslik'
 import AranabilirSecici from '../components/AranabilirSecici'
 import { useBarkodTarama } from '../hooks/useBarkodTarama'
+import AlisFaturaFormu from '../components/AlisFaturaFormu'
+
+// Bir mal kabul kaydının kalemlerini alış faturası formuna devrederken aynı
+// ürün birden çok satırda gelmişse (aynı ürün iki kez mal kabul edilmişse)
+// miktarları TEK satırda toplarız — aksi halde form iki aynı kalemi birden
+// gösterir ve AlisFaturaFormu'nun mükerrer kontrolü (kalemEkle) yalnız ELLE
+// eklemede çalıştığı için bu durumu yakalamaz.
+function malKabulKalemleriniBirlestir(kalemler) {
+  const map = new Map()
+  for (const k of kalemler) {
+    const onceki = map.get(k.urun_id)
+    if (onceki) {
+      onceki.miktar += k.miktar
+    } else {
+      map.set(k.urun_id, {
+        urun_id: k.urun_id, urun_adi: k.urun_adi,
+        miktar: k.miktar, birim_fiyat: k.birim_maliyet || 0, kdv_orani: 20,
+      })
+    }
+  }
+  return [...map.values()]
+}
 
 const PARA = (n) => `₺${(Number(n) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const TARIH = (t) => t ? new Date(t).toLocaleString('tr-TR') : '—'
 
 export default function MalKabul() {
-  const { profil, erisilebilirLokasyonlar } = useAuth()
+  const { profil, erisilebilirLokasyonlar, yetkiVar } = useAuth()
   const kullanici = profil?.ad || profil?.email || ''
+  const faturaDuzenleYetkisi = yetkiVar('fatura_stok_duzenle')
   const [lokasyonlar, setLokasyonlar] = useState([])
   const [tedarikciler, setTedarikciler] = useState([])
   const [lokId, setLokId] = useState(null)
@@ -28,6 +51,15 @@ export default function MalKabul() {
   // hangi ürünler olduğu ayrı sorguyla tıklanınca çekilir.
   const [detay, setDetay] = useState(null)          // { kayit } | null
   const [detayYukleniyor, setDetayYukleniyor] = useState(false)
+
+  // Mal kabulden alış faturası devralma: form yalnız devralınacak kayıt
+  // kesinleşince (faturaBaslangic dolunca) mount edilir — AlisFaturaFormu
+  // `baslangic`'i sadece İLK render'da useState ile okur, prop sonradan
+  // değişirse state güncellenmez. Koşullu mount + `key` ile her açılışta
+  // bileşen sıfırdan kurulur, önceki mal kabulün kalemleri sızmaz.
+  const [faturaBaslangic, setFaturaBaslangic] = useState(null)
+  const [faturaFormVeriYukleniyor, setFaturaFormVeriYukleniyor] = useState(false)
+  const [faturaUrunler, setFaturaUrunler] = useState(null)
   const sr = useSiralama(gecmis)
   const aramaRef = useRef()
 
@@ -51,6 +83,31 @@ export default function MalKabul() {
       setDetay(kayit)
     } catch (e) { toast.error('Detay açılamadı: ' + e.message) }
     finally { setDetayYukleniyor(false) }
+  }
+
+  // Mal kabul kaydından alış faturası devralma: tedarikçi/fatura no ve
+  // kalemler mal kabulden gelir, kullanıcı yalnız fiyat/KDV teyit eder.
+  // Çağıran, detay modalında zaten yüklenmiş `detay` kaydını verir — bu
+  // kaydın kalemleri `mal-kabul:getir`in `urunler` ile JOIN ettiği veridir
+  // (urun_adi dahil), ayrı bir IPC kanalına gerek yok.
+  async function faturaFormunuAc(kayit) {
+    setFaturaFormVeriYukleniyor(true)
+    try {
+      if (!faturaUrunler) {
+        const r = await urunlerApi.listele({ boyut: 0 })
+        setFaturaUrunler(r.urunler)
+      }
+      setFaturaBaslangic({
+        tedarikci_id: kayit.tedarikci_id || '',
+        fatura_no: kayit.fatura_no || '',
+        mal_kabul_id: kayit.id,
+        kalemler: malKabulKalemleriniBirlestir(kayit.kalemler || []),
+      })
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      setFaturaFormVeriYukleniyor(false)
+    }
   }
 
   const araFn = useCallback(async (deger) => {
@@ -254,7 +311,15 @@ export default function MalKabul() {
                 </p>
                 {detay.notlar && <p className="text-xs text-gray-500 mt-1">Not: {detay.notlar}</p>}
               </div>
-              <button onClick={() => setDetay(null)} className="text-gray-300 hover:text-gray-600 text-xl leading-none">✕</button>
+              <div className="flex items-center gap-2">
+                {faturaDuzenleYetkisi && detay.kalemler?.length > 0 && (
+                  <button onClick={() => faturaFormunuAc(detay)} disabled={faturaFormVeriYukleniyor}
+                    className="px-3 py-1.5 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                    {faturaFormVeriYukleniyor ? 'Yükleniyor…' : '🧾 Alış Faturası Oluştur'}
+                  </button>
+                )}
+                <button onClick={() => setDetay(null)} className="text-gray-300 hover:text-gray-600 text-xl leading-none">✕</button>
+              </div>
             </div>
 
             <div className="p-5">
@@ -305,6 +370,18 @@ export default function MalKabul() {
             </div>
           </div>
         </div>
+      )}
+
+      {faturaDuzenleYetkisi && faturaBaslangic && (
+        <AlisFaturaFormu
+          key={faturaBaslangic.mal_kabul_id}
+          acik={true}
+          kapat={() => setFaturaBaslangic(null)}
+          kaydedildi={() => setFaturaBaslangic(null)}
+          baslangic={faturaBaslangic}
+          urunler={faturaUrunler || []}
+          tedarikciler={tedarikciler}
+        />
       )}
     </div>
   )
