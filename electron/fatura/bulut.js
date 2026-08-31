@@ -47,9 +47,9 @@ async function rpc(ad, govde, jwt) {
       method: 'POST', headers: basliklar_, body: JSON.stringify(govde || {}), signal: controller.signal,
     })
   } catch (e) {
-    const kod = e.name === 'AbortError' ? 'ag' : 'ag'
+    // Hem AbortError (zaman aşımı) hem gerçek ağ hatası — sonuç belirsiz, telafi yapma
     const mesaj = e.name === 'AbortError' ? 'Sunucu zamanında yanıt vermedi' : 'Sunucuya ulaşılamadı: ' + e.message
-    throw new FaturaHatasi(mesaj, kod, e, null)
+    throw new FaturaHatasi(mesaj, 'ag', e, null)
   } finally {
     clearTimeout(timeoutId)
   }
@@ -77,9 +77,9 @@ async function sec(tablo, sorgu, jwt) {
   try {
     yanit = await fetch(`${SUPABASE_URL}/rest/v1/${tablo}?${sorgu}`, { headers: basliklar_, signal: controller.signal })
   } catch (e) {
-    const kod = e.name === 'AbortError' ? 'ag' : 'ag'
+    // Hem AbortError (zaman aşımı) hem gerçek ağ hatası — sonuç belirsiz, telafi yapma
     const mesaj = e.name === 'AbortError' ? 'Sunucu zamanında yanıt vermedi' : 'Sunucuya ulaşılamadı: ' + e.message
-    throw new FaturaHatasi(mesaj, kod, e, null)
+    throw new FaturaHatasi(mesaj, 'ag', e, null)
   } finally {
     clearTimeout(timeoutId)
   }

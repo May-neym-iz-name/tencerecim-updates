@@ -1,7 +1,8 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 const { rpc, sec, FaturaHatasi } = require('./bulut')
 
 beforeEach(() => { global.fetch = vi.fn() })
+afterEach(() => { vi.useRealTimers() })
 
 describe('rpc', () => {
   test('başarılı yanıtta gövdeyi döndürür', async () => {
@@ -59,6 +60,13 @@ describe('rpc', () => {
   test('jwt yoksa oturum hatasını atar', async () => {
     await expect(rpc('deneme', {}, null)).rejects.toMatchObject({ kod: 'oturum' })
   })
+
+  test('AbortError (zaman aşımı) ag olarak sınıflar', async () => {
+    const abortError = new Error('aborted')
+    abortError.name = 'AbortError'
+    global.fetch.mockRejectedValue(abortError)
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'ag' })
+  })
 })
 
 describe('sec', () => {
@@ -79,5 +87,28 @@ describe('sec', () => {
 
   test('jwt yoksa oturum hatasını atar', async () => {
     await expect(sec('tablo', 'select=*', null)).rejects.toMatchObject({ kod: 'oturum' })
+  })
+
+  test('500 durumunu ag olarak sınıflar', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false, status: 500,
+      json: async () => ({ message: 'sunucu hatası' }),
+    })
+    await expect(sec('tablo', 'select=*', 'jwt')).rejects.toMatchObject({ kod: 'ag' })
+  })
+
+  test('gövde ayrıştırılamazsa ag olarak sınıflar', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false, status: 400,
+      json: async () => { throw new Error('invalid json') },
+    })
+    await expect(sec('tablo', 'select=*', 'jwt')).rejects.toMatchObject({ kod: 'ag' })
+  })
+
+  test('AbortError (zaman aşımı) ag olarak sınıflar', async () => {
+    const abortError = new Error('aborted')
+    abortError.name = 'AbortError'
+    global.fetch.mockRejectedValue(abortError)
+    await expect(sec('tablo', 'select=*', 'jwt')).rejects.toMatchObject({ kod: 'ag' })
   })
 })
