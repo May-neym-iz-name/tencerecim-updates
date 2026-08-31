@@ -342,12 +342,24 @@ stok işlemleri etkilenmez. Bilinçli taviz: yanlış olmaktansa yapılamaz olma
 
 ### Senkron kapsamı
 
-- Senkrona **girer**: `kesilen_faturalar`, `kesilen_fatura_kalemleri`, `fatura_stok`,
+⚠️ Mevcut senkron motoru (`senk-veri.js`) **son-yazan-kazanır upsert** yapar. Fatura
+tabloları bu motora normal şekilde eklenirse, bir PC'nin bayat yerel kopyası
+Supabase'deki doğru bakiyeyi **ezebilir** — mükerrer fatura engelinin altını oyar.
+
+Bu yüzden fatura tabloları **çift yönlü senkrona girmez**:
+
+- **Yalnız-çekme aynası** (pull-only; yerelden ASLA push edilmez):
+  `kesilen_faturalar`, `kesilen_fatura_kalemleri`, `fatura_stok`,
   `fatura_stok_hareketler`, `alis_faturalari`, `alis_fatura_kalemleri`
-- Senkron **dışında**: `trendyol_siparisler`, `trendyol_siparis_kalemleri`
+  → Yerel kopya sadece listeleri hızlı açmak için. Tüm **yazma** işlemleri
+  doğrudan Supabase REST/RPC ile yapılır (`oturum-canli.js`'teki fetch deseni),
+  senkron kuyruğu üzerinden değil.
+- Senkron **tamamen dışında**: `trendyol_siparisler`, `trendyol_siparis_kalemleri`
   (operasyonel + `goruldu` PC bazlı olmalı)
 
-`senk-sema.js`'te bu ayrım açıkça yazılır.
+`senk-sema.js`'te bu ayrım açıkça yazılır; yalnız-çekme tabloları için
+`yalnizCekme: true` bayrağı eklenir ve `senk-veri.js` bu bayraklı tabloları
+`degisenler` (push) toplamasına dahil etmez.
 
 ## Modül yapısı
 
