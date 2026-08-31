@@ -87,11 +87,20 @@ const dogrulaHam = olusturDogrulayici({
   simdi: () => Date.now(),
 })
 
-// Doğrulanmış oturumun ham access_token'ı — SADECE main process içinde,
-// bellekte tutulur (diske yazılmaz, IPC ile dışarı verilmez). Fatura modülü
-// gibi bulut çağrısı yapan modüller renderer'dan JWT PARAMETRESİ ALAMAZ
-// (ele geçirilmiş bir renderer istediği kimliği taklit edebilirdi); bunun
-// yerine main'in kendi doğruladığı jetonu buradan okur.
+// dogrula(token) BAŞARILI döndüğünde saklanan ham access_token'ı — SADECE main
+// process içinde, bellekte tutulur (diske yazılmaz, IPC ile dışarı verilmez).
+// Fatura modülü gibi bulut çağrısı yapan modüller renderer'dan JWT PARAMETRESİ
+// ALAMAZ (ele geçirilmiş bir renderer istediği kimliği taklit edebilirdi);
+// bunun yerine main'in kendi doğruladığı jetonu buradan okur.
+//
+// DİKKAT: "başarılı" burada oturum-dogrula.js'in ÇEVRİMDIŞI önbellek yolunu da
+// kapsar. O yolda Supabase'e hiç sorulmaz ve JWT'nin İMZASI doğrulanmaz —
+// yalnızca önbellekteki kullanıcı kimliğiyle eşleştiği kontrol edilir
+// (bkz. oturum-dogrula.js:94-111, jwtSub). Yani ağ kesikken buraya yazılan
+// token, Supabase tarafından hiç doğrulanmamış olabilir. Güvenlik açığı
+// değildir (main bu token'la buluta gittiğinde Supabase yine kendi
+// doğrulamasını yapıp geçersizse 401 döner) ama "doğrulanmış" sözcüğü bu
+// nüansı gizlememeli.
 let aktifToken = null
 
 async function dogrula(token) {

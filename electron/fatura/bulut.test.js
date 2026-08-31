@@ -61,6 +61,17 @@ describe('rpc', () => {
     await expect(rpc('deneme', {}, null)).rejects.toMatchObject({ kod: 'oturum' })
   })
 
+  test('401 (süresi dolmuş jeton) oturum olarak sınıflanır ve mesaj Türkçedir', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false, status: 401,
+      json: async () => ({ message: 'JWT expired' }),
+    })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({
+      kod: 'oturum',
+      message: 'Oturumunuz sona erdi, lütfen tekrar giriş yapın',
+    })
+  })
+
   test('AbortError (zaman aşımı) ag olarak sınıflar', async () => {
     const abortError = new Error('aborted')
     abortError.name = 'AbortError'

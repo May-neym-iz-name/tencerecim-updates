@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-const { durumBirlestir } = require('./fatura-stok')
+const { _durumBirlestir: durumBirlestir } = require('./fatura-stok')
 
 // urunler: yerel SQLite'tan gelen satırlar (gercek_miktar tüm lokasyonların toplamı)
 const URUNLER = [
@@ -37,5 +37,16 @@ describe('durumBirlestir', () => {
   test('arama ürün adı, SKU ve barkodda Türkçe duyarlı eşleşir', () => {
     const s = durumBirlestir(URUNLER, [], { arama: 'TENCERE' })
     expect(s.map(x => x.urun_id)).toEqual([1])
+  })
+
+  test('ASCII klavyeyle yazılan arama noktalı/noktasız İ-I farkını aşar', () => {
+    // "LİNES" (noktalı İ) ürününü ASCII "lines" (noktasız I) araması bulmalı —
+    // ham toLocaleLowerCase('tr') bunu bulamazdı (tr-arama.js'in tarif ettiği tuzak).
+    const urunler = [
+      { urun_id: 10, urun_adi: 'LİNES Tencere', sku: 'TNC.LNS.00001', barkod: '111', senk_id: 'u10', gercek_miktar: 1 },
+      { urun_id: 11, urun_adi: 'LAVA Tencere', sku: 'TNC.LAV.00099', barkod: '222', senk_id: 'u11', gercek_miktar: 1 },
+    ]
+    const s = durumBirlestir(urunler, [], { arama: 'lines' })
+    expect(s.map(x => x.urun_id)).toEqual([10])
   })
 })

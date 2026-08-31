@@ -34,3 +34,63 @@ describe('Supabase sabit paritesi', () => {
     expect(metin).not.toMatch(/service_role/)
   })
 })
+
+// --- dogrula/aktifJwt/_aktifTokenTemizle -----------------------------------
+//
+// oturum-canli.js gerçek doğrulamayı './oturum-dogrula'nın olusturDogrulayici()
+// çıktısına devreder (ağ + safeStorage burada gizli). O yüzden gerçek ağ/Electron
+// olmadan davranışı sınamak için './oturum-dogrula' modülünü require.cache'e
+// önceden yerleştiriyoruz — aynı desen electron/fatura/okuma.test.js'te de var
+// (vi.mock CJS destructure ile çalışmıyor, cache ön-kurulumu çalışıyor).
+//
+// KRİTİK güvenlik davranışı: başarısız doğrulamadan sonra aktifJwt() token'ı
+// SIZDIRMAMALI — main'in bulut çağrıları o token'ı fatura API'sine gönderir.
+
+let dogrulaHamSonuc = null // bir sonraki dogrulaHam(token) çağrısının döneceği değer
+
+const dogrulaDosyaYolu = require.resolve('./oturum-dogrula')
+require.cache[dogrulaDosyaYolu] = {
+  id: dogrulaDosyaYolu,
+  filename: dogrulaDosyaYolu,
+  loaded: true,
+  exports: {
+    olusturDogrulayici: () => async () => dogrulaHamSonuc,
+    jwtSub: () => null,
+    ONBELLEK_OMRU_MS: 0,
+  },
+}
+
+const oturumCanli = require('./oturum-canli')
+
+describe('dogrula / aktifJwt / _aktifTokenTemizle', () => {
+  it('başarılı doğrulamadan sonra aktifJwt() token\'ı döndürür', async () => {
+    dogrulaHamSonuc = { profil: { aktif: true, rol: 'personel' }, uid: 'u1', kaynak: 'supabase' }
+    await oturumCanli.dogrula('gecerli-jwt')
+    expect(oturumCanli.aktifJwt()).toBe('gecerli-jwt')
+  })
+
+  it('başarısız doğrulamadan sonra aktifJwt() null döndürür (güvenlik davranışı)', async () => {
+    dogrulaHamSonuc = null
+    await oturumCanli.dogrula('gecersiz-jwt')
+    expect(oturumCanli.aktifJwt()).toBeNull()
+  })
+
+  it('önce başarılı sonra başarısız doğrulama: eski token bellekte kalmaz', async () => {
+    dogrulaHamSonuc = { profil: { aktif: true, rol: 'personel' }, uid: 'u1', kaynak: 'supabase' }
+    await oturumCanli.dogrula('eski-jwt')
+    expect(oturumCanli.aktifJwt()).toBe('eski-jwt')
+
+    dogrulaHamSonuc = null
+    await oturumCanli.dogrula('bozuk-jwt')
+    expect(oturumCanli.aktifJwt()).toBeNull()
+  })
+
+  it('_aktifTokenTemizle() sonrası aktifJwt() null döner', async () => {
+    dogrulaHamSonuc = { profil: { aktif: true, rol: 'personel' }, uid: 'u1', kaynak: 'supabase' }
+    await oturumCanli.dogrula('cikis-oncesi-jwt')
+    expect(oturumCanli.aktifJwt()).toBe('cikis-oncesi-jwt')
+
+    oturumCanli._aktifTokenTemizle()
+    expect(oturumCanli.aktifJwt()).toBeNull()
+  })
+})

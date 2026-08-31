@@ -1,17 +1,18 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const okuma = require('../fatura/okuma')
+const { eslesirMi } = require('./tr-arama')
 
 // Fatura stoğu Supabase'de (asıl nüsha), ürün + gerçek stok yerel SQLite'ta.
 // Birleştirme burada, JS tarafında yapılır. Bkz. plan Ruling-5.
 
-// Saf birleştirme — test edilebilir olsun diye IO'dan ayrıldı.
+// Saf birleştirme — test edilebilir olsun diye IO'dan ayrıldı. `_` önekli dışa
+// aktarılır: main.js modüldeki `_` ile başlamayan HER anahtarı otomatik IPC
+// kanalı olarak kaydediyor (bkz. main.js:504-506), bu saf fonksiyon renderer'a
+// AÇILMAMALI.
 function durumBirlestir(urunler, faturaStokSatirlari, { arama, sadece_eksik } = {}) {
   const havuz = new Map()
   for (const r of faturaStokSatirlari || []) havuz.set(r.urun_senk_id, Number(r.miktar) || 0)
-
-  const kucult = (m) => String(m || '').toLocaleLowerCase('tr')
-  const aranan = kucult(arama)
 
   return (urunler || [])
     .map(u => {
@@ -20,8 +21,10 @@ function durumBirlestir(urunler, faturaStokSatirlari, { arama, sadece_eksik } = 
       return { ...u, fatura_miktar, gercek_miktar, fark: fatura_miktar - gercek_miktar }
     })
     .filter(s => !sadece_eksik || s.fark < 0)
-    .filter(s => !aranan ||
-      kucult([s.urun_adi, s.sku, s.barkod].filter(Boolean).join(' ')).includes(aranan))
+    // Ortak Türkçe-duyarlı arama modülü kullanılır (bkz. tr-arama.js) — ham
+    // toLocaleLowerCase('tr') "LINES" (ASCII I) yazan kullanıcının "LİNES"
+    // ürününü bulamamasına yol açardı.
+    .filter(s => eslesirMi([s.urun_adi, s.sku, s.barkod].filter(Boolean).join(' '), arama))
 }
 
 // Ana süreçteki aktif oturumun JWT'si. Renderer'dan ASLA alınmaz.
@@ -41,7 +44,7 @@ function yerelUrunler() {
 }
 
 module.exports = {
-  durumBirlestir,
+  _durumBirlestir: durumBirlestir,
 
   // Yetki kontrolü BİLEREK yok: sipariş ekranındaki "fatura stoğu yok" kilidinin
   // sebebini, fatura yetkisi olmayan kasiyer de görebilmeli.

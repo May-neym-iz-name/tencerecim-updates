@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { authApi } from '../api/ipc'
 import { yetkiVar, lokasyonErisim, erisilebilirLokasyonlar } from './izinler'
@@ -60,6 +60,29 @@ export function AuthProvider({ children }) {
     await authApi.profilTemizle().catch(() => {})
     setUser(null)
     setProfil(null)
+  }, [])
+
+  // Supabase access_token'ı ~1 saatte bir kendini tazeliyor (supabase-js
+  // otomatik yapar) ama bu SADECE renderer'daki client'ı günceller — main
+  // process'teki aktifJwt() haberdar olmaz. Haberdar edilmezse main'in
+  // bellekteki jetonu ~1 saat sonra süresi dolar ve Fatura Stoğu gibi bulut
+  // çağrısı yapan ekranlar "Oturumunuz sona erdi" hatası verir, kullanıcının
+  // kurtarma yolu olmaz (çıkış yapıp tekrar girmek dışında). Bu dinleyici
+  // TOKEN_REFRESHED (ve emniyet için SIGNED_IN) olayında girişteki aynı
+  // profilAyarla çağrısını main'e tekrar yapar — girişteki akışın yerine
+  // GEÇMEZ, ona ek çalışır. SIGNED_OUT'a dokunmuyoruz: cikis() zaten
+  // profilTemizle üzerinden main'deki token'ı da temizliyor.
+  useEffect(() => {
+    const { data: dinleyici } = supabase.auth.onAuthStateChange((olay, session) => {
+      if (olay !== 'TOKEN_REFRESHED' && olay !== 'SIGNED_IN') return
+      if (!session?.access_token) return
+      authApi.profilAyarla(session.access_token).catch(() => {
+        // Sessizce yut: bir sonraki hassas işlemde "yetkiniz yok" ya da
+        // "oturum bulunamadı" olarak zaten yüzeye çıkar, kullanıcıyı burada
+        // ayrıca uyarmak (girişten bağımsız arka plan olayı) gürültü olur.
+      })
+    })
+    return () => dinleyici?.subscription?.unsubscribe()
   }, [])
 
   // Bu üç fonksiyon Satis.jsx/App.jsx gibi yerlerde useEffect/useCallback BAĞIMLILIĞI olarak

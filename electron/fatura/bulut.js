@@ -25,15 +25,25 @@ function basliklar(jwt) {
 }
 
 // Postgres hata kodunu bizim sınıfımıza çevirir.
-// Sınıflandırma sırası: cakisma > yetersiz_stok > ag (belirsiz) > bilinmeyen
+// Sınıflandırma sırası: cakisma > yetersiz_stok > oturum > ag (belirsiz) > bilinmeyen
 function hataSinifla(govde, status) {
   if (govde?.code === '23505') return 'cakisma'
   if (typeof govde?.message === 'string' && (govde.message.includes('YETERSIZ_STOK') || govde.message.includes('SATIR_TOPLAM_UYUSMUYOR'))) {
     return 'yetersiz_stok'
   }
+  // Jeton süresi dolmuş/geçersiz — main'in kendi jetonu tazelemesi lazım, kullanıcı
+  // ham "JWT expired" görmemeli (bkz. task-5 incelemesi bulgu 6).
+  if (status === 401) return 'oturum'
   // 5xx veya gövde ayrıştırılamadı → sonuç belirsiz, telafi yapma
   if (status >= 500 || govde == null) return 'ag'
   return 'bilinmeyen'
+}
+
+// Kullanıcıya gösterilecek Türkçe mesaj. 'oturum' özel karşılanır: ham sunucu
+// metni ("JWT expired") yerine anlaşılır bir yönlendirme gösterilir.
+function mesajUret(kod, mesajHam) {
+  if (kod === 'oturum') return 'Oturumunuz sona erdi, lütfen tekrar giriş yapın'
+  return 'Sunucu hatası: ' + mesajHam
 }
 
 async function rpc(ad, govde, jwt) {
@@ -56,7 +66,8 @@ async function rpc(ad, govde, jwt) {
   const veri = await yanit.json().catch(() => null)
   if (!yanit.ok) {
     const mesajHam = veri?.message || 'Sunucu hatası'
-    throw new FaturaHatasi('Sunucu hatası: ' + mesajHam, hataSinifla(veri, yanit.status), veri, yanit.status)
+    const kod = hataSinifla(veri, yanit.status)
+    throw new FaturaHatasi(mesajUret(kod, mesajHam), kod, veri, yanit.status)
   }
   return veri
 }
@@ -86,7 +97,8 @@ async function sec(tablo, sorgu, jwt) {
   const veri = await yanit.json().catch(() => null)
   if (!yanit.ok) {
     const mesajHam = veri?.message || 'Sunucu hatası'
-    throw new FaturaHatasi('Sunucu hatası: ' + mesajHam, hataSinifla(veri, yanit.status), veri, yanit.status)
+    const kod = hataSinifla(veri, yanit.status)
+    throw new FaturaHatasi(mesajUret(kod, mesajHam), kod, veri, yanit.status)
   }
   return veri
 }
