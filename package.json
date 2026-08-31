@@ -12,32 +12,39 @@
     "electron": "electron .",
     "vite": "vite",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "guvenlik:kur": "node scripts/guvenlik-kur.js",
+    "guvenlik:tara": "node scripts/sizinti-tara.js --tumu",
+    "guvenlik:denetle": "node scripts/sizinti-tara.js --tumu && npm audit --omit=dev --audit-level=high",
+    "postinstall": "node scripts/guvenlik-kur.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.108.2",
-    "better-sqlite3": "^9.4.3",
-    "electron-updater": "^6.1.8",
-    "jsbarcode": "^3.12.3",
-    "recharts": "^3.9.0",
-    "xlsx": "^0.18.5"
+    "@supabase/supabase-js": "2.108.2",
+    "better-sqlite3": "9.6.0",
+    "electron-updater": "6.8.9",
+    "jsbarcode": "3.12.3",
+    "recharts": "3.9.0",
+    "xlsx": "0.18.5"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "autoprefixer": "^10.4.20",
-    "concurrently": "^9.0.1",
-    "electron": "^22.3.27",
+    "@vitejs/plugin-react": "4.7.0",
+    "autoprefixer": "10.5.0",
+    "concurrently": "9.2.3",
+    "electron": "22.3.27",
     "electron-builder": "24.13.1",
-    "postcss": "^8.4.47",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-hot-toast": "^2.4.1",
-    "react-router-dom": "^6.26.2",
-    "tailwindcss": "^3.4.12",
-    "vite": "^5.4.8",
-    "vite-plugin-electron": "^0.28.8",
-    "vitest": "^4.1.9",
-    "wait-on": "^8.0.1"
+    "postcss": "8.5.15",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-hot-toast": "2.6.0",
+    "react-router-dom": "6.30.4",
+    "tailwindcss": "3.4.19",
+    "vite": "5.4.21",
+    "vite-plugin-electron": "0.28.8",
+    "vitest": "4.1.9",
+    "wait-on": "8.0.5"
+  },
+  "overrides": {
+    "js-yaml": "4.3.2"
   },
   "build": {
     "appId": "com.tencerecim.magaza",

@@ -53,3 +53,6 @@ UPS KARGO ENTEGRASYONU/
 
 # Reklam kampanyasi calisma dosyalari (butce/hedefleme/token notlari) — ticari, repoya girmez
 REKLAM-KAMPANYALARI/
+
+# Yayin gunlugu (yerel)
+publish.log

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Commit'ten once sizinti taramasi. Repo PUBLIC: buraya giren her sey
+# internete acilir ve gecmisten silmek zordur.
+#
+# Bilerek gecmek icin: git commit --no-verify
+
+if ! command -v node >/dev/null 2>&1; then
+  echo ""
+  echo "  [sizinti-tara] node bulunamadi — guvenlik taramasi YAPILAMADI."
+  echo "  Node.js kurun, ya da bilerek gecmek icin: git commit --no-verify"
+  echo ""
+  exit 1
+fi
+
+# -z: dosya adlarinda bosluk/Turkce karakter olsa da guvenli aktarim.
+# --diff-filter=ACMR: silinen dosyalari tarama (icerigi zaten yok).
+git diff --cached --name-only --diff-filter=ACMR -z | node scripts/sizinti-tara.js --stdin
