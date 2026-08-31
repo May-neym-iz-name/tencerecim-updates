@@ -67,6 +67,29 @@ describe('rpc', () => {
     global.fetch.mockRejectedValue(abortError)
     await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'ag' })
   })
+
+  test('fetch çağrısına signal geçiriliyor', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true, status: 200, json: async () => ({}),
+    })
+    await rpc('deneme', {}, 'jwt')
+    const init = global.fetch.mock.calls[0][1]
+    expect(init.signal).toBeDefined()
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    expect(init.signal.aborted).toBe(false)
+  })
+
+  test('timeout dolunca signal abort edilir', async () => {
+    vi.useFakeTimers()
+    let yakalananSignal
+    global.fetch.mockImplementation((url, init) => {
+      yakalananSignal = init.signal
+      return new Promise(() => {})  // asla çözülmez
+    })
+    const promise = rpc('deneme', {}, 'jwt')
+    vi.advanceTimersByTime(20000)
+    expect(yakalananSignal.aborted).toBe(true)
+  })
 })
 
 describe('sec', () => {
@@ -110,5 +133,28 @@ describe('sec', () => {
     abortError.name = 'AbortError'
     global.fetch.mockRejectedValue(abortError)
     await expect(sec('tablo', 'select=*', 'jwt')).rejects.toMatchObject({ kod: 'ag' })
+  })
+
+  test('fetch çağrısına signal geçiriliyor', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true, status: 200, json: async () => [],
+    })
+    await sec('tablo', 'select=*', 'jwt')
+    const init = global.fetch.mock.calls[0][1]
+    expect(init.signal).toBeDefined()
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+    expect(init.signal.aborted).toBe(false)
+  })
+
+  test('timeout dolunca signal abort edilir', async () => {
+    vi.useFakeTimers()
+    let yakalananSignal
+    global.fetch.mockImplementation((url, init) => {
+      yakalananSignal = init.signal
+      return new Promise(() => {})  // asla çözülmez
+    })
+    const promise = sec('tablo', 'select=*', 'jwt')
+    vi.advanceTimersByTime(20000)
+    expect(yakalananSignal.aborted).toBe(true)
   })
 })
