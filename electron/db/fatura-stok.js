@@ -88,4 +88,21 @@ module.exports = {
     yetkiKontrol('fatura_stok_goruntule')
     return okuma.alisKalemGetir(alis_fatura_senk_id, jwtAl())
   },
+
+  'alis-fatura:kaydet': async (veri) => {
+    yetkiKontrol('fatura_stok_duzenle')
+    const alis = require('../fatura/alis')
+    // urun_id → senk_id eşlemesi (bulut tarafı senk_id ile çalışır)
+    const idler = {}
+    for (const k of veri.kalemler) {
+      const r = getDb().prepare('SELECT senk_id FROM urunler WHERE id = ?').get(k.urun_id)
+      if (!r?.senk_id) throw new Error(`Ürün buluta henüz eşitlenmemiş: ${k.urun_adi}`)
+      idler[k.urun_id] = r.senk_id
+    }
+    const ted = veri.tedarikci_id
+      ? getDb().prepare('SELECT senk_id FROM tedarikciler WHERE id = ?').get(veri.tedarikci_id)
+      : null
+    return alis.kaydet({ ...veri, tedarikci_senk_id: ted?.senk_id || null, urunSenkIdler: idler },
+                       jwtAl())
+  },
 }
