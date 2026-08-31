@@ -79,6 +79,41 @@ describe('rpc', () => {
     await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'dogrulama' })
   })
 
+  // Task 2 code review B/5: 40P01 (deadlock) Postgres tarafından KESİN geri
+  // alınmıştır — 'ag' (belirsiz) sanılırsa gereksiz insan kontrolüne düşer.
+  test('40P01 (deadlock) kodunu yeniden_dene olarak sınıflar ve Türkçe mesaj verir', async () => {
+    sahteIstek({ status: 409, gövdeMetni: JSON.stringify({ code: '40P01', message: 'deadlock detected' }) })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({
+      kod: 'yeniden_dene',
+      message: 'İşlem çakıştı, lütfen tekrar deneyin.',
+    })
+  })
+
+  test('40001 (serileştirme çakışması) kodunu yeniden_dene olarak sınıflar', async () => {
+    sahteIstek({ status: 409, gövdeMetni: JSON.stringify({ code: '40001', message: 'could not serialize access' }) })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'yeniden_dene' })
+  })
+
+  test('23514 (CHECK ihlali) kodunu dogrulama olarak sınıflar', async () => {
+    sahteIstek({ status: 400, gövdeMetni: JSON.stringify({ code: '23514', message: 'check constraint violated' }) })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'dogrulama' })
+  })
+
+  test('KALEM_YOK mesajını dogrulama olarak sınıflar', async () => {
+    sahteIstek({ status: 400, gövdeMetni: JSON.stringify({ message: 'KALEM_YOK: fatura kalemi olmadan...' }) })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'dogrulama' })
+  })
+
+  test('GECERSIZ_MIKTAR mesajını dogrulama olarak sınıflar', async () => {
+    sahteIstek({ status: 400, gövdeMetni: JSON.stringify({ message: 'GECERSIZ_MIKTAR: urun (-3)' }) })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'dogrulama' })
+  })
+
+  test('TELAFI_STOK_SATIRI_YOK mesajını dogrulama olarak sınıflar', async () => {
+    sahteIstek({ status: 400, gövdeMetni: JSON.stringify({ message: 'TELAFI_STOK_SATIRI_YOK: urun-id' }) })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'dogrulama' })
+  })
+
   test('jwt yoksa oturum hatasını atar', async () => {
     await expect(rpc('deneme', {}, null)).rejects.toMatchObject({ kod: 'oturum' })
   })

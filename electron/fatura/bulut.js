@@ -14,7 +14,7 @@ class FaturaHatasi extends Error {
   constructor(mesaj, kod, ayrinti, status) {
     super(mesaj)
     this.name = 'FaturaHatasi'
-    this.kod = kod            // 'cakisma' | 'yetersiz_stok' | 'dogrulama' | 'ag' | 'bilinmeyen' | 'oturum'
+    this.kod = kod            // 'cakisma' | 'yetersiz_stok' | 'dogrulama' | 'yeniden_dene' | 'ag' | 'bilinmeyen' | 'oturum'
     this.ayrinti = ayrinti
     this.status = status
   }
@@ -32,15 +32,28 @@ function basliklar(jwt, postMu) {
 }
 
 // Postgres hata kodunu bizim sınıfımıza çevirir.
-// Sınıflandırma sırası: cakisma > yetersiz_stok/dogrulama > oturum > ag (belirsiz) > bilinmeyen
+// Sınıflandırma sırası: cakisma > yeniden_dene > yetersiz_stok/dogrulama > oturum > ag (belirsiz) > bilinmeyen
 function hataSinifla(govde, status) {
   if (govde?.code === '23505') return 'cakisma'
+  // 40P01 (deadlock) ve 40001 (serileştirme çakışması): işlem Postgres
+  // tarafından KESİN olarak geri alındı — 'ag' ile karıştırılırsa "sonuç
+  // belirsiz" sanılıp gereksiz insan kontrolüne düşer. Aslında güvenle
+  // yeniden denenebilir.
+  if (govde?.code === '40P01' || govde?.code === '40001') return 'yeniden_dene'
+  // 23514: CHECK kısıtı ihlali (ör. durum makinesi, miktar/fiyat aralığı) — bir
+  // veri doğrulama hatasıdır, sunucu/ağ sorunu değil.
+  if (govde?.code === '23514') return 'dogrulama'
   // İki ayrı iş hatası — aynı koda düşürülürse tüketici ham Postgres metnini
   // yeniden ayrıştırmak zorunda kalır (kod alanının varlık sebebini iptal eder).
   if (typeof govde?.message === 'string' && govde.message.includes('YETERSIZ_STOK')) {
     return 'yetersiz_stok'
   }
-  if (typeof govde?.message === 'string' && govde.message.includes('SATIR_TOPLAM_UYUSMUYOR')) {
+  if (typeof govde?.message === 'string' && (
+    govde.message.includes('SATIR_TOPLAM_UYUSMUYOR') ||
+    govde.message.includes('KALEM_YOK') ||
+    govde.message.includes('GECERSIZ_MIKTAR') ||
+    govde.message.includes('TELAFI_STOK_SATIRI_YOK')
+  )) {
     return 'dogrulama'
   }
   // Jeton süresi dolmuş/geçersiz — main'in kendi jetonu tazelemesi lazım, kullanıcı
@@ -55,6 +68,7 @@ function hataSinifla(govde, status) {
 // metni ("JWT expired") yerine anlaşılır bir yönlendirme gösterilir.
 function mesajUret(kod, mesajHam) {
   if (kod === 'oturum') return 'Oturumunuz sona erdi, lütfen tekrar giriş yapın'
+  if (kod === 'yeniden_dene') return 'İşlem çakıştı, lütfen tekrar deneyin.'
   return 'Sunucu hatası: ' + mesajHam
 }
 

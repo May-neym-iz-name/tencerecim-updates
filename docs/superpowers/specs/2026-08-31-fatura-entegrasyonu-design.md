@@ -327,7 +327,7 @@ yapılır. Sonuç: her PC fatura kesebilir, tek-PC kısıtına gerek yoktur.
 
 | Sonuç | `kesilen_faturalar.durum` | Fatura stoğu |
 |---|---|---|
-| Başarılı (`error` boş) | `gonderildi` → `tamam` | Düşük kalır |
+| Başarılı (`error` boş) | `saglayici_ok` → ... → `tamam` | Düşük kalır |
 | İş hatası (`error` dolu) | `hata` | **İade edilir** (telafi hareketi) |
 | Ağ hatası / yanıt yok | **`belirsiz`** | **İade EDİLMEZ** |
 | Trendyol `409` | başarı sayılır | Düşük kalır |
