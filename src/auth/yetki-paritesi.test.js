@@ -109,3 +109,25 @@ describe('ön sipariş yetkisi', () => {
     expect(yetkiVar(p, 'on_siparis_yap')).toBe(true)
   })
 })
+
+describe('fatura yetkileri', () => {
+  test('personel fatura stoğunu görüntüleyebilir ama düzenleyemez/kesemez', () => {
+    const p = { rol: 'personel', aktif: true, izinler: {} }
+    expect(yetkiVar(p, 'fatura_stok_goruntule')).toBe(true)
+    expect(yetkiVar(p, 'fatura_stok_duzenle')).toBe(false)
+    expect(yetkiVar(p, 'fatura_kes')).toBe(false)
+  })
+
+  test('yönetici üç fatura yetkisini de alır', () => {
+    const p = { rol: 'yonetici', aktif: true, izinler: {} }
+    expect(yetkiVar(p, 'fatura_stok_goruntule')).toBe(true)
+    expect(yetkiVar(p, 'fatura_stok_duzenle')).toBe(true)
+    expect(yetkiVar(p, 'fatura_kes')).toBe(true)
+  })
+
+  test('override ile personele kesme ve düzenleme açılabilir', () => {
+    const p = { rol: 'personel', aktif: true, izinler: { fatura_stok_duzenle: true, fatura_kes: true } }
+    expect(yetkiVar(p, 'fatura_stok_duzenle')).toBe(true)
+    expect(yetkiVar(p, 'fatura_kes')).toBe(true)
+  })
+})
