@@ -27,6 +27,10 @@
 -- politikasında veya çağıranın oturumunda, fonksiyonun güvenlik modelinde değil.
 -- ============================================================
 
+-- kesilen_faturalar denetim izi: fatura_stok_hareketler.kullanici zaten yazılıyor,
+-- başlıkta da tutulması için kolon eklenir (12_fatura_semasi.sql'de yoktu).
+alter table kesilen_faturalar add column if not exists kullanici text;
+
 create or replace function fatura_kes_basla(
   p_kanal text,
   p_kanal_siparis_id text,
@@ -59,6 +63,16 @@ begin
   insert into kesilen_faturalar (kanal, kanal_siparis_id, durum, kullanici)
   values (p_kanal, p_kanal_siparis_id, 'kuyrukta', p_kullanici)
   returning senk_id into v_fatura_id;
+
+  -- 1.b) Her kalemin miktarı TOPLAMADAN ÖNCE kontrol edilir: +5 ve -2 gibi
+  --      iki kalem toplamda 3'e düşüp aşağıdaki toplam-bazlı guard'ı atlatabilir
+  --      (2. geçişteki CHECK kısıtı bunu 23514 ile yakalar ama mesaj bulanıklaşır).
+  if exists (
+    select 1 from jsonb_array_elements(p_kalemler) e
+     where (e->>'miktar')::int <= 0
+  ) then
+    raise exception 'GECERSIZ_MIKTAR: kalem miktari sifir veya negatif olamaz';
+  end if;
 
   -- 2) GEÇİŞ 1: ürün bazında topla + DETERMİNİSTİK SIRADA (urun_senk_id) düş.
   --    Sıralama, eşzamanlı iki fatura kesme çağrısının farklı sırada kilit
@@ -103,7 +117,10 @@ begin
     -- fiyatı bileşenlere dağıtılırken kuruş artığı KASTEN oluşur
     -- (bkz. satis-hesapla.js). Toleransı miktarla ölçekle.
     v_beklenen := round((v_kalem->>'miktar')::numeric * (v_kalem->>'birim_fiyat')::numeric, 2);
-    v_fark_siniri := 0.01 * (v_kalem->>'miktar')::numeric;
+    -- Taban 0,01 TL (tek birimlik yuvarlama payı) + miktarla ölçeklenen
+    -- 0,005 TL/adet (meşru birim fiyat yuvarlaması). Önceki 0.01×miktar
+    -- tavansızdı: miktar=1000 için 10 TL'ye kadar sapmayı geçirirdi.
+    v_fark_siniri := greatest(0.01, 0.005 * (v_kalem->>'miktar')::numeric);
     if abs(v_beklenen - (v_kalem->>'satir_toplam')::numeric) > v_fark_siniri then
       raise exception 'SATIR_TOPLAM_UYUSMUYOR: % (beklenen ~%, gelen %)',
         coalesce(v_kalem->>'urun_adi', v_kalem->>'urun_senk_id'), v_beklenen, v_kalem->>'satir_toplam';

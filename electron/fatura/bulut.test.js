@@ -94,6 +94,14 @@ describe('rpc', () => {
     await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'yeniden_dene' })
   })
 
+  // Bulgunun kök sebebi tam olarak buydu: PostgREST 40P01'i 500 ile de
+  // döndürebilir; kod bazlı dal `status >= 500` kontrolünden ÖNCE olmazsa
+  // bu senaryo yanlışlıkla 'ag' (belirsiz) sınıfına düşer.
+  test('500 durumunda gelen 40P01 (deadlock) yine yeniden_dene sınıflanır, ag DEĞİL', async () => {
+    sahteIstek({ status: 500, gövdeMetni: JSON.stringify({ code: '40P01', message: 'deadlock detected' }) })
+    await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'yeniden_dene' })
+  })
+
   test('23514 (CHECK ihlali) kodunu dogrulama olarak sınıflar', async () => {
     sahteIstek({ status: 400, gövdeMetni: JSON.stringify({ code: '23514', message: 'check constraint violated' }) })
     await expect(rpc('deneme', {}, 'jwt')).rejects.toMatchObject({ kod: 'dogrulama' })
