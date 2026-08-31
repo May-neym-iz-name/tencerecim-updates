@@ -1,17 +1,19 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import toast from 'react-hot-toast'
-import { faturaStokApi } from '../api/ipc'
+import { faturaStokApi, urunlerApi, tedarikciApi } from '../api/ipc'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { usePersistentState } from '../hooks/usePersistentState'
 import { eslesirMi } from '../utils/arama'
+import { useAuth } from '../auth/AuthContext'
+import AlisFaturaFormu from '../components/AlisFaturaFormu'
 
 // Fatura stoğu: muhasebesel stok (tek havuz, lokasyon YOK). Gerçek stoktan
 // AYRIDIR ve ayrı olması normaldir — mal irsaliyeyle gelir, faturası sonra gelir.
 // Tasarım: docs/superpowers/specs/2026-08-31-fatura-entegrasyonu-design.md
 //
-// Bu görevde YALNIZ "Durum" görünümü canlıdır — "Alış Faturaları" ve
-// "Hareketler" sekmeleri sonraki adımlarda (Task 8/9) doldurulacak.
+// "Durum" ve "Alış Faturaları" (Task 8) görünümleri canlıdır — "Hareketler"
+// sekmesi sonraki adımda (Task 9) doldurulacak.
 //
 // 🔴 fatura-stok:durum verisi AĞ ÜZERİNDEN (Supabase) geliyor — yerel SQLite
 // değil. Bu yüzden: (1) yavaş olabilir → yükleniyor göstergesi şart,
@@ -25,6 +27,9 @@ import { eslesirMi } from '../utils/arama'
 // bu yaklaşım seçildi çünkü zaten elimizdeki listeyi filtrelemek anlık ve
 // ağ turu gerektirmiyor.
 export default function FaturaStogu() {
+  const { yetkiVar } = useAuth()
+  const duzenleYetkisi = yetkiVar('fatura_stok_duzenle')
+
   const [sekme, setSekme] = usePersistentState('fatura_stok_sekme', 'durum')
   const [arama, setArama] = usePersistentState('fatura_stok_arama', '')
   const [sadeceEksik, setSadeceEksik] = usePersistentState('fatura_stok_eksik', true)
@@ -32,6 +37,76 @@ export default function FaturaStogu() {
   const [satirlar, setSatirlar] = useState(null) // null = henüz veri gelmedi (yükleniyor/hata ayrımı için)
   const [yukleniyor, setYukleniyor] = useState(false)
   const [hata, setHata] = useState(null)
+
+  // --- Alış Faturaları sekmesi ---
+  const [alisArama, setAlisArama] = usePersistentState('fatura_stok_alis_arama', '')
+  const [alisFaturalar, setAlisFaturalar] = useState(null) // null = henüz veri gelmedi
+  const [alisYukleniyor, setAlisYukleniyor] = useState(false)
+  const [alisHata, setAlisHata] = useState(null)
+  const [acikDetay, setAcikDetay] = useState(null) // açık satırın senk_id'si
+  const [kalemlerMap, setKalemlerMap] = useState({}) // senk_id -> kalemler
+  const [kalemYukleniyor, setKalemYukleniyor] = useState(null) // yüklenen satırın senk_id'si
+
+  const [formAcik, setFormAcik] = useState(false)
+  const [formVeriYukleniyor, setFormVeriYukleniyor] = useState(false)
+  const [urunler, setUrunler] = useState(null)
+  const [tedarikciler, setTedarikciler] = useState(null)
+
+  const alisYukle = useCallback(async () => {
+    setAlisYukleniyor(true)
+    setAlisHata(null)
+    try {
+      const veri = await faturaStokApi.alisListele({})
+      setAlisFaturalar(veri)
+    } catch (e) {
+      setAlisHata(e.message)
+      toast.error(e.message)
+    } finally {
+      setAlisYukleniyor(false)
+    }
+  }, [])
+
+  useEffect(() => { if (sekme === 'alis') alisYukle() }, [alisYukle, sekme])
+
+  const alisFaturalarGorunur = useMemo(() => {
+    if (!alisFaturalar) return []
+    return alisFaturalar.filter(f => eslesirMi([f.fatura_no, f.tedarikci_adi].filter(Boolean).join(' '), alisArama))
+  }, [alisFaturalar, alisArama])
+
+  const { dilim: alisDilim, ...alisSayfalama } = useSayfalama(alisFaturalarGorunur)
+  const alisVeriGeldi = alisFaturalar !== null
+
+  async function detayAc(senkId) {
+    if (acikDetay === senkId) { setAcikDetay(null); return }
+    setAcikDetay(senkId)
+    if (kalemlerMap[senkId]) return
+    setKalemYukleniyor(senkId)
+    try {
+      const kalemler = await faturaStokApi.alisKalemler(senkId)
+      setKalemlerMap(onceki => ({ ...onceki, [senkId]: kalemler }))
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      setKalemYukleniyor(null)
+    }
+  }
+
+  async function formuAc() {
+    setFormVeriYukleniyor(true)
+    try {
+      const [urunSonuc, tedarikciSonuc] = await Promise.all([
+        urunlerApi.listele({ boyut: 0 }),
+        tedarikciApi.listele(),
+      ])
+      setUrunler(urunSonuc.urunler)
+      setTedarikciler(tedarikciSonuc)
+      setFormAcik(true)
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      setFormVeriYukleniyor(false)
+    }
+  }
 
   const yukle = useCallback(async () => {
     setYukleniyor(true)
@@ -141,8 +216,111 @@ export default function FaturaStogu() {
         </>
       )}
 
-      {sekme !== 'durum' && (
+      {sekme === 'alis' && (
+        <>
+          <div className="flex gap-3 items-center mb-3 flex-wrap">
+            <input value={alisArama} onChange={e => setAlisArama(e.target.value)}
+              placeholder="Fatura no veya tedarikçi ara" className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" />
+            <button type="button" onClick={alisYukle} disabled={alisYukleniyor}
+              className="px-3 py-2 rounded-lg text-sm border hover:bg-gray-50 disabled:opacity-50">
+              🔄 Tekrar Dene
+            </button>
+            {duzenleYetkisi && (
+              <button type="button" onClick={formuAc} disabled={formVeriYukleniyor}
+                className="px-3 py-2 rounded-lg text-sm bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                {formVeriYukleniyor ? 'Yükleniyor…' : '➕ Alış Faturası Gir'}
+              </button>
+            )}
+          </div>
+
+          {alisYukleniyor && (
+            <p className="text-center text-gray-400 py-8">Yükleniyor…</p>
+          )}
+
+          {!alisYukleniyor && alisHata && (
+            <div className="text-center py-8">
+              <p className="text-red-600 font-medium mb-1">Veri alınamadı</p>
+              <p className="text-gray-500 text-sm">{alisHata}</p>
+              <button type="button" onClick={alisYukle}
+                className="mt-3 px-4 py-1.5 rounded-lg text-sm border hover:bg-gray-50">
+                Tekrar dene
+              </button>
+            </div>
+          )}
+
+          {!alisYukleniyor && !alisHata && alisVeriGeldi && (
+            <>
+              <table className="w-full text-sm">
+                <thead><tr className="text-left border-b">
+                  <th className="py-2">Fatura No</th><th>Tedarikçi</th>
+                  <th>Tarih</th><th className="text-right">Genel Toplam</th>
+                </tr></thead>
+                <tbody>
+                  {alisDilim.map(f => (
+                    <Fragment key={f.senk_id}>
+                      <tr onClick={() => detayAc(f.senk_id)}
+                        className="border-b cursor-pointer hover:bg-gray-50">
+                        <td className="py-2">{f.fatura_no}</td>
+                        <td className="text-gray-600">{f.tedarikci_adi}</td>
+                        <td className="text-gray-600">{f.fatura_tarihi}</td>
+                        <td className="text-right font-medium">{Number(f.genel_toplam).toFixed(2)} TL</td>
+                      </tr>
+                      {acikDetay === f.senk_id && (
+                        <tr className="bg-gray-50 border-b">
+                          <td colSpan={4} className="p-3">
+                            {kalemYukleniyor === f.senk_id && (
+                              <p className="text-gray-400 text-center py-2">Kalemler yükleniyor…</p>
+                            )}
+                            {kalemYukleniyor !== f.senk_id && (
+                              <table className="w-full text-xs">
+                                <thead><tr className="text-left border-b">
+                                  <th className="py-1">Ürün</th><th className="text-right">Miktar</th>
+                                  <th className="text-right">Birim Fiyat</th><th className="text-right">KDV %</th>
+                                  <th className="text-right">Satır Toplam</th>
+                                </tr></thead>
+                                <tbody>
+                                  {(kalemlerMap[f.senk_id] || []).map(k => (
+                                    <tr key={k.senk_id}>
+                                      <td className="py-1">{k.urun_adi}</td>
+                                      <td className="text-right">{k.miktar}</td>
+                                      <td className="text-right">{Number(k.birim_fiyat).toFixed(2)}</td>
+                                      <td className="text-right">%{k.kdv_orani}</td>
+                                      <td className="text-right">{Number(k.satir_toplam).toFixed(2)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+              {alisDilim.length === 0 && (
+                <p className="text-center text-gray-500 py-8">
+                  {alisArama ? 'Aramayla eşleşen fatura yok.' : 'Henüz alış faturası girilmemiş.'}
+                </p>
+              )}
+              <Sayfalama {...alisSayfalama} />
+            </>
+          )}
+        </>
+      )}
+
+      {sekme === 'hareket' && (
         <p className="text-gray-500 py-4">Bu görünüm sonraki adımda doldurulacak.</p>
+      )}
+
+      {duzenleYetkisi && (
+        <AlisFaturaFormu
+          acik={formAcik}
+          kapat={() => setFormAcik(false)}
+          kaydedildi={alisYukle}
+          urunler={urunler || []}
+          tedarikciler={tedarikciler || []}
+        />
       )}
     </div>
   )
