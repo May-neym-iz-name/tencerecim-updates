@@ -10,6 +10,22 @@ import AranabilirSecici from './AranabilirSecici'
 // içindir. Satır/fatura toplamını gerçekten hesaplayan ve doğrulayan taraf
 // arka uçtur (Supabase RPC 1 kuruştan fazla sapmada faturayı reddeder) —
 // bu yüzden kalemler ham haliyle (miktar, birim_fiyat, kdv_orani) gönderilir.
+//
+// Gösterim hesabı arka ucun sırasıyla BİREBİR aynı olmalı, yoksa kullanıcıya
+// gösterilen tutar kaydedilenden farklı olur: TEK doğru kaynak
+// electron/db/satis-hesapla.js'teki `yuvarla` ve electron/fatura/alis.js'teki
+// kalemleriHesapla() — önce birim fiyat 2 haneye yuvarlanır, satır toplamı
+// O YUVARLANMIŞ değerden hesaplanır (ham/yuvarlanmamış fiyattan DEĞİL).
+function yuvarla(n) {
+  return Math.round(n * 100) / 100
+}
+
+// Bir kalemin satır toplamını arka ucun hesapladığı gibi üretir (bkz. yukarı).
+function satirToplamHesapla(kalem) {
+  const birimFiyat = yuvarla(Number(kalem.birim_fiyat))
+  return yuvarla(Number(kalem.miktar) * birimFiyat)
+}
+
 export default function AlisFaturaFormu({ acik, kapat, kaydedildi, baslangic, urunler, tedarikciler }) {
   const [tedarikciId, setTedarikciId] = useState(baslangic?.tedarikci_id || '')
   const [faturaNo, setFaturaNo] = useState(baslangic?.fatura_no || '')
@@ -38,12 +54,29 @@ export default function AlisFaturaFormu({ acik, kapat, kaydedildi, baslangic, ur
     setKalemler(kalemler.filter(k => k.urun_id !== urunId))
   }
 
-  const genelToplam = kalemler.reduce((t, k) => t + Number(k.miktar) * Number(k.birim_fiyat), 0)
+  const genelToplam = yuvarla(kalemler.reduce((t, k) => t + satirToplamHesapla(k), 0))
 
   async function gonder(e) {
     e.preventDefault()
+    if (kaydediliyor) return // buton disabled olsa da savunma katmanı
     if (!faturaNo.trim()) return toast.error('Fatura numarası zorunlu')
     if (kalemler.length === 0) return toast.error('En az bir kalem eklemelisiniz')
+
+    for (const k of kalemler) {
+      const miktar = Number(k.miktar)
+      const birimFiyat = Number(k.birim_fiyat)
+      const kdvOrani = Number(k.kdv_orani)
+      if (!Number.isInteger(miktar) || miktar < 1) {
+        return toast.error(`${k.urun_adi}: Miktar en az 1 olan tam sayı olmalı`)
+      }
+      if (!Number.isFinite(birimFiyat) || birimFiyat < 0) {
+        return toast.error(`${k.urun_adi}: Birim fiyat 0 veya daha büyük olmalı`)
+      }
+      if (!Number.isFinite(kdvOrani) || kdvOrani < 0 || kdvOrani > 100) {
+        return toast.error(`${k.urun_adi}: KDV oranı 0-100 arasında olmalı`)
+      }
+    }
+
     setKaydediliyor(true)
     try {
       await faturaStokApi.alisKaydet({
@@ -100,13 +133,13 @@ export default function AlisFaturaFormu({ acik, kapat, kaydedildi, baslangic, ur
             {kalemler.map(k => (
               <tr key={k.urun_id} className="border-b">
                 <td className="py-1">{k.urun_adi}</td>
-                <td><input type="number" min="1" value={k.miktar} className="border rounded w-16 px-1"
+                <td><input type="number" min="1" step="1" value={k.miktar} className="border rounded w-16 px-1"
                      onChange={e => kalemGuncelle(k.urun_id, 'miktar', Number(e.target.value))} /></td>
-                <td><input type="number" step="0.01" value={k.birim_fiyat} className="border rounded w-24 px-1"
+                <td><input type="number" min="0" step="0.01" value={k.birim_fiyat} className="border rounded w-24 px-1"
                      onChange={e => kalemGuncelle(k.urun_id, 'birim_fiyat', Number(e.target.value))} /></td>
-                <td><input type="number" value={k.kdv_orani} className="border rounded w-16 px-1"
+                <td><input type="number" min="0" max="100" value={k.kdv_orani} className="border rounded w-16 px-1"
                      onChange={e => kalemGuncelle(k.urun_id, 'kdv_orani', Number(e.target.value))} /></td>
-                <td className="text-right">{(k.miktar * k.birim_fiyat).toFixed(2)}</td>
+                <td className="text-right">{satirToplamHesapla(k).toFixed(2)}</td>
                 <td><button type="button" className="text-red-600" onClick={() => kalemSil(k.urun_id)}>×</button></td>
               </tr>
             ))}
@@ -121,7 +154,8 @@ export default function AlisFaturaFormu({ acik, kapat, kaydedildi, baslangic, ur
         </div>
 
         <div className="flex justify-end gap-2 mt-5">
-          <button type="button" onClick={kapat} className="px-4 py-2 border rounded">Vazgeç</button>
+          <button type="button" onClick={kapat} disabled={kaydediliyor}
+                  className="px-4 py-2 border rounded disabled:opacity-50">Vazgeç</button>
           <button type="submit" disabled={kaydediliyor}
                   className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">
             {kaydediliyor ? 'Kaydediliyor…' : 'Kaydet'}
