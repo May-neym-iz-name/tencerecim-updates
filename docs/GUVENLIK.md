@@ -128,9 +128,41 @@ Electron'u yükseltin.
 Bu bölümler ilgili fazlar tamamlandıkça doldurulacak. Tasarım:
 `docs/superpowers/specs/2026-08-31-guvenlik-sertlestirme-design.md`
 
-- **Faz B** — main process'in renderer'ın rol beyanına güvenmesi (yetki sahteciliği)
 - **Faz C** — yerel veritabanındaki API secret'larının şifrelenmesi + parolalı yedek
 - **Faz D** — KVKK dışa aktarım denetim kaydı
+
+### Faz B — Oturum doğrulama (TAMAMLANDI)
+
+**Eski davranış:** Renderer, main process'e `{rol:'super_admin', aktif:true}`
+gibi bir nesne gönderiyordu ve main ona koşulsuz güveniyordu. Renderer'a
+erişebilen biri (DevTools, enjekte edilmiş kod) tek satırla tüm müşteri
+verisine ve API secret'larına ulaşabiliyordu.
+
+**Yeni davranış:** Renderer artık bir *iddia* değil, bir *kanıt* gönderir —
+Supabase `access_token`. Main process bu jetonla Supabase'e kendisi sorar:
+
+1. `GET /auth/v1/user` → jeton geçerli mi, kullanıcı kim
+2. `GET /rest/v1/profiles?id=eq.<uid>` → **rol buradan okunur**
+
+Renderer'ın gönderdiği hiçbir yetki alanı okunmaz. Jeton geçersizse (401)
+hiçbir yetki oluşmaz ve giriş reddedilir.
+
+**Çevrimdışı çalışma:** Başarılı her doğrulama `safeStorage` (Windows DPAPI) ile
+şifrelenip `userData/oturum-onbellek.bin`'e yazılır. İnternet yokken bu önbellek
+**en fazla 12 saat** kullanılabilir. Kurallar:
+
+- Önbellek yalnızca **aynı** kullanıcı için geçerlidir (jetondaki `sub` ile
+  eşleşmezse kullanılmaz) — başka personel onunla giremez.
+- Çevrimdışı kullanım süreyi **uzatmaz**; aksi halde hiç internete çıkmayan bir
+  makine sonsuza dek eski yetkiyle çalışırdı.
+- Çıkışta önbellek silinir.
+- Jeton 401 dönerse önbellek silinir.
+
+**Dosyalar:** `electron/oturum-dogrula.js` (saf mantık, 14 test),
+`electron/oturum-canli.js` (https + DPAPI bağlantıları), `electron/yetki.js`.
+
+**Test-only kaçış:** `yetki._profilYazTestIcin()` doğrulamayı atlar ama `_`
+önekli olduğu için main.js onu IPC'ye **hiç kaydetmez** — renderer çağıramaz.
 
 ---
 

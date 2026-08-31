@@ -112,10 +112,16 @@ ipcMain.handle('update:kurVeYenidenBaslat', () => {
 
 function createWindow() {
   // GÜVENLİK: Üretimde DevTools ve varsayılan menü KAPALI.
-  // Neden: yetki kontrolü renderer'ın bildirdiği profile bakıyor (yetki.js). DevTools açıkken
-  // personel konsoldan `window.api.invoke('auth:profil-ayarla', {aktif:true, rol:'super_admin'})`
-  // yazıp tüm yetkileri alabiliyordu. Bu ilk bariyer; kalıcı çözüm profilin main tarafında
-  // Supabase oturumuyla doğrulanmasıdır.
+  //
+  // Eskiden bu TEK bariyerdi: yetki kontrolü renderer'ın bildirdiği profile
+  // bakıyordu, DevTools açıkken personel konsoldan
+  // `window.api.invoke('auth:profil-ayarla', {aktif:true, rol:'super_admin'})`
+  // yazıp tüm yetkileri alabiliyordu.
+  //
+  // KÖK SORUN ARTIK KAPALI: rol Supabase'den main tarafında doğrulanıyor
+  // (electron/oturum-dogrula.js), renderer'ın beyanı hiç okunmuyor. DevTools'un
+  // kapalı kalması yine de savunma derinliğidir — açık bir konsol başka
+  // saldırı yüzeyleri sunar.
   if (!isDev) Menu.setApplicationMenu(null)
 
   mainWindow = new BrowserWindow({

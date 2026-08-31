@@ -36,8 +36,19 @@ export function AuthProvider({ children }) {
     if (beniHatirla) await authApi.beniHatirlaKaydet(email.trim(), sifre).catch(() => {})
     else await authApi.beniHatirlaTemizle().catch(() => {})
 
-    // Aktif profili arka uca bildir (backend yetki kontrolü). Hassas IPC'lerden önce yapılmalı.
-    await authApi.profilAyarla({ rol: p.rol, izinler: p.izinler, izinli_lokasyonlar: p.izinli_lokasyonlar, aktif: p.aktif }).catch(() => {})
+    // Arka uca SADECE oturum jetonunu ver; rolü oradan Supabase'e sorup kendisi
+    // öğrenecek. Hassas IPC'lerden ÖNCE yapılmalı.
+    //
+    // Hata YUTULMAZ: doğrulama başarısızsa arka uçta hiçbir yetki oluşmaz ve
+    // kullanıcı ekranı görür ama her işlemde "yetkiniz yok" yer. Bunu sessizce
+    // geçmek yerine girişi baştan reddediyoruz.
+    const dogrulama = await authApi.profilAyarla(data.session?.access_token).catch(() => null)
+    if (!dogrulama?.ok) {
+      await supabase.auth.signOut()
+      throw new Error(
+        'Oturumunuz dogrulanamadi. Internet baglantinizi kontrol edip tekrar deneyin.',
+      )
+    }
 
     setUser(data.user)
     setProfil(p)

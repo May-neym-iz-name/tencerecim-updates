@@ -12,7 +12,10 @@ const yetki = require('../yetki.js')
 
 // urunler:olustur/guncelle yetkiKontrol('urun_duzenle') çağırır; testte gerçek giriş
 // akışı yok, bu yüzden super_admin profili elle set edilir (yetki.js modül-singleton).
-yetki['auth:profil-ayarla']({ aktif: 1, rol: 'super_admin' })
+// auth:profil-ayarla artık profil kabul etmez, Supabase'den doğrular
+// (electron/oturum-dogrula.js). Testin amacı yetki değil ürün mantığı olduğu
+// için doğrulamayı atlayan test-only yazıcı kullanılıyor.
+yetki._profilYazTestIcin({ aktif: 1, rol: 'super_admin' })
 
 function bellekDb() {
   const d = new DatabaseSync(':memory:')

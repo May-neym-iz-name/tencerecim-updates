@@ -313,7 +313,8 @@ export const authApi = {
   beniHatirlaKaydet: (email, sifre) => invoke('auth:beni-hatirla-kaydet', { email, sifre }),
   beniHatirlaGetir: () => invoke('auth:beni-hatirla-getir'),
   beniHatirlaTemizle: () => invoke('auth:beni-hatirla-temizle'),
-  // Aktif profili arka uca bildirir (backend yetki kontrolü için).
-  profilAyarla: (profil) => invoke('auth:profil-ayarla', profil),
+  // Arka uca SADECE oturum jetonunu verir. Rol/izinleri arka uç bu jetonla
+  // Supabase'den kendisi okur — renderer'ın beyanına güvenilmez.
+  profilAyarla: (accessToken) => invoke('auth:profil-ayarla', { access_token: accessToken }),
   profilTemizle: () => invoke('auth:profil-temizle'),
 }

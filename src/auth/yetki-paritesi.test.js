@@ -15,15 +15,19 @@ const require = createRequire(import.meta.url)
 const yetkiBackend = require('../../electron/yetki.js')
 
 // Backend'i profille besleyip yetkiyi davranışsal ölç: hata fırlatmıyorsa yetki var.
+// NOT: gerçek yol (auth:profil-ayarla) artık profili kabul etmez, Supabase'den
+// DOĞRULAR — bkz. electron/oturum-dogrula.js. Burada ölçülmek istenen şey
+// doğrulama değil, iki taraftaki yetki MANTIĞININ aynı olması; o yüzden
+// test-only yazıcı kullanılıyor.
 function backendYetkiVar(profil, kod) {
-  yetkiBackend['auth:profil-ayarla'](profil)
+  yetkiBackend._profilYazTestIcin(profil)
   try {
     yetkiBackend._yetkiKontrol(kod)
     return true
   } catch {
     return false
   } finally {
-    yetkiBackend['auth:profil-temizle']()
+    yetkiBackend._profilYazTestIcin(null)
   }
 }
 

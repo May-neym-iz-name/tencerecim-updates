@@ -1,5 +1,10 @@
 // Arka uç (main process) yetki kontrolü.
-// Renderer giriş yaptığında aktif profili buraya gönderir (auth:profil-ayarla).
+//
+// Renderer giriş yaptığında buraya SADECE Supabase access_token'ını gönderir
+// (auth:profil-ayarla). Rol ve izinler renderer'dan DEĞİL, o jetonla Supabase
+// `profiles` tablosundan main tarafında okunur — bkz. oturum-dogrula.js.
+// Eskiden renderer `{rol:'super_admin'}` diyebiliyordu ve main ona inanıyordu.
+//
 // Hassas IPC handler'ları yetkiKontrol/lokasyonKontrol ile korunur — savunma derinliği.
 // NOT: src/auth/izinler.js (frontend ESM) ile AYNI mantık; burada CJS kopyası tutulur.
 
@@ -77,6 +82,32 @@ module.exports = {
   _yetkiKontrolBirden: yetkiKontrolBirden,
   _lokasyonKontrol: lokasyonKontrol,
 
-  'auth:profil-ayarla': (profil) => { aktifProfil = profil || null; return { ok: true } },
-  'auth:profil-temizle': () => { aktifProfil = null; return { ok: true } },
+  // SADECE TEST İÇİN. Doğrulamayı atlayarak profil yazar; yetki paritesi testi
+  // (src/auth/yetki-paritesi.test.js) iki tarafın aynı cevabı verdiğini böyle
+  // ölçer. `_` önekli kanallar main.js tarafından IPC'ye HİÇ kaydedilmez, yani
+  // renderer bunu çağıramaz — gerçek yol her zaman auth:profil-ayarla'dır.
+  _profilYazTestIcin: (profil) => { aktifProfil = profil || null },
+
+  // Girdi: { access_token }. Profil BURADAN gelmez — Supabase'den doğrulanır.
+  // Doğrulanamazsa aktifProfil null kalır, yani hiçbir yetki yoktur.
+  'auth:profil-ayarla': async (girdi) => {
+    const token = girdi && typeof girdi === 'object' ? girdi.access_token : girdi
+    const { dogrula } = require('./oturum-canli')
+    const sonuc = await dogrula(typeof token === 'string' ? token : null)
+    aktifProfil = sonuc ? sonuc.profil : null
+    return {
+      ok: !!sonuc,
+      // Renderer bu bilgiyi kullanıcıya "çevrimdışı moddasınız" uyarısı
+      // göstermek için kullanır; yetkiyi etkilemez.
+      kaynak: sonuc ? sonuc.kaynak : null,
+    }
+  },
+
+  'auth:profil-temizle': () => {
+    aktifProfil = null
+    // Çıkış yapan kullanıcının çevrimdışı önbelleği de düşsün: aksi halde
+    // internet kesikken 12 saat boyunca onun yetkisiyle girilebilirdi.
+    try { require('./oturum-canli').onbellekSil() } catch { /* test ortami */ }
+    return { ok: true }
+  },
 }
