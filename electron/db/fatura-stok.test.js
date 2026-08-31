@@ -39,14 +39,28 @@ describe('durumBirlestir', () => {
     expect(s.map(x => x.urun_id)).toEqual([1])
   })
 
-  test('ASCII klavyeyle yazılan arama noktalı/noktasız İ-I farkını aşar', () => {
-    // "LİNES" (noktalı İ) ürününü ASCII "lines" (noktasız I) araması bulmalı —
-    // ham toLocaleLowerCase('tr') bunu bulamazdı (tr-arama.js'in tarif ettiği tuzak).
+  test('ASCII klavyeyle yazılan ürün adı ASCII aramayla eşleşir (noktasız I tuzağı)', () => {
+    // Ürün adı ASCII "LINES" (noktasız I, U+0049) iken arama da ASCII "lines"
+    // (düz i). Ham toLocaleLowerCase('tr') "LINES" → "lınes" (noktasız ı!)
+    // üretirdi ve "lines" ile EŞLEŞMEZDİ — kullanıcı ASCII klavyeyle ürün adı
+    // girdiğinde tam olarak bu tuzağa düşülüyordu. tr-arama.js'in eslesirMi'si
+    // harfleri katlayarak bunu çözer.
     const urunler = [
-      { urun_id: 10, urun_adi: 'LİNES Tencere', sku: 'TNC.LNS.00001', barkod: '111', senk_id: 'u10', gercek_miktar: 1 },
+      { urun_id: 10, urun_adi: 'LINES Tencere', sku: 'TNC.LNS.00001', barkod: '111', senk_id: 'u10', gercek_miktar: 1 },
       { urun_id: 11, urun_adi: 'LAVA Tencere', sku: 'TNC.LAV.00099', barkod: '222', senk_id: 'u11', gercek_miktar: 1 },
     ]
     const s = durumBirlestir(urunler, [], { arama: 'lines' })
     expect(s.map(x => x.urun_id)).toEqual([10])
+  })
+
+  test('çok kelimeli arama kelime sırasından bağımsız eşleşir', () => {
+    // tr-arama ortak modülü kelime-bazlı AND yapar (eski kod tek bitişik
+    // alt-dize arıyordu) — bu ekranda da çalıştığını kanıtlar.
+    const urunler = [
+      { urun_id: 20, urun_adi: 'Lava Tencere', sku: 'TNC.LAV.00050', barkod: '333', senk_id: 'u20', gercek_miktar: 1 },
+      { urun_id: 21, urun_adi: 'Saflon Tava', sku: 'TNC.SFL.00010', barkod: '444', senk_id: 'u21', gercek_miktar: 1 },
+    ]
+    const s = durumBirlestir(urunler, [], { arama: 'tencere lava' })
+    expect(s.map(x => x.urun_id)).toEqual([20])
   })
 })
