@@ -562,14 +562,24 @@ Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bu
 
 ---
 
-### Task 6: Fatura ayarları (firmId + Token)
+### Task 6: Fatura ayarları (firmId + Token) — ✔ TAMAM (01.09, commit 8b09b90)
 
-**Files:** `electron/db/fatura-ayarlar.js`, IPC kaydı, `src/components/ayarlar/FaturaAyarlari.jsx`.
+**Files:** `electron/db/fatura-ayarlar.js` (+test), `database.js` (tablo), `gizli-alan.js`, `ayar-senk.js`, `main.js`, `src/api/ipc.js`, `src/pages/Ayarlar.jsx`
 
-- [ ] Ayarlar > Fatura: `firmId` ve `Token` girişi, Supabase `uygulama_ayarlar`'da saklanır (ikinci PC'ye elle girilmesin).
-- [ ] 🔴 Token **DPAPI ile şifrelenir** (güvenlik sertleştirme fazındaki desen), düz metin yazılmaz.
-- [ ] "Bağlantıyı sına" düğmesi: `products` ucuna 1 kayıtlık istek; sonuç Türkçe.
-- [ ] Commit: `feat: fatura ayarlari (firmId + token)`
+- [x] Ayarlar > 🧾 Fatura sekmesi: `firm_id` + `token` girişi.
+- [x] 🔴 **PLAN DÜZELTİLDİ:** "DPAPI ile şifrele + Supabase'de sakla" YANLIŞTI — DPAPI anahtarı
+  makineye bağlı, şifreli değer buluta giderse 2. PC onu ASLA çözemez ve fatura kesme orada
+  sessizce ölür (bu tuzak `gizli-alan.js` başlığında zaten yazılıymış). Doğrusu: **şifreleme
+  yalnız diskte**, buluta düz metin (RLS korur), okuma yolları `coz()`'den geçer.
+- [x] Renderer'a MASKELİ döner; maskeli değer geri gelirse kayıtlı anahtar KORUNUR.
+- [x] "Bağlantıyı Sına": SALT OKUNUR `products` ucu (`Key` sabit + `Token` başlığı), fatura kesmez.
+      `firmId`'yi bu uç doğrulamaz → girilmemişse ayrıca uyarılır.
+- [x] Yetki: `fatura_stok_duzenle`. Commit: `feat: fatura ayarlari (Bizimhesap firmId + token)`
+
+**Panelde yeri (01.09'da bulundu):** Bizimhesap → E-Ticaret → Ayarlar → üstteki
+"E-ticaret Uygulamaları" süzgeci → herhangi bir uygulama (Entegra, Sopyo…) → **API Key**.
+Değer FİRMA düzeyinde (iki farklı uygulamada aynı çıktı), 32 haneli büyük onaltılık —
+dokümandaki `firmId` biçimiyle birebir aynı.
 
 ---
 
