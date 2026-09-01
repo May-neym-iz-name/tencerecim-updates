@@ -1,6 +1,7 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const okuma = require('../fatura/okuma')
+const { kimlikAnahtari, kimlikHaritasi } = require('./senk-kimlik')
 
 // Fatura stoğu Supabase'de (asıl nüsha), ürün + gerçek stok yerel SQLite'ta.
 // Birleştirme burada, JS tarafında yapılır. Bkz. plan Ruling-5.
@@ -12,12 +13,14 @@ const okuma = require('../fatura/okuma')
 // NOT: `arama` parametresi BİLEREK yok — arama artık istemcide `eslesirMi` ile
 // yapılıyor (bkz. FaturaStogu.jsx), burada ikinci kez filtrelemek ölü koddu.
 function durumBirlestir(urunler, faturaStokSatirlari, { sadece_eksik } = {}) {
-  const havuz = new Map()
-  for (const r of faturaStokSatirlari || []) havuz.set(r.urun_senk_id, Number(r.miktar) || 0)
+  // 🔴 Bulut uuid'si TİRELİ, yerel senk_id TİRESİZ gelir — iki taraf da
+  // normalize edilmezse hiçbir ürün eşleşmez ve ekranda her şey 0 görünür
+  // (bkz. db/senk-kimlik.js; 01.09.2026'da canlıda yaşandı).
+  const havuz = kimlikHaritasi(faturaStokSatirlari, 'urun_senk_id', r => Number(r.miktar) || 0)
 
   return (urunler || [])
     .map(u => {
-      const fatura_miktar = (u.senk_id && havuz.get(u.senk_id)) || 0
+      const fatura_miktar = (u.senk_id && havuz.get(kimlikAnahtari(u.senk_id))) || 0
       const gercek_miktar = Number(u.gercek_miktar) || 0
       return { ...u, fatura_miktar, gercek_miktar, fark: fatura_miktar - gercek_miktar }
     })
@@ -77,12 +80,13 @@ module.exports = {
     }
     const satirlar = await okuma.hareketGetir({ urun_senk_id, limit }, jwtAl())
     // Ürün adını yerelden zenginleştir (bulut tarafında ad tutulmuyor).
-    const adlar = new Map(getDb().prepare('SELECT senk_id, ad, sku FROM urunler WHERE senk_id IS NOT NULL')
-      .all().map(u => [u.senk_id, u]))
+    const adlar = kimlikHaritasi(
+      getDb().prepare('SELECT senk_id, ad, sku FROM urunler WHERE senk_id IS NOT NULL').all(),
+      'senk_id')
     return satirlar.map(h => ({
       ...h,
-      urun_adi: adlar.get(h.urun_senk_id)?.ad || '(bilinmeyen ürün)',
-      sku: adlar.get(h.urun_senk_id)?.sku || null,
+      urun_adi: adlar.get(kimlikAnahtari(h.urun_senk_id))?.ad || '(bilinmeyen ürün)',
+      sku: adlar.get(kimlikAnahtari(h.urun_senk_id))?.sku || null,
     }))
   },
 

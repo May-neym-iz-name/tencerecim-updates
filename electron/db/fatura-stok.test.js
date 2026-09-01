@@ -34,3 +34,33 @@ describe('durumBirlestir', () => {
     expect(s[0].fark).toBe(-2)
   })
 })
+
+describe('durumBirlestir — bulut/yerel kimlik biçimi (01.09.2026 canlı hatası)', () => {
+  // Yerel SQLite senk_id TİRESİZ üretir; Postgres uuid tipi TİRELİ döndürür.
+  // Normalize edilmezse hiçbir ürün eşleşmez: bulutta 238 satır varken ekranda
+  // her ürünün fatura stoğu 0 görünüyordu ve hiçbir hata patlamıyordu.
+  const YEREL = '8e109721a3730efcfcf45126842f5606'
+  const BULUT = '8e109721-a373-0efc-fcf4-5126842f5606'
+
+  test('tireli bulut uuid, tiresiz yerel senk_id ile EŞLEŞİR', () => {
+    const s = durumBirlestir(
+      [{ urun_id: 1, urun_adi: 'Fagor Duo 6 lt', sku: 'TNC.FGR.00006', barkod: null, senk_id: YEREL, gercek_miktar: 0 }],
+      [{ urun_senk_id: BULUT, miktar: 26 }], {})
+    expect(s[0].fatura_miktar).toBe(26)
+    expect(s[0].fark).toBe(26)
+  })
+
+  test('büyük harfli uuid de eşleşir', () => {
+    const s = durumBirlestir(
+      [{ urun_id: 1, urun_adi: 'X', sku: 'S', barkod: null, senk_id: YEREL, gercek_miktar: 0 }],
+      [{ urun_senk_id: BULUT.toUpperCase(), miktar: 5 }], {})
+    expect(s[0].fatura_miktar).toBe(5)
+  })
+
+  test('gerçekten farklı kimlik eşleşmez (normalize gevşetme yapmıyor)', () => {
+    const s = durumBirlestir(
+      [{ urun_id: 1, urun_adi: 'X', sku: 'S', barkod: null, senk_id: YEREL, gercek_miktar: 0 }],
+      [{ urun_senk_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', miktar: 5 }], {})
+    expect(s[0].fatura_miktar).toBe(0)
+  })
+})

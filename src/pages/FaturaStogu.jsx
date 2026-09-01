@@ -118,7 +118,15 @@ export default function FaturaStogu() {
     try {
       const r = await faturaStokApi.tohumla()
       setTohumSonuc(r)
-      toast.success(`${r.yazilan} ürüne açılış bakiyesi yazıldı (${r.toplam_adet} adet).`)
+      // "0 yazıldı" tek başına başarısızlık gibi okunuyor; ikinci basışta normal
+      // sonuç budur (idempotent). Mesajı duruma göre ayır.
+      if (r.yazilan > 0) {
+        toast.success(`${r.yazilan} ürüne açılış bakiyesi yazıldı (${r.toplam_adet} adet).`)
+      } else if (r.atlanan > 0) {
+        toast.success(`Açılış bakiyesi zaten alınmış — ${r.atlanan} ürün olduğu gibi bırakıldı.`)
+      } else {
+        toast.error('Yazılacak bakiye bulunamadı — Bizimhesap'ta stoğu olan eşleşen ürün yok.')
+      }
       await yukle()
     } catch (e) { toast.error('Tohumlama başarısız: ' + e.message) }
     finally { setTohumMesgul(false) }
