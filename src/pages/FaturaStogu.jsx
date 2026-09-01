@@ -179,7 +179,11 @@ export default function FaturaStogu() {
     try {
       // Arama sunucu tarafında uygulanmıyor (ölü parametre kaldırıldı,
       // bkz. electron/db/fatura-stok.js): filtre aşağıda istemcide yapılır.
-      const veri = await faturaStokApi.durum({ sadece_eksik: sadeceEksik })
+      // 🔴 Sunucudan HER ZAMAN tam liste çekilir; "yalnız eksik" süzgeci istemcide
+      // uygulanır. Sebep: süzgeç sunucuda uygulanınca ARAMA, elenmiş satırlarda
+      // arıyordu — kullanıcı var olan bir ürünü arayıp boş sonuç görüyor ve ürünün
+      // sistemde olmadığını sanıyordu (01.09 kullanıcı bildirimi).
+      const veri = await faturaStokApi.durum({ sadece_eksik: false })
       setSatirlar(veri)
     } catch (e) {
       setHata(e.message)
@@ -187,14 +191,27 @@ export default function FaturaStogu() {
     } finally {
       setYukleniyor(false)
     }
-  }, [sadeceEksik])
+  }, [])
 
   useEffect(() => { if (sekme === 'durum') yukle() }, [yukle, sekme])
 
+  const aramaVar = String(arama || '').trim().length > 0
+
   const satirlarGorunur = useMemo(() => {
     if (!satirlar) return []
-    return satirlar.filter(s => eslesirMi([s.urun_adi, s.sku, s.barkod].filter(Boolean).join(' '), arama))
-  }, [satirlar, arama])
+    return satirlar.filter(s => {
+      if (!eslesirMi([s.urun_adi, s.sku, s.barkod].filter(Boolean).join(' '), arama)) return false
+      // Kullanıcı bir şey ARADIĞINDA niyeti "o ürünü göster"dir; süzgeç susturulur.
+      if (aramaVar) return true
+      return !sadeceEksik || s.fark < 0
+    })
+  }, [satirlar, arama, aramaVar, sadeceEksik])
+
+  // Süzgecin kaç satırı gizlediği: boş ekranı "ürün yok" sanmayı önler.
+  const gizlenen = useMemo(() => {
+    if (!satirlar || aramaVar || !sadeceEksik) return 0
+    return satirlar.length - satirlarGorunur.length
+  }, [satirlar, satirlarGorunur, aramaVar, sadeceEksik])
 
   const { dilim, ...sayfalama } = useSayfalama(satirlarGorunur)
 
@@ -302,9 +319,17 @@ export default function FaturaStogu() {
               </table>
               {dilim.length === 0 && (
                 <p className="text-center text-gray-500 py-8">
-                  {sadeceEksik
-                    ? 'Faturası eksik ürün yok — tüm siparişlere fatura kesilebilir.'
-                    : 'Aramayla eşleşen ürün yok.'}
+                  {aramaVar
+                    ? 'Aramayla eşleşen ürün yok.'
+                    : sadeceEksik
+                      ? 'Faturası eksik ürün yok — tüm siparişlere fatura kesilebilir.'
+                      : 'Gösterilecek ürün yok.'}
+                </p>
+              )}
+              {gizlenen > 0 && (
+                <p className="text-center text-xs text-gray-400 pb-3">
+                  {gizlenen} ürün "yalnız faturası eksik olanlar" süzgeci yüzünden gizli.
+                  Arama yaptığınızda süzgeç uygulanmaz.
                 </p>
               )}
               <Sayfalama {...sayfalama} />
