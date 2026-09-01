@@ -125,7 +125,7 @@ export default function FaturaStogu() {
       } else if (r.atlanan > 0) {
         toast.success(`Açılış bakiyesi zaten alınmış — ${r.atlanan} ürün olduğu gibi bırakıldı.`)
       } else {
-        toast.error('Yazılacak bakiye bulunamadı — Bizimhesap'ta stoğu olan eşleşen ürün yok.')
+        toast.error('Yazılacak bakiye bulunamadı — Bizimhesap tarafında stoğu olan eşleşen ürün yok.')
       }
       await yukle()
     } catch (e) { toast.error('Tohumlama başarısız: ' + e.message) }
