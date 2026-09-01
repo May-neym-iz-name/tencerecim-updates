@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink, barkodApi, faturaStokApi } from '../api/ipc'
+import { onlineSiparisApi, ikasApi, lokasyonGondericiApi, lokasyonApi, sistemApi, whatsappLink, barkodApi } from '../api/ipc'
 import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoOlcuOku } from '../lib/yaziciAyarlari'
 import { ayarOku } from '../ayarlar/AyarlarContext'
 import { useSearchParams } from 'react-router-dom'
@@ -110,32 +110,6 @@ export default function OnlineSiparisler() {
   const [asamalar, setAsamalar] = useState({})
   const [talepModal, setTalepModal] = useState(null)   // { siparis, detay, yukleniyor, hata }
 
-  // --- FATURA (Faz 2) --------------------------------------------------------
-  // Fatura durumu BULUTTAN gelir (kesilen_faturalar), yerel kopyası yok: mükerrer
-  // engeli orada, tek doğru kaynak orası. Anahtar ikas_siparis_id — yerel id her
-  // PC'de farklıdır.
-  const [faturaDurum, setFaturaDurum] = useState({})
-  const [faturaMesgul, setFaturaMesgul] = useState('')
-  const [faturaFiltre, setFaturaFiltre] = useState('')   // '' | 'faturasiz' | 'faturali' | 'belirsiz'
-
-  const faturaDurumYukle = useCallback(async () => {
-    try { setFaturaDurum(await faturaStokApi.durumlar('ikas')) } catch { /* sessiz: liste yine çalışsın */ }
-  }, [])
-  useEffect(() => { faturaDurumYukle() }, [faturaDurumYukle])
-
-  async function faturaKes(siparis) {
-    setFaturaMesgul(siparis.id)
-    try {
-      const r = await faturaStokApi.kes(siparis.id)
-      if (r.durum === 'tamam') toast.success(`Fatura kesildi (#${siparis.siparis_no}).`)
-      else if (r.durum === 'belirsiz') {
-        toast.error('Sonuç doğrulanamadı — Fatura Stoğu > Kontrol Bekliyor listesine düştü.')
-      } else toast.error('Fatura kesilemedi: ' + (r.mesaj || 'bilinmeyen hata'))
-      await faturaDurumYukle()
-    } catch (e) { toast.error('Fatura kesilemedi: ' + e.message) }
-    finally { setFaturaMesgul('') }
-  }
-
 
   const asamalariYukle = useCallback(() => {
     ikasApi.talepAsamalari().then(setAsamalar).catch(() => {})
@@ -188,15 +162,8 @@ export default function OnlineSiparisler() {
     if (durumFiltre && s.durum !== durumFiltre) return false
     if (kargoFiltre && s.kargo_durumu !== kargoFiltre) return false
     if (talepFiltre && !bekleyenTalepMi(s, asamalar[s.ikas_siparis_id])) return false
-    if (faturaFiltre) {
-      const f = faturaDurum[s.ikas_siparis_id]
-      const durum = f && f.durum
-      if (faturaFiltre === 'faturali' && durum !== 'tamam') return false
-      if (faturaFiltre === 'faturasiz' && durum === 'tamam') return false
-      if (faturaFiltre === 'belirsiz' && durum !== 'belirsiz') return false
-    }
     return true
-  }), [siparisler, tarihBas, tarihBit, odemeFiltre, durumFiltre, kargoFiltre, talepFiltre, asamalar, faturaFiltre, faturaDurum])
+  }), [siparisler, tarihBas, tarihBit, odemeFiltre, durumFiltre, kargoFiltre, talepFiltre, asamalar])
 
   // Bildirim butonu sayısı: TÜM yüklü siparişlerden (filtreden bağımsız) — ek sorgu yok.
   const talepSayisi = useMemo(
@@ -609,33 +576,6 @@ export default function OnlineSiparisler() {
         </div>
       </div>
 
-      {/* Fatura süzgeç çipleri — spec §③. Sayılar SÜZGEÇSİZ listeden gelir ki
-          "Faturasız 0" görünce listenin filtreli olduğu anlaşılsın. */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        {[
-          ['', 'Tümü'],
-          ['faturasiz', 'Faturasız'],
-          ['faturali', 'Faturalı'],
-          ['belirsiz', 'Kontrol Bekliyor'],
-        ].map(([kod, ad]) => {
-          const sayi = kod === ''
-            ? siparisler.length
-            : siparisler.filter(s => {
-                const d = faturaDurum[s.ikas_siparis_id] && faturaDurum[s.ikas_siparis_id].durum
-                if (kod === 'faturali') return d === 'tamam'
-                if (kod === 'belirsiz') return d === 'belirsiz'
-                return d !== 'tamam'
-              }).length
-          return (
-            <button key={kod || 'tumu'} onClick={() => setFaturaFiltre(kod)}
-              className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${
-                faturaFiltre === kod ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-gray-50'}`}>
-              {ad} <span className="opacity-70">({sayi})</span>
-            </button>
-          )
-        })}
-      </div>
-
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600 text-left">
@@ -647,15 +587,14 @@ export default function OnlineSiparisler() {
               <SiraliBaslik k="odeme_durumu" {...sr}>Ödeme</SiraliBaslik>
               <SiraliBaslik k="durum" {...sr}>Durum</SiraliBaslik>
               <SiraliBaslik k="toplam" align="right" {...sr}>Tutar</SiraliBaslik>
-              <th className="px-4 py-2.5">Fatura</th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
             {yukleniyor ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Yükleniyor…</td></tr>
             ) : filtreliSiparisler.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-gray-400">
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">
                 {siparisler.length === 0 ? 'Henüz sipariş yok. "Siparişleri Çek" ile ikas\'tan getirin.' : 'Filtreyle eşleşen sipariş yok.'}
               </td></tr>
             ) : sayfaSiparisler.map(s => (
@@ -698,30 +637,6 @@ export default function OnlineSiparisler() {
                         <span className="block text-[10px] font-normal text-gray-400 line-through">{PARA(oz.toplam, s.para_birimi)}</span>
                         <span className="block text-[10px] font-normal text-purple-600">{PARA(oz.iade, s.para_birimi)} iade</span>
                       </>
-                    )
-                  })()}
-                </td>
-                <td className="px-4 py-2.5">
-                  {(() => {
-                    const f = faturaDurum[s.ikas_siparis_id]
-                    if (f && f.durum === 'tamam') {
-                      return f.saglayici_url
-                        ? <a href={f.saglayici_url} target="_blank" rel="noopener noreferrer"
-                             className="text-xs text-emerald-700 hover:underline" title="Faturayı Bizimhesap'ta aç">✓ Faturalı</a>
-                        : <span className="text-xs text-emerald-700">✓ Faturalı</span>
-                    }
-                    if (f && f.durum === 'belirsiz') {
-                      return <span className="text-xs text-amber-700" title="Sonuç doğrulanamadı — Kontrol Bekliyor listesinde">⚠ Kontrol bekliyor</span>
-                    }
-                    if (f && f.durum === 'kuyrukta') {
-                      return <span className="text-xs text-gray-500" title="İşlem sürüyor">⏳ Kuyrukta</span>
-                    }
-                    if (!yetkiVar('fatura_kes')) return <span className="text-xs text-gray-400">—</span>
-                    return (
-                      <button onClick={() => faturaKes(s)} disabled={faturaMesgul === s.id}
-                        className="text-xs px-2 py-1 rounded border hover:bg-gray-100 disabled:opacity-50">
-                        {faturaMesgul === s.id ? 'Kesiliyor…' : '🧾 Fatura Kes'}
-                      </button>
                     )
                   })()}
                 </td>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Sayfalama from '../components/Sayfalama'
 import toast from 'react-hot-toast'
-import { satisApi, lokasyonApi, fisApi, sistemApi, whatsappLink } from '../api/ipc'
+import { satisApi, lokasyonApi, fisApi, sistemApi, whatsappLink, faturaStokApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import { senkTetikle } from '../lib/veriSenk'
 import { useSiralama } from '../hooks/useSiralama'
@@ -24,6 +24,33 @@ export default function SatisGecmisi() {
   const bugun = new Date().toISOString().split('T')[0]
   const [filtre, setFiltre] = useState({ lokasyon_id: '', baslangic: bugun, bitis: bugun, odeme_tipi: '', sayfa: 1, boyut: 50 })
   const [fisArama, setFisArama] = useState('')
+
+  // --- FATURA (Faz 2) --------------------------------------------------------
+  // Bizimhesap'a YALNIZ mağaza satışları yazılır: ikas siparişleri zaten
+  // ikas→Bizimhesap entegrasyonuyla düşüyor, uygulama da yazsa mükerrer olurdu.
+  // Durum BULUTTAN gelir (kesilen_faturalar), anahtar FİŞ NO — yerel id her PC'de
+  // farklı olabilir, fiş no değil.
+  const faturaYetkisi = yetkiVar('fatura_kes')
+  const [faturaDurum, setFaturaDurum] = useState({})
+  const [faturaMesgul, setFaturaMesgul] = useState('')
+
+  const faturaDurumYukle = useCallback(async () => {
+    if (!faturaYetkisi) return
+    try { setFaturaDurum(await faturaStokApi.durumlar('perakende')) } catch { /* sessiz: liste yine çalışsın */ }
+  }, [faturaYetkisi])
+  useEffect(() => { faturaDurumYukle() }, [faturaDurumYukle])
+
+  async function faturaKes(satis) {
+    setFaturaMesgul(satis.id)
+    try {
+      const r = await faturaStokApi.kesSatis(satis.id)
+      if (r.durum === 'tamam') toast.success(`Bizimhesap'ta fatura taslağı oluşturuldu (${satis.fis_no}).`)
+      else if (r.durum === 'belirsiz') toast.error('Sonuç doğrulanamadı — Fatura Stoğu > Kontrol Bekliyor listesine düştü.')
+      else toast.error('Fatura kesilemedi: ' + (r.mesaj || 'bilinmeyen hata'))
+      await faturaDurumYukle()
+    } catch (e) { toast.error('Fatura kesilemedi: ' + e.message) }
+    finally { setFaturaMesgul('') }
+  }
 
   const yukle = useCallback(async () => {
     setYukleniyor(true)
@@ -161,11 +188,12 @@ export default function SatisGecmisi() {
                 <SiraliBaslik k="iskonto_toplam" {...sr}>İskonto</SiraliBaslik>
                 <SiraliBaslik k="genel_toplam" {...sr}>Toplam</SiraliBaslik>
                 <SiraliBaslik k="durum" {...sr}>Durum</SiraliBaslik>
+                <th className="px-3 py-2.5">Fatura</th>
                 <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
-              {yukleniyor && <tr><td colSpan={9} className="text-center py-8 text-gray-400">Yükleniyor...</td></tr>}
+              {yukleniyor && <tr><td colSpan={10} className="text-center py-8 text-gray-400">Yükleniyor...</td></tr>}
               {!yukleniyor && sr.sirali.map(s => (
                 <tr key={s.id} onClick={() => satisDetayAc(s.id)}
                   className={`border-b cursor-pointer hover:bg-blue-50 ${seciliSatis===s.id?'bg-blue-50':''} ${s.durum==='iptal'?'opacity-60':''}`}>
@@ -186,6 +214,29 @@ export default function SatisGecmisi() {
                       </span>
                     )}
                   </td>
+                  <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                    {(() => {
+                      const f = faturaDurum[s.fis_no]
+                      if (f && f.durum === 'tamam') {
+                        return f.saglayici_url
+                          ? <a href={f.saglayici_url} target="_blank" rel="noopener noreferrer"
+                               className="text-xs text-emerald-700 hover:underline" title="Bizimhesap'ta aç">📄 Taslak var</a>
+                          : <span className="text-xs text-emerald-700">📄 Taslak var</span>
+                      }
+                      if (f && f.durum === 'belirsiz') {
+                        return <span className="text-xs text-amber-700" title="Sonuç doğrulanamadı — Kontrol Bekliyor listesinde">⚠ Kontrol bekliyor</span>
+                      }
+                      if (!faturaYetkisi || s.durum !== 'tamamlandi' || s.tip === 'iade') {
+                        return <span className="text-xs text-gray-400">—</span>
+                      }
+                      return (
+                        <button onClick={() => faturaKes(s)} disabled={faturaMesgul === s.id}
+                          className="text-xs px-2 py-1 rounded border hover:bg-gray-100 disabled:opacity-50">
+                          {faturaMesgul === s.id ? 'Kesiliyor…' : '🧾 Fatura Kes'}
+                        </button>
+                      )
+                    })()}
+                  </td>
                   <td className="px-2 py-2">
                     {s.durum==='tamamlandi' && s.tip!=='iade' && iptalYetkisi && (
                       <button onClick={e => { e.stopPropagation(); satisIptal(s.id) }} className="text-xs text-red-500 hover:underline">İptal</button>
@@ -193,7 +244,7 @@ export default function SatisGecmisi() {
                   </td>
                 </tr>
               ))}
-              {!yukleniyor && satislar.length===0 && <tr><td colSpan={9} className="text-center py-10 text-gray-400">Satış bulunamadı</td></tr>}
+              {!yukleniyor && satislar.length===0 && <tr><td colSpan={10} className="text-center py-10 text-gray-400">Satış bulunamadı</td></tr>}
             </tbody>
           </table>
         </div>

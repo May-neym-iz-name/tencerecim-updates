@@ -1,5 +1,11 @@
 // Fatura kesme IPC katmanı: kanal adaptörü + çekirdek + sağlayıcı + RPC'yi bağlar.
 //
+// 🔴 KANAL KARARI (01.09.2026): yalnız PERAKENDE (mağaza) satışları yazılır.
+// ikas siparişleri ikas→Bizimhesap entegrasyonuyla zaten taslak olarak düşüyor;
+// uygulama da yazınca aynı siparişe İKİNCİ kayıt oluşuyordu (canlıda görüldü).
+// Bizimhesap'a tek yazıcı olmalı. Online tarafta uygulamanın işi artık yalnız
+// "bu siparişe fatura kesilebilir mi" bilgisini vermek (fatura stoğu).
+//
 // Burada İŞ MANTIĞI YOK — hepsi test edilebilir modüllerde:
 //   kanal/ikas.js  → siparişi fatura girdisine çevirir
 //   cekirdek.js    → guard, sahiplenme, üç sonuç sınıfı
@@ -51,28 +57,28 @@ function kullaniciAdi() {
 }
 
 module.exports = {
-  // Tek siparişe fatura keser. Sonuç: { durum: 'tamam'|'hata'|'belirsiz', ... }
-  // Guard hataları (SKU yok, ünvan yok…) THROW eder — sahiplenme yapılmadan.
-  'fatura:kes': async ({ siparis_id } = {}) => {
+  // Tek MAĞAZA SATIŞINA fatura keser. Sonuç: { durum: 'tamam'|'hata'|'belirsiz', ... }
+  // Guard hataları (müşteri yok, SKU yok…) THROW eder — sahiplenme yapılmadan.
+  'fatura:kes-satis': async ({ satis_id } = {}) => {
     yetkiKontrol('fatura_kes')
-    const girdi = require('../fatura/kanal/ikas').siparisiFaturayaCevir(siparis_id)
+    const girdi = require('../fatura/kanal/perakende').satisiFaturayaCevir(satis_id)
     girdi.kullanici = kullaniciAdi()
     return require('../fatura/cekirdek').faturaKes(girdi, bagimliliklariKur())
   },
 
   // Toplu kesim: BİRİ PATLARSA DİĞERLERİ DURMAZ. Her siparişin sonucu ayrı döner —
   // 20 siparişten 3'ü hata verdiğinde hangileri olduğunu görmek şart.
-  'fatura:toplu-kes': async ({ siparis_idler } = {}) => {
+  'fatura:toplu-kes-satis': async ({ satis_idler } = {}) => {
     yetkiKontrol('fatura_kes')
     const sonuclar = []
-    for (const id of (siparis_idler || [])) {
+    for (const id of (satis_idler || [])) {
       try {
-        const girdi = require('../fatura/kanal/ikas').siparisiFaturayaCevir(id)
+        const girdi = require('../fatura/kanal/perakende').satisiFaturayaCevir(id)
         girdi.kullanici = kullaniciAdi()
         const s = await require('../fatura/cekirdek').faturaKes(girdi, bagimliliklariKur())
-        sonuclar.push({ siparis_id: id, ...s })
+        sonuclar.push({ satis_id: id, ...s })
       } catch (e) {
-        sonuclar.push({ siparis_id: id, durum: 'hata', mesaj: e.message, kod: e.kod || null })
+        sonuclar.push({ satis_id: id, durum: 'hata', mesaj: e.message, kod: e.kod || null })
       }
     }
     return sonuclar
@@ -80,7 +86,7 @@ module.exports = {
 
   // Sipariş listesinde satır durumunu göstermek için. Yetki BİLEREK geniş:
   // fatura kesemeyen kasiyer de "bu sipariş faturalı mı" görebilmeli.
-  'fatura:durumlar': async ({ kanal = 'ikas' } = {}) => {
+  'fatura:durumlar': async ({ kanal = 'perakende' } = {}) => {
     const satirlar = await okuma.kesilenFaturaGetir({ kanal }, jwtAl())
     const harita = {}
     for (const s of satirlar) harita[s.kanal_siparis_id] = s

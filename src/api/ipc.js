@@ -91,8 +91,10 @@ export const faturaStokApi = {
   tohumla: () => invoke('fatura-stok:tohumla'),
 
   // Fatura kesme (Faz 2). kes/topluKes sonucu: durum 'tamam' | 'hata' | 'belirsiz'.
-  kes: (siparis_id) => invoke('fatura:kes', { siparis_id }),
-  topluKes: (siparis_idler) => invoke('fatura:toplu-kes', { siparis_idler }),
+  // Fatura YALNIZ mağaza satışlarına kesilir (ikas siparişleri Bizimhesap'a zaten
+  // kendi entegrasyonuyla düşüyor; uygulama da yazsa mükerrer olurdu).
+  kesSatis: (satis_id) => invoke('fatura:kes-satis', { satis_id }),
+  topluKesSatis: (satis_idler) => invoke('fatura:toplu-kes-satis', { satis_idler }),
   durumlar: (kanal) => invoke('fatura:durumlar', { kanal }),
   belirsizler: () => invoke('fatura:belirsizler'),
   belirsizKarar: (veri) => invoke('fatura:belirsiz-karar', veri),
