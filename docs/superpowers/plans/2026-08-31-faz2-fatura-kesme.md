@@ -583,24 +583,21 @@ dokümandaki `firmId` biçimiyle birebir aynı.
 
 ---
 
-### Task 7: ikas arayüzü — Fatura Kes düğmesi
+### Task 7-8: Fatura kesme arayüzü + Kontrol Bekliyor — ✔ TAMAM (01.09, commit 53f03bb)
 
-**Files:** `src/components/OnlineSiparisler.jsx`
-
-- [ ] Satır sonunda üç durumlu düğme: `🧾 Fatura Kes` / `✓ Faturalı` (tıklayınca `saglayici_url` açılır) / `🔒 Fatura Stoğu Yok`
-- [ ] Filtre çipleri: `Tümü · Faturasız · Faturalı · Fatura Stoğu Yok`
-- [ ] Toplu seçim + toplu kesme; her satırın sonucu ayrı raporlanır (biri patlayınca diğerleri durmaz).
-- [ ] Yetki: `fatura_kes` yoksa düğme görünmez.
-- [ ] Commit: `feat: online siparislerde fatura kesme arayuzu`
-
----
-
-### Task 8: "Kontrol Bekliyor" listesi
-
-- [ ] Fatura Stoğu sekmesine dördüncü görünüm: `durum = 'belirsiz'` satırları.
-- [ ] Her satırda "Bizimhesap'ta kesilmiş" / "kesilmemiş" düğmeleri. "kesilmemiş" → `fatura_kes_telafi` (stok iade); "kesilmiş" → `fatura_kes_bitir(..., 'tamam', ...)` kullanıcının girdiği guid/fatura no ile.
-- [ ] 🔴 Liste boş DEĞİLSE görünür uyarı — sessiz birikirse mükerrer fatura riski doğar.
-- [ ] Commit: `feat: kontrol bekliyor listesi`
+- [x] Online sipariş satırında **Fatura** sütunu: `🧾 Fatura Kes` / `✓ Faturalı` (Bizimhesap
+      PDF'ini açar) / `⚠ Kontrol bekliyor` / `⏳ Kuyrukta`. Yetki `fatura_kes` (personelde
+      varsayılan KAPALI — geri alınamaz belge kesiyor).
+- [x] Süzgeç çipleri: `Tümü · Faturasız · Faturalı · Kontrol Bekliyor`, sayıları
+      **süzgeçsiz** listeden hesaplanır (boş liste "kayıt yok" sanılmasın).
+- [x] Fatura durumu BULUTTAN okunur (`kesilen_faturalar`), anahtar `ikas_siparis_id` —
+      yerel id her PC'de farklı.
+- [x] Toplu kesim: biri patlarsa diğerleri DURMAZ, her siparişin sonucu ayrı döner.
+- [x] Fatura Stoğu'na 4. görünüm **⚠️ Kontrol Bekliyor** (`durum='belirsiz'`):
+      "Kesilmiş" guid ister → `fatura_kes_bitir(tamam)`; "Kesilmemiş" → `fatura_kes_telafi`
+      (stok iade, sipariş yeniden faturalanabilir).
+- [x] IPC katmanı (`electron/db/fatura-kes.js`) iş mantığı TAŞIMAZ; kanal adaptörü +
+      çekirdek + sağlayıcı enjekte edilir.
 
 ---
 
