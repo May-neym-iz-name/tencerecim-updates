@@ -28,7 +28,10 @@ require.cache[dbYolu] = {
 const yetkiYolu = require.resolve('../yetki')
 require.cache[yetkiYolu] = {
   id: yetkiYolu, filename: yetkiYolu, loaded: true,
-  exports: { yetkiKontrol: sahteYetkiKontrol },
+  // 🔴 GERÇEK dışa verme adı: _yetkiKontrol. Taklidi `yetkiKontrol` diye kurmak
+  // v1.2.185'te canlıda 'yetkiKontrol is not a function' hatasına yol açtı —
+  // testler yeşildi çünkü taklit benim YANLIŞ varsayımımı doğruluyordu.
+  exports: { _yetkiKontrol: sahteYetkiKontrol },
 }
 
 // Şifreleme katmanı: testte kimliği koruyan sahte (gerçek DPAPI yok).
@@ -109,5 +112,17 @@ describe('yetki', () => {
     sahteYetkiKontrol.mockImplementationOnce(() => { throw new Error('Yetkiniz yok') })
     await expect(modul['fatura-ayar:kaydet']({ firm_id: 'X' })).rejects.toThrow(/Yetkiniz yok/)
     expect(yazilan).toHaveLength(0)
+  })
+})
+
+describe('yetki modülü sözleşmesi', () => {
+  test('gerçek yetki modülü _yetkiKontrol adıyla dışa verir', () => {
+    // Taklidin gerçekten sapmadığını doğrular: ad değişirse burası kırmızı olur,
+    // canlıda "is not a function" ile öğrenmeyiz.
+    vi.resetModules()
+    delete require.cache[yetkiYolu]
+    const gercek = require('../yetki')
+    expect(typeof gercek._yetkiKontrol).toBe('function')
+    expect(gercek.yetkiKontrol).toBeUndefined()
   })
 })

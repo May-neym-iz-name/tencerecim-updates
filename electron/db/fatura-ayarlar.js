@@ -10,7 +10,9 @@
 // bağlı, şifreli değer buluta giderse 2. PC onu ASLA çözemez ve fatura kesme
 // orada sessizce ölür. Buluta düz metin gider, RLS korur.
 const { getDb } = require('./database')
-const { yetkiKontrol } = require('../yetki')
+// Dışa verilen ad `_yetkiKontrol` — alt çizgi öneki main.js'in onu IPC kanalı
+// sanmasını engelliyor. Takma adla almak ZORUNLU (emsal: db/fatura-stok.js).
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 // Renderer'a maskeli döner; gerçek değer DB'de kalır.
 const HASSAS = new Set(['firm_id', 'token'])
