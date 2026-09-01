@@ -1,7 +1,7 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
 import { EventEmitter } from 'events'
 const https = require('https')
-const { faturaGonder, SaglayiciHatasi, _yukOlustur } = require('./bizimhesap')
+const { faturaGonder, baglantiSina, SaglayiciHatasi, _yukOlustur } = require('./bizimhesap')
 
 // https.request taklidi — desen electron/fatura/bulut.test.js'ten.
 function sahteIstek({ status, govdeMetni, hataMesaji, zamanAsimiTetikle, yarimKesme } = {}) {
@@ -227,7 +227,7 @@ describe('faturaGonder', () => {
     expect(casus).not.toHaveBeenCalled()
   })
 
-  test('firmId ve müşteri kişisel verisi hata nesnesine sızmaz', async () => {
+  test('firmId ve müşteri kişisel verisi hata nesnesine sızmaz (faturaGonder)', async () => {
     sahteIstek({ status: 502, govdeMetni: 'patlak' })
     try {
       await faturaGonder({ ...gecerliFatura, musteri: { id: 1, unvan: 'A', adres: 'B', tc: '12345678901', telefon: '5320000001' } }, { firmId: 'GIZLI' })
@@ -237,5 +237,45 @@ describe('faturaGonder', () => {
       expect(metin).not.toContain('12345678901')
       expect(metin).not.toContain('5320000001')
     }
+  })
+})
+
+describe('baglantiSina — salt okunur kimlik denemesi', () => {
+  test('token yoksa ağa HİÇ çıkmaz', async () => {
+    const casus = sahteIstek({ status: 200, govdeMetni: '{}' })
+    await expect(baglantiSina({ firm_id: 'F' })).rejects.toMatchObject({ kod: 'yapilandirma' })
+    expect(casus).not.toHaveBeenCalled()
+  })
+
+  test('başarılı yanıtta ürün sayısı ve firmId durumu döner', async () => {
+    sahteIstek({ status: 200, govdeMetni: JSON.stringify({ products: [{ id: 1 }, { id: 2 }] }) })
+    const s = await baglantiSina({ token: 'T', firm_id: 'F' })
+    expect(s).toMatchObject({ ok: true, urunSayisi: 2, firmIdGirilmis: true })
+  })
+
+  test('firmId girilmemişse bunu bildirir (bu uç firmId doğrulamaz)', async () => {
+    sahteIstek({ status: 200, govdeMetni: JSON.stringify({ products: [] }) })
+    const s = await baglantiSina({ token: 'T' })
+    expect(s.firmIdGirilmis).toBe(false)
+  })
+
+  test.each([401, 403])('%i: token reddedildi, mesaj kullanıcıya ne yapacağını söyler', async (st) => {
+    sahteIstek({ status: st, govdeMetni: '{}' })
+    await expect(baglantiSina({ token: 'T' })).rejects.toThrow(/API Key/)
+  })
+
+  test('SALT OKUNUR: GET ile products ucuna gider, fatura kesme ucuna DEGIL', async () => {
+    const casus = sahteIstek({ status: 200, govdeMetni: '{}' })
+    await baglantiSina({ token: 'T' })
+    const secenekler = casus.mock.calls[0][0]
+    expect(secenekler.method).toBe('GET')
+    expect(secenekler.path).toBe('/api/b2b/products')
+    expect(secenekler.headers.Token).toBe('T')
+    expect(secenekler.headers.Key).toMatch(/^BZMHB2B/)
+  })
+
+  test('ağ hatası belirsiz değil, doğrudan bildirilir (yazma yok, tekrar denenebilir)', async () => {
+    sahteIstek({ hataMesaji: 'ECONNRESET' })
+    await expect(baglantiSina({ token: 'T' })).rejects.toMatchObject({ kod: 'ag' })
   })
 })

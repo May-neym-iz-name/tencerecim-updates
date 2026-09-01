@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi, denetimApi } from '../api/ipc'
+import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi, denetimApi, faturaStokApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { veriSenk } from '../lib/veriSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
@@ -29,6 +29,7 @@ export default function Ayarlar() {
     { kod: 'kargo', ad: '📦 Kargo / UPS' },
     { kod: 'yazici', ad: '🖨️ Yazıcılar' },
     { kod: 'ikas', ad: '🛍️ ikas' },
+    { kod: 'fatura', ad: '🧾 Fatura' },
     { kod: 'meta', ad: '💬 Sosyal Medya' },
     { kod: 'yedek', ad: '💾 Yedekleme' },
   ]
@@ -154,6 +155,34 @@ export default function Ayarlar() {
   }, [])
 
   function ikasAlan(anahtar, deger) { setIkas(i => ({ ...i, [anahtar]: deger })) }
+
+  // --- Bizimhesap fatura kimlik bilgileri -----------------------------------
+  // Değerler renderer'a MASKELİ ('********') gelir; kullanıcı dokunmazsa öyle
+  // geri gider ve main tarafı maskeyi görüp mevcut değeri korur.
+  const [fatura, setFatura] = useState(null)
+  const [faturaMesgul, setFaturaMesgul] = useState('')
+  useEffect(() => { faturaStokApi.ayarGetir().then(setFatura).catch(() => setFatura({})) }, [])
+  function faturaAlan(anahtar, deger) { setFatura(f => ({ ...f, [anahtar]: deger })) }
+
+  async function faturaKaydet() {
+    setFaturaMesgul('kaydet')
+    try {
+      setFatura(await faturaStokApi.ayarKaydet(fatura))
+      toast.success('Fatura ayarları kaydedildi.')
+    } catch (e) { toast.error('Kaydedilemedi: ' + e.message) }
+    finally { setFaturaMesgul('') }
+  }
+
+  async function faturaSina() {
+    setFaturaMesgul('sina')
+    try {
+      const r = await faturaStokApi.ayarSina()
+      toast.success(`Bağlantı tamam — Bizimhesap ${r.urunSayisi ?? '?'} ürün döndürdü.`)
+      // firmId'yi bu uç doğrulamaz; eksikse fatura kesme yine de çalışmaz.
+      if (!r.firmIdGirilmis) toast.error('Firm ID girilmemiş — Token çalışıyor ama fatura KESİLEMEZ.')
+    } catch (e) { toast.error('Bağlantı sınaması başarısız: ' + e.message) }
+    finally { setFaturaMesgul('') }
+  }
 
   async function ikasDurumYenile() {
     try { setIkasDurum(await ikasApi.durum()) } catch {}
@@ -675,6 +704,47 @@ export default function Ayarlar() {
               <span>Son senkron: {ikasDurum.son_siparis_senk ? new Date(ikasDurum.son_siparis_senk).toLocaleString('tr-TR') : '—'}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {sekme === 'fatura' && yonetici && fatura && (
+        <div className="bg-white rounded-xl border p-5 mb-5">
+          <h3 className="font-semibold mb-1">🧾 Bizimhesap Fatura Entegrasyonu</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            ikas siparişlerine buradan e-fatura/e-arşiv kesilir. İki değer de Bizimhesap panelinde
+            <b> E-Ticaret → Ayarlar → (bir entegratör uygulaması) → API Key</b> altında, aynı yerde durur.
+            Değerler bu bilgisayarda şifreli saklanır, diğer mağaza PC'sine senkronla gider.
+          </p>
+
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div>
+              <label className="text-xs text-gray-500">Firm ID <span className="text-gray-400">— fatura kesmek için</span></label>
+              <input type="password" value={fatura.firm_id || ''} onChange={e => faturaAlan('firm_id', e.target.value)}
+                placeholder="32 haneli API Key" className="border rounded px-2 py-1.5 text-sm w-full" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500">Token <span className="text-gray-400">— stok/ürün okumak için</span></label>
+              <input type="password" value={fatura.token || ''} onChange={e => faturaAlan('token', e.target.value)}
+                placeholder="Aynı API Key" className="border rounded px-2 py-1.5 text-sm w-full" />
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mb-4">
+            Kayıtlı değerler <b>********</b> görünür; dokunmazsan eskisi korunur.
+          </p>
+
+          <div className="flex gap-2">
+            <button onClick={faturaKaydet} disabled={!!faturaMesgul}
+              className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm disabled:opacity-50">
+              {faturaMesgul === 'kaydet' ? 'Kaydediliyor…' : 'Kaydet'}
+            </button>
+            <button onClick={faturaSina} disabled={!!faturaMesgul}
+              className="px-4 py-1.5 border rounded text-sm disabled:opacity-50">
+              {faturaMesgul === 'sina' ? 'Sınanıyor…' : 'Bağlantıyı Sına'}
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Sınama yalnızca ürün listesini <b>okur</b> — fatura kesmez.
+          </p>
         </div>
       )}
 

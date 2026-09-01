@@ -14,6 +14,11 @@ const { yuvarla } = require('../../db/satis-hesapla')
 
 const HOST = 'bizimhesap.com'
 const YOL = '/api/b2b/addinvoice'
+const YOL_URUNLER = '/api/b2b/products'
+// Dokümanda AÇIKÇA yazılı sabit entegrasyon anahtarı (herkes için aynı, gizli
+// değil): docs/bizimhesap-api-reference.md "Ürün Listesi Alma". Hesaba özel olan
+// Token başlığıdır.
+const B2B_KEY = 'BZMHB2B724018943908D0B82491F203F'
 const SOKET_BOSTA_MS = 30000     // soket BOŞTA kalma sınırı (https option.timeout)
 const TOPLAM_SURE_MS = 45000     // isteğin toplam ömrü — aşağıdaki nedene bak
 const FATURA_TIPI_SATIS = 3      // 3 = Satış, 5 = Alış
@@ -155,9 +160,10 @@ function _yukOlustur(fatura, ayarlar) {
   }
 }
 
-function _istek(yuk) {
+function _istek(yuk, secenek) {
+  const { yol = YOL, yontem = 'POST', ekBasliklar = null } = secenek || {}
   return new Promise((cozumle, reddet) => {
-    const govde = JSON.stringify(yuk)
+    const govde = yuk == null ? '' : JSON.stringify(yuk)
     let bitti = false
     let sayac = null
     const kapat = () => { if (sayac) { clearTimeout(sayac); sayac = null } }
@@ -171,12 +177,12 @@ function _istek(yuk) {
     const req = https.request(
       {
         hostname: HOST,
-        path: YOL,
-        method: 'POST',
-        headers: {
+        path: yol,
+        method: yontem,
+        headers: Object.assign({
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(govde),
-        },
+        }, ekBasliklar || {}),
         timeout: SOKET_BOSTA_MS,
       },
       (res) => {
@@ -245,4 +251,38 @@ async function faturaGonder(fatura, ayarlar) {
   return { guid: veri.guid, url: veri.url, hamYanit: veri }
 }
 
-module.exports = { faturaGonder, SaglayiciHatasi, _yukOlustur }
+// Kimlik bilgilerini SALT OKUNUR uçla dener — fatura KESMEZ, hiçbir şey yazmaz.
+// Kullanıcı "Bağlantıyı Sına" dediğinde çalışır; amaç yanlış anahtarı fatura
+// kesme anında değil, ayar ekranında yakalamak.
+async function baglantiSina(ayarlar) {
+  const token = ayarlar && ayarlar.token
+  if (!token) {
+    throw new SaglayiciHatasi('Bizimhesap Token tanımlı değil (Ayarlar > Fatura)', 'yapilandirma')
+  }
+  const { status, ham } = await _istek(null, {
+    yol: YOL_URUNLER,
+    yontem: 'GET',
+    ekBasliklar: { Key: B2B_KEY, Token: token },
+  })
+  if (status === 401 || status === 403) {
+    throw new SaglayiciHatasi('Bizimhesap Token kabul etmedi — panelden kopyaladığın API Key doğru mu?', 'yapilandirma')
+  }
+  if (status < 200 || status >= 300) {
+    throw new SaglayiciHatasi(`Bizimhesap ürün listesi alınamadı (HTTP ${status})`, 'is_hatasi', { status })
+  }
+  let veri = null
+  try { veri = ham ? JSON.parse(ham) : null } catch { veri = null }
+  if (veri && veri.error) {
+    throw new SaglayiciHatasi('Bizimhesap reddetti: ' + veri.error, 'is_hatasi', veri)
+  }
+  // firmId'yi bu uç doğrulamaz (onu yalnız addinvoice kullanır) — girilmiş mi
+  // bilgisini ayrıca döndür ki kullanıcı eksiği görsün.
+  const liste = (veri && (veri.products || veri.data || veri.Products)) || []
+  return {
+    ok: true,
+    urunSayisi: Array.isArray(liste) ? liste.length : null,
+    firmIdGirilmis: Boolean(ayarlar && ayarlar.firm_id),
+  }
+}
+
+module.exports = { faturaGonder, baglantiSina, SaglayiciHatasi, _yukOlustur }

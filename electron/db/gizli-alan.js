@@ -27,6 +27,9 @@ const HASSAS_ANAHTARLAR = {
   ikas_ayarlar: ['client_secret'],
   ups_ayarlar: ['sifre'],
   meta_ayarlar: ['app_secret', 'sayfa_token'],
+  // firm_id de secret: addinvoice'un TEK kimlik dogrulamasi odur — eline gecen
+  // herkes bizim hesabimiza fatura kesebilir.
+  fatura_ayarlar: ['firm_id', 'token'],
 }
 
 function sifreliMi(deger) {

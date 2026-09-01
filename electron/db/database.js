@@ -554,6 +554,14 @@ function migrate() {
   // kalemi bilesenlerine cozulemez ve o siparise fatura kesilemez.
   // Deger SKU uzerinden doldurulur (ad ile eslestirme birincil yol DEGIL).
   try { db.exec("ALTER TABLE setler ADD COLUMN ikas_varyant_id TEXT") } catch {}
+  // Faz 2 fatura kesme: Bizimhesap kimlik bilgileri (firm_id + token).
+  // ikas_ayarlar/ups_ayarlar ile AYNI anahtar-deger modeli; degerler DISKTE
+  // sifreli durur (bkz. db/gizli-alan.js), buluta duz metin gider (DPAPI
+  // makineye bagli oldugu icin sifreli deger 2. PC'de cozulemez).
+  db.exec(`CREATE TABLE IF NOT EXISTS fatura_ayarlar (
+    anahtar TEXT PRIMARY KEY,
+    deger TEXT
+  )`)
   // online sipariş iadeleri — ikas'tan okunan iade gerçeği (v1.2.174).
   // ikas sipariş TOPLAMINI iade sonrası güncellemez (16.626 TL kalır) ve kargo etiketi
   // iade edilen ürünü listelemeye devam ederdi. Kalan tutarı/kalemi kendimiz tutuyoruz.

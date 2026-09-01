@@ -80,6 +80,12 @@ export const faturaStokApi = {
   alisListele: (params) => invoke('alis-fatura:listele', params),
   alisKalemler: (id) => invoke('alis-fatura:kalemler', id),
   alisKaydet: (veri) => invoke('alis-fatura:kaydet', veri),
+
+  // Bizimhesap kimlik bilgileri (Ayarlar > Fatura). Değerler renderer'a MASKELİ
+  // döner; sınama SALT OKUNUR uca gider, fatura kesmez.
+  ayarGetir: () => invoke('fatura-ayar:getir'),
+  ayarKaydet: (veri) => invoke('fatura-ayar:kaydet', veri),
+  ayarSina: () => invoke('fatura-ayar:sina'),
 }
 
 export const lokasyonApi = {

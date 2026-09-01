@@ -49,7 +49,9 @@ function topla() {
   const otomasyon_yurutucu = {}
   for (const r of yur) otomasyon_yurutucu[r.anahtar] = r.deger
 
-  return { ups: kv('ups_ayarlar'), ikas, gonderici, lokasyon_ikas, hizli_yanitlar, otomasyon_yurutucu }
+  // fatura: Bizimhesap firmId + token — 2. PC'ye elle girilmesin (kv() düz metne çevirir).
+  return { ups: kv('ups_ayarlar'), ikas, gonderici, lokasyon_ikas, hizli_yanitlar, otomasyon_yurutucu,
+    fatura: kv('fatura_ayarlar') }
 }
 
 function uygula(veri = {}) {
@@ -67,6 +69,7 @@ function uygula(veri = {}) {
     tx()
   }
   upsertKv('ups_ayarlar', veri.ups)
+  upsertKv('fatura_ayarlar', veri.fatura)
   if (veri.ikas) {
     const ikas = { ...veri.ikas }
     for (const k of IKAS_YEREL_ANAHTARLAR) delete ikas[k]

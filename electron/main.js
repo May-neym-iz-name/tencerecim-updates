@@ -458,6 +458,7 @@ const handlerModules = [
   require('./db/satislar'),
   require('./db/stok'),
   require('./db/fatura-stok'),
+  require('./db/fatura-ayarlar'),
   require('./db/lokasyonlar'),
   require('./db/markalar'),
   require('./db/tedarikciler'),
