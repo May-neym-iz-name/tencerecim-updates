@@ -285,3 +285,30 @@ Hatalı
 {% endtab %}
 {% endtabs %}
 
+
+---
+
+## CANLI YANIT NOTLARI (01.09.2026 — gerçek hesaptan okundu, dokümanda YOK)
+
+`/api/b2b/products`, `/api/b2b/warehouses` ve `/api/b2b/inventory/{depo}` uçlarının
+yanıt zarfı, dokümandaki `addinvoice` biçiminden FARKLI:
+
+```json
+{ "resultCode": 1, "errorText": "", "data": { "products": [ ... ] } }
+{ "resultCode": 1, "errorText": "", "data": { "warehouses": [ {"id": "...", "title": "..."} ] } }
+```
+
+- 🔴 **Başarı kodu `1`** (0 DEĞİL). 0 varsayılırsa her başarılı çağrı hata sanılır.
+- Hata alanı `errorText` (addinvoice'taki `error` değil).
+- Liste `data.products` / `data.warehouses` altında; kökte DEĞİL.
+- `Key` başlığı dokümanda açıkça yazılı SABİT değerdir (gizli değil); hesaba özel olan `Token`.
+
+**Token / firmId nereden alınır (dokümanda yazmıyor):** Bizimhesap paneli →
+**E-Ticaret → Ayarlar → "E-ticaret Uygulamaları" süzgeci → herhangi bir uygulama
+(Entegra, Sopyo…) → API Key**. Değer FİRMA düzeyindedir (uygulamaya göre değişmez),
+32 haneli büyük onaltılık — `addinvoice`'un `firmId` biçimiyle aynı.
+
+**Hesabın durumu (01.09.2026):** 2.931 ürün, 2 depo — `İstanbul/Pendik Depo` ve
+`Kocaeli/Gölcük Depo`. `products[]` kaydında `quantity` alanı da var; fatura stoğu
+tohumlaması (Faz 2 / Task 9) için depo bazlı `inventory` ile ürün üzerindeki toplam
+`quantity` arasında seçim yapılmalı.
