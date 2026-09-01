@@ -313,10 +313,20 @@ export default function Urunler() {
                 ikas'ta {webLinkSonuc.ikasToplam} ürün var, {webLinkSonuc.ikasSku} stok kodu okundu.
                 Kalan {webLinkSonuc.sitedeYokSayi} ürün sitede satılmıyor — linksiz olmaları normal.
               </div>
+              {webLinkSonuc.adIleEslesen?.length > 0 && (
+                <details className="mt-1 text-amber-800">
+                  <summary className="cursor-pointer text-xs underline">
+                    {webLinkSonuc.adIleEslesen.length} ürün stok kodu yerine ADIYLA eşleşti — ikas'ta stok kodunu doldurun
+                  </summary>
+                  <ul className="text-xs mt-1 max-h-40 overflow-auto list-disc pl-4">
+                    {webLinkSonuc.adIleEslesen.map(x => <li key={x}>{x}</li>)}
+                  </ul>
+                </details>
+              )}
               {webLinkSonuc.skusuz?.length > 0 && (
                 <details className="mt-1 text-amber-800">
                   <summary className="cursor-pointer text-xs underline">
-                    ikas'ta {webLinkSonuc.skusuz.length} ürünün stok kodu yok — eşleşemedi
+                    ikas'ta {webLinkSonuc.skusuz.length} ürünün stok kodu yok — yalnız birebir adla eşleşebilirler
                   </summary>
                   <ul className="text-xs mt-1 max-h-40 overflow-auto list-disc pl-4">
                     {webLinkSonuc.skusuz.map(x => <li key={x}>{x}</li>)}

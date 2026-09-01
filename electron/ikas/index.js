@@ -3,6 +3,7 @@
 const { getDb } = require('../db/database')
 const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
+const { haritalariKur, slugCoz } = require('./web-link')
 const { bildirimUret, mevcutTalepleriBildir } = require('./bildirim-uret')
 const { asamalar, asamaYaz } = require('../db/talep-durumlari')
 const { TALEP_SORGUSU, _talepPaketleri } = require('./talep-detay')
@@ -688,13 +689,12 @@ const WEB_SITESI = 'https://tencerecim.store'
  * Ad eşleştirmesi bilinçli olarak KULLANILMAZ (kulp/varyant farkları yanlış link üretir).
  * @returns {{yazilan: number, ikasToplam: number, ikasSku: number, eslesen: number,
  *            sitedeYokSayi: number, slugsuz: Array<string>, skusuz: Array<string>,
- *            setYazilan: number, setEslesen: number, setSitedeYokSayi: number}}
+ *            setYazilan: number, setEslesen: number, setSitedeYokSayi: number,
+ *            adIleEslesen: Array<string>}}
  */
 async function webLinkleriCek() {
   const db = getDb()
-  const slugBySku = new Map()
-  const slugsuz = []   // ikas'ta sayfa adresi (slug) tanımsız ürünler
-  const skusuz = []    // ikas'ta hiçbir varyantında stok kodu olmayan ürünler — eşleşemezler
+  const ikasUrunler = []
   let ikasToplam = 0
   for (let page = 1; page <= 100; page++) {
     const r = await graphql(
@@ -705,15 +705,13 @@ async function webLinkleriCek() {
     const veri = r?.listProduct?.data || []
     ikasToplam = r?.listProduct?.count ?? ikasToplam
     if (!veri.length) break
-    for (const u of veri) {
-      const slug = u?.metaData?.slug
-      if (!slug) { slugsuz.push(u.name); continue }
-      const skular = (u.variants || []).map(v => v.sku).filter(Boolean)
-      if (!skular.length) { skusuz.push(u.name); continue }
-      for (const sku of skular) slugBySku.set(String(sku).trim(), slug)
-    }
+    ikasUrunler.push(...veri)
     if (veri.length < 100) break
   }
+  // SKU birincil anahtar; ikas'ta stok kodu yazılmamış ürünler için birebir ad yedeği
+  // devreye girer (bkz. web-link.js — bulanık eşleştirme DEĞİL).
+  const haritalar = haritalariKur(ikasUrunler)
+  const { slugBySku, slugsuz, skusuz } = haritalar
 
   const yerel = db.prepare("SELECT id, sku, ad, web_link FROM urunler WHERE aktif=1 AND sku IS NOT NULL AND sku != ''").all()
   const yaz = db.prepare('UPDATE urunler SET web_link = ? WHERE id = ?')
@@ -726,21 +724,24 @@ async function webLinkleriCek() {
   // ikas'ta OLUP stok kodu/slug'ı eksik olan ürünlerdir (skusuz/slugsuz) — onlar düzeltilebilir.
   const sitedeYok = []
   const setSitedeYok = []
+  const adIleEslesen = []  // SKU'su ikas'ta boş olduğu için ad ile çözülenler (ikas'ta düzeltilmeli)
   let yazilan = 0
   let setYazilan = 0
   const tx = db.transaction(() => {
     for (const u of yerel) {
-      const slug = slugBySku.get(String(u.sku).trim())
-      if (!slug) { sitedeYok.push(`${u.sku} — ${u.ad}`); continue }
-      const link = `${WEB_SITESI}/${slug}`
+      const c = slugCoz(u, haritalar)
+      if (!c) { sitedeYok.push(`${u.sku} — ${u.ad}`); continue }
+      if (c.kaynak === 'ad') adIleEslesen.push(`${u.sku} — ${u.ad}`)
+      const link = `${WEB_SITESI}/${c.slug}`
       if (u.web_link === link) continue // değişmediyse yazma (senkron kuyruğunu şişirmesin)
       yaz.run(link, u.id)
       yazilan++
     }
     for (const s of yerelSet) {
-      const slug = slugBySku.get(String(s.sku).trim())
-      if (!slug) { setSitedeYok.push(`${s.sku} — ${s.ad}`); continue }
-      const link = `${WEB_SITESI}/${slug}`
+      const c = slugCoz(s, haritalar)
+      if (!c) { setSitedeYok.push(`${s.sku} — ${s.ad}`); continue }
+      if (c.kaynak === 'ad') adIleEslesen.push(`${s.sku} — ${s.ad}`)
+      const link = `${WEB_SITESI}/${c.slug}`
       if (s.web_link === link) continue
       yazSet.run(link, s.id)
       setYazilan++
@@ -749,7 +750,8 @@ async function webLinkleriCek() {
   tx()
   return { yazilan, ikasToplam, ikasSku: slugBySku.size, eslesen: yerel.length - sitedeYok.length,
     sitedeYokSayi: sitedeYok.length, slugsuz, skusuz,
-    setYazilan, setEslesen: yerelSet.length - setSitedeYok.length, setSitedeYokSayi: setSitedeYok.length }
+    setYazilan, setEslesen: yerelSet.length - setSitedeYok.length, setSitedeYokSayi: setSitedeYok.length,
+    adIleEslesen }
 }
 
 // --- IPC handler'ları -------------------------------------------------------
