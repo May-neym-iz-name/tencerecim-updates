@@ -502,7 +502,7 @@ Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bu
   - `p_durum` yalnız `'tamam'` veya `'belirsiz'` olabilir; başka değer → `raise exception 'GECERSIZ_DURUM'`.
   - `'belirsiz'`de `saglayici_guid` NULL kalır ama `hata_mesaji` doldurulur; **stok İADE EDİLMEZ** (spec §⑤).
   - `belge_tipi_kaynak` varsayılan `'tahmin'` — tahmini kesin bilgi gibi yazma.
-- [x] **Step 2:** Dosyayı kontrolöre bildir. 🔴 **Canlıya UYGULAMA.**
+- [x] **Step 2:** ✔ **CANLIYA UYGULANDI (01.09)** — kullanıcı planın "canlıya uygulama" frenini kaldırdı; Dashboard SQL Editor üzerinden çalıştırıldı. Doğrulama: 3 fonksiyon da INVOKER, anon=false/authenticated=true, kısmi indeks + durum kısıtı var, olmayan faturaya `false` (CAS), guid'siz `tamam` → `GUID_YOK` hatası (gövde sonuna kadar derleniyor).
 - [x] **Step 3:** Commit: `feat: fatura_kes_bitir rpc`
 
 ---
