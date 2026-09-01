@@ -474,6 +474,137 @@ git commit -m "feat: bizimhesap saglayici adaptoru"
 
 ---
 
+## İkinci tur — Task 4-9 (01.09.2026'da yazıldı)
+
+Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bunları kapatmakla başlıyor:
+
+1. 🔴 `kesilen_faturalar` durum makinesinde `tamam`/`belirsiz`e geçiren **sunucu fonksiyonu yok**.
+   Elde yalnız `fatura_kes_basla` (→`kuyrukta`) ve `fatura_kes_telafi` (→`hata`) var. Sağlayıcı
+   `guid` döndürdükten sonra satır sonsuza dek `kuyrukta` kalır. → Task 4A.
+2. 🔴 `setler` tablosunda **`ikas_varyant_id` yok**. Sipariş kalemi ürüne yalnız
+   `urunler.ikas_varyant_id` ile bağlanıyor (`electron/ikas/index.js:267`), dolayısıyla ikas'ta
+   satılan bir SET kaleminin `urun_id`'si NULL kalır ve bileşenlere çözülemez. → Task 5A.
+
+---
+
+### Task 4A: `fatura_kes_bitir` RPC — sonucu durum makinesine yaz
+
+**Files:** Create: `supabase/16_fatura_kes_bitir.sql`
+
+**Interfaces:** Produces `fatura_kes_bitir(p_fatura_senk_id uuid, p_durum text, p_guid text, p_url text, p_fatura_no text, p_belge_tipi text, p_belge_tipi_kaynak text) returns boolean`
+
+- [ ] **Step 1:** Migration'ı yaz. Kurallar (Task 2'nin öğrendikleri, aynen geçerli):
+  - `exception when` bloğu **EKLEME** (savepoint yutması → yetim `kuyrukta` satırı).
+  - `security invoker` (varsayılan) — RLS devrede kalsın.
+  - `set search_path = 'public'`.
+  - Durum geçişi **compare-and-swap**: `update ... where senk_id = p and durum in ('kuyrukta','saglayici_ok')`.
+    0 satır etkilenirse `false` dön (idempotent; ikinci PC'nin geç kalan çağrısı sessizce yutulur).
+  - `p_durum` yalnız `'tamam'` veya `'belirsiz'` olabilir; başka değer → `raise exception 'GECERSIZ_DURUM'`.
+  - `'belirsiz'`de `saglayici_guid` NULL kalır ama `hata_mesaji` doldurulur; **stok İADE EDİLMEZ** (spec §⑤).
+  - `belge_tipi_kaynak` varsayılan `'tahmin'` — tahmini kesin bilgi gibi yazma.
+- [ ] **Step 2:** Dosyayı kontrolöre bildir. 🔴 **Canlıya UYGULAMA.**
+- [ ] **Step 3:** Commit: `feat: fatura_kes_bitir rpc`
+
+---
+
+### Task 4B: Fatura çekirdeği — set çözme, guard, durum akışı
+
+**Files:**
+- Create: `electron/fatura/set-coz.js` + `electron/fatura/set-coz.test.js`
+- Create: `electron/fatura/cekirdek.js` + `electron/fatura/cekirdek.test.js`
+
+**Interfaces:**
+- `setCoz(setKalemi, bilesenler)` → bileşen kalemleri (ağırlıklı fiyat dağıtımı, kuruş farkı SON satıra)
+- `faturaKes(girdi, bagimliliklar)` → `{ durum, guid, url, senk_id }`
+  `bagimliliklar = { saglayici, rpc, jwtAl }` — **sağlayıcı ENJEKTE edilir**, `require` ile içeriden
+  bağlanmaz. Gerekçe: Bizimhesap adaptörü hâlâ inceleme altında; ayrıca Mikro'ya geçiş tek satır olur.
+
+- [ ] **Step 1:** `set-coz` için başarısız testleri yaz. Vakalar:
+  - farklı KDV oranlı iki bileşen → ağırlıklı dağıtım (eşit bölme YANLIŞ sonuç verir, test bunu yakalasın)
+  - kuruş farkı: `100,00 TL` set, 3 eşit bileşen → `33,33 + 33,33 + 33,34` (son satır düzeltir)
+  - set adedi > 1
+  - bileşen fiyatlarının toplamı 0 → sıfıra bölme YOK, Türkçe hata
+- [ ] **Step 2:** `setCoz`'u yaz. Formül spec §③'ten; `yuvarla` **satis-hesapla.js'ten** alınır, yeni hesaplayıcı yazılmaz.
+- [ ] **Step 3:** `cekirdek` testleri — üç sonuç sınıfı ayrı ayrı:
+  - sağlayıcı `is_hatasi` → `fatura_kes_telafi` ÇAĞRILIR (stok iade)
+  - sağlayıcı `ag` → telafi **ÇAĞRILMAZ**, `fatura_kes_bitir(..., 'belirsiz', ...)` çağrılır
+  - başarı → `fatura_kes_bitir(..., 'tamam', guid, url, ...)`
+  - guard: SKU'su boş kalem → ağa **hiç çıkılmaz**, hangi ürün olduğu mesajda geçer
+  - guard: fatura stoğu yetersiz → mesaj **hangi üründen ne kadar eksik** olduğunu taşır
+- [ ] **Step 4:** Çekirdeği yaz. Sıra: guard → `fatura_kes_basla` (sahiplen + stok düş) → sağlayıcıya gönder → `fatura_kes_bitir` / `fatura_kes_telafi`.
+- [ ] **Step 5:** `npm test` — hepsi geçmeli. Commit: `feat: fatura cekirdegi (set cozme + durum akisi)`
+
+---
+
+### Task 5A: `setler.ikas_varyant_id` — ikas'ta satılan seti tanı
+
+**Files:** Modify `electron/db/database.js` (ALTER), `electron/ikas/index.js` (doldurma) + test.
+
+- [ ] **Step 1:** `try { db.exec("ALTER TABLE setler ADD COLUMN ikas_varyant_id TEXT") } catch {}` — dosyadaki mevcut ALTER deseniyle aynı yerde.
+- [ ] **Step 2:** Doldurma: ikas ürün çekiminde SKU→varyant kimliği haritası kurulur (`web-link` aynı listeyi çekiyor). `setler.sku` ile eşleşen varyantın kimliği yazılır.
+  🔴 Ad ile eşleştirme **birincil yol DEĞİL** — yalnız SKU. SKU'su boş set = kullanıcıya rapor.
+- [ ] **Step 3:** Sipariş kalemi eşleştirmesine set yolunu ekle: `urun_id` NULL ise `setler.ikas_varyant_id` denenir.
+- [ ] **Step 4:** Test + commit: `feat: setler ikas varyant kimligi`
+
+---
+
+### Task 5B: ikas kanal adaptörü
+
+**Files:** Create `electron/fatura/kanal/ikas.js` + testi.
+
+- [ ] **Step 1:** `siparisiFaturayaCevir(siparisId)` → `{ musteri, kalemler, fatura_no, tarih }`.
+  - Müşteri: `fatura_unvan` / `fatura_vergi_no` / `fatura_vergi_dairesi` / `fatura_tc` **sipariş satırından**; boşsa `musteri_ad` + teslimat adresi yedek.
+  - Kalemler: `urun_id` doluysa doğrudan; set ise `setCoz`; ikisi de değilse **guard hatası** (ürün adıyla — kullanıcı ikas'ta düzeltebilsin).
+  - KDV oranı sipariş kaleminde YOK → `urunler.kdv_orani` / `setler.kdv_orani`'ndan alınır.
+  - `iade_miktar` düşülür: iade edilmiş adede fatura kesilmez.
+- [ ] **Step 2:** Testler: iadeli sipariş, setli sipariş, vergi kimliği eksik sipariş, SKU'suz ürün.
+- [ ] **Step 3:** Commit: `feat: ikas kanal adaptoru`
+
+---
+
+### Task 6: Fatura ayarları (firmId + Token)
+
+**Files:** `electron/db/fatura-ayarlar.js`, IPC kaydı, `src/components/ayarlar/FaturaAyarlari.jsx`.
+
+- [ ] Ayarlar > Fatura: `firmId` ve `Token` girişi, Supabase `uygulama_ayarlar`'da saklanır (ikinci PC'ye elle girilmesin).
+- [ ] 🔴 Token **DPAPI ile şifrelenir** (güvenlik sertleştirme fazındaki desen), düz metin yazılmaz.
+- [ ] "Bağlantıyı sına" düğmesi: `products` ucuna 1 kayıtlık istek; sonuç Türkçe.
+- [ ] Commit: `feat: fatura ayarlari (firmId + token)`
+
+---
+
+### Task 7: ikas arayüzü — Fatura Kes düğmesi
+
+**Files:** `src/components/OnlineSiparisler.jsx`
+
+- [ ] Satır sonunda üç durumlu düğme: `🧾 Fatura Kes` / `✓ Faturalı` (tıklayınca `saglayici_url` açılır) / `🔒 Fatura Stoğu Yok`
+- [ ] Filtre çipleri: `Tümü · Faturasız · Faturalı · Fatura Stoğu Yok`
+- [ ] Toplu seçim + toplu kesme; her satırın sonucu ayrı raporlanır (biri patlayınca diğerleri durmaz).
+- [ ] Yetki: `fatura_kes` yoksa düğme görünmez.
+- [ ] Commit: `feat: online siparislerde fatura kesme arayuzu`
+
+---
+
+### Task 8: "Kontrol Bekliyor" listesi
+
+- [ ] Fatura Stoğu sekmesine dördüncü görünüm: `durum = 'belirsiz'` satırları.
+- [ ] Her satırda "Bizimhesap'ta kesilmiş" / "kesilmemiş" düğmeleri. "kesilmemiş" → `fatura_kes_telafi` (stok iade); "kesilmiş" → `fatura_kes_bitir(..., 'tamam', ...)` kullanıcının girdiği guid/fatura no ile.
+- [ ] 🔴 Liste boş DEĞİLSE görünür uyarı — sessiz birikirse mükerrer fatura riski doğar.
+- [ ] Commit: `feat: kontrol bekliyor listesi`
+
+---
+
+### Task 9: Bizimhesap'tan fatura stoğu tohumlama
+
+**Ön koşul:** Token. Bu yapılmadan Faz 2 CANLIYA ALINAMAZ (yoksa açıldığı gün her ürün "fatura stoğu yok" der).
+
+- [ ] `inventory` ucundan depo stoğu okunur, `fatura_stok`a açılış bakiyesi olarak yazılır.
+- [ ] Tek seferlik ve **idempotent** (ikinci çalıştırma bakiyeyi ikiye katlamaz — `yerel_onarimlar` deseni).
+- [ ] Fark raporu: uygulama stoğu ile Bizimhesap stoğu tutmayan ürünler listelenir, körlemesine yazılmaz.
+- [ ] Commit: `feat: bizimhesap fatura stogu tohumlama`
+
+---
+
 ## Sonraki görevler (bu dosyanın ikinci turunda yazılacak)
 
 Task 1-3 tamamlanıp incelendikten sonra, öğrenilenlere göre şu görevler eklenecek:
