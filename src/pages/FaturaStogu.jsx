@@ -73,6 +73,22 @@ export default function FaturaStogu() {
 
   // --- Hareketler sekmesi ---
   const [hareketArama, setHareketArama] = usePersistentState('fatura_stok_hareket_arama', '')
+  // Bizimhesap'tan açılış bakiyesi (Faz 2 / Task 9). Sunucu tarafı idempotent:
+  // bakiyesi zaten olan ürüne DOKUNMAZ, ikinci basış hiçbir şeyi katlamaz.
+  const [tohumMesgul, setTohumMesgul] = useState(false)
+  const [tohumSonuc, setTohumSonuc] = useState(null)
+  async function tohumla() {
+    setTohumMesgul(true)
+    setTohumSonuc(null)
+    try {
+      const r = await faturaStokApi.tohumla()
+      setTohumSonuc(r)
+      toast.success(`${r.yazilan} ürüne açılış bakiyesi yazıldı (${r.toplam_adet} adet).`)
+      await yukle()
+    } catch (e) { toast.error('Tohumlama başarısız: ' + e.message) }
+    finally { setTohumMesgul(false) }
+  }
+
   const [hareketler, setHareketler] = useState(null) // null = henüz veri gelmedi
   const [hareketYukleniyor, setHareketYukleniyor] = useState(false)
   const [hareketHata, setHareketHata] = useState(null)
@@ -212,7 +228,39 @@ export default function FaturaStogu() {
               className="px-3 py-2 rounded-lg text-sm border hover:bg-gray-50 disabled:opacity-50">
               🔄 Tekrar Dene
             </button>
+            <button type="button" onClick={tohumla} disabled={tohumMesgul}
+              title="Bizimhesap'taki stok, fatura stoğuna AÇILIŞ BAKİYESİ olarak yazılır. Bakiyesi olan ürüne dokunulmaz."
+              className="px-3 py-2 rounded-lg text-sm border hover:bg-gray-50 disabled:opacity-50">
+              {tohumMesgul ? 'Alınıyor…' : "📥 Bizimhesap Açılış Bakiyesi"}
+            </button>
           </div>
+
+          {tohumSonuc && (
+            <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm">
+              <b>{tohumSonuc.yazilan}</b> ürüne açılış bakiyesi yazıldı ({tohumSonuc.toplam_adet} adet).
+              {tohumSonuc.atlanan > 0 && <> {tohumSonuc.atlanan} ürün atlandı (bakiyesi zaten vardı).</>}
+              {tohumSonuc.rapor?.bizdeYok?.length > 0 && (
+                <details className="mt-1 text-amber-800">
+                  <summary className="cursor-pointer text-xs underline">
+                    Bizimhesap'ta olup uygulamada bulunmayan {tohumSonuc.rapor.bizdeYok.length} stok kodu
+                  </summary>
+                  <ul className="text-xs mt-1 max-h-40 overflow-auto list-disc pl-4">
+                    {tohumSonuc.rapor.bizdeYok.map(x => <li key={x}>{x}</li>)}
+                  </ul>
+                </details>
+              )}
+              {tohumSonuc.rapor?.senkBekleyen?.length > 0 && (
+                <details className="mt-1 text-red-700">
+                  <summary className="cursor-pointer text-xs underline">
+                    {tohumSonuc.rapor.senkBekleyen.length} ürünün bulut kimliği yok — senkron sonrası tekrar çalıştırın
+                  </summary>
+                  <ul className="text-xs mt-1 max-h-40 overflow-auto list-disc pl-4">
+                    {tohumSonuc.rapor.senkBekleyen.map(x => <li key={x}>{x}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
 
           {yukleniyor && (
             <p className="text-center text-gray-400 py-8">Yükleniyor…</p>

@@ -86,6 +86,9 @@ export const faturaStokApi = {
   ayarGetir: () => invoke('fatura-ayar:getir'),
   ayarKaydet: (veri) => invoke('fatura-ayar:kaydet', veri),
   ayarSina: () => invoke('fatura-ayar:sina'),
+
+  // Bizimhesap'tan açılış bakiyesi. İDEMPOTENT: bakiyesi olan ürüne dokunmaz.
+  tohumla: () => invoke('fatura-stok:tohumla'),
 }
 
 export const lokasyonApi = {

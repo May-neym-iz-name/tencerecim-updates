@@ -43,6 +43,24 @@ function yerelUrunler() {
 module.exports = {
   _durumBirlestir: durumBirlestir,
 
+  // Bizimhesap'tan açılış bakiyesi (Faz 2 / Task 9). İDEMPOTENT: sunucu yalnız
+  // bakiyesi HİÇ OLMAYAN ürüne yazar, ikinci çalıştırma hiçbir şeyi katlamaz.
+  'fatura-stok:tohumla': async () => {
+    yetkiKontrol('fatura_stok_duzenle')
+    const ayarlar = require('./fatura-ayarlar')._ayarlariGetir()
+    const bizimhesapUrunler = await require('../fatura/saglayici/bizimhesap').urunleriGetir(ayarlar)
+    const yerelUrunler = getDb().prepare(
+      "SELECT sku, senk_id, ad FROM urunler WHERE aktif = 1 AND sku IS NOT NULL AND sku != ''").all()
+    const { kalemler, rapor } = require('../fatura/tohumlama').tohumKalemleriKur(bizimhesapUrunler, yerelUrunler)
+    if (!kalemler.length) {
+      return { yazilan: 0, atlanan: 0, toplam_adet: 0, rapor }
+    }
+    const kimlik = require('../yetki')._aktifKimlik()
+    const sonuc = await require('../fatura/bulut').rpc('fatura_stok_tohumla',
+      { p_kalemler: kalemler, p_kullanici: (kimlik && kimlik.eposta) || null }, jwtAl())
+    return { ...(sonuc || {}), rapor }
+  },
+
   // Yetki kontrolü BİLEREK yok: sipariş ekranındaki "fatura stoğu yok" kilidinin
   // sebebini, fatura yetkisi olmayan kasiyer de görebilmeli.
   'fatura-stok:durum': async ({ sadece_eksik } = {}) => {

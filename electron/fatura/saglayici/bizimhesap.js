@@ -294,4 +294,35 @@ async function baglantiSina(ayarlar) {
   }
 }
 
-module.exports = { faturaGonder, baglantiSina, SaglayiciHatasi, _yukOlustur }
+// Bizimhesap ürün listesi (SALT OKUNUR). Fatura stoğu tohumlaması bunu kullanır.
+// quantity alanı iki deponun inventory toplamına EŞİT (01.09 canlı doğrulaması) —
+// bu yüzden depo depo gezmeye gerek yok.
+async function urunleriGetir(ayarlar) {
+  const token = ayarlar && ayarlar.token
+  if (!token) {
+    throw new SaglayiciHatasi('Bizimhesap Token tanımlı değil (Ayarlar > Fatura)', 'yapilandirma')
+  }
+  const { status, ham } = await _istek(null, {
+    yol: YOL_URUNLER,
+    yontem: 'GET',
+    ekBasliklar: { Key: B2B_KEY, Token: token },
+  })
+  if (status === 401 || status === 403) {
+    throw new SaglayiciHatasi('Bizimhesap Token kabul etmedi (Ayarlar > Fatura)', 'yapilandirma', { status })
+  }
+  if (status < 200 || status >= 300) {
+    throw new SaglayiciHatasi(`Bizimhesap ürün listesi alınamadı (HTTP ${status})`, 'is_hatasi', { status })
+  }
+  let veri = null
+  try { veri = ham ? JSON.parse(ham) : null } catch { veri = null }
+  if (veri && veri.errorText) {
+    throw new SaglayiciHatasi('Bizimhesap reddetti: ' + veri.errorText, 'is_hatasi', { resultCode: veri.resultCode })
+  }
+  if (!veri || !veri.data || !Array.isArray(veri.data.products)) {
+    throw new SaglayiciHatasi('Bizimhesap ürün listesi okunamadı (beklenmeyen yanıt biçimi)', 'is_hatasi',
+      { resultCode: veri && veri.resultCode })
+  }
+  return veri.data.products
+}
+
+module.exports = { faturaGonder, baglantiSina, urunleriGetir, SaglayiciHatasi, _yukOlustur }
