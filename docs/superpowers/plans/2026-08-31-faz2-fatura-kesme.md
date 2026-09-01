@@ -604,14 +604,24 @@ dokümandaki `firmId` biçimiyle birebir aynı.
 
 ---
 
-### Task 9: Bizimhesap'tan fatura stoğu tohumlama
+### Task 9: Bizimhesap'tan fatura stoğu tohumlama — ✔ TAMAM (01.09, commit e9e6ef2)
 
-**Ön koşul:** Token. Bu yapılmadan Faz 2 CANLIYA ALINAMAZ (yoksa açıldığı gün her ürün "fatura stoğu yok" der).
-
-- [ ] `inventory` ucundan depo stoğu okunur, `fatura_stok`a açılış bakiyesi olarak yazılır.
-- [ ] Tek seferlik ve **idempotent** (ikinci çalıştırma bakiyeyi ikiye katlamaz — `yerel_onarimlar` deseni).
-- [ ] Fark raporu: uygulama stoğu ile Bizimhesap stoğu tutmayan ürünler listelenir, körlemesine yazılmaz.
-- [ ] Commit: `feat: bizimhesap fatura stogu tohumlama`
+- [x] Migration `supabase/17_fatura_stok_tohumla.sql` — **CANLIYA UYGULANDI**, doğrulandı:
+      boş listeyle çağrı `{yazilan:0, atlanan:0, toplam_adet:0}`, `tohumlama` tipi CHECK'te,
+      INVOKER, `anon` çağıramıyor, `fatura_stok` 0 satır (henüz tohumlanmadı).
+- [x] Kaynak: `products[].quantity`. 🔴 **CANLI DOĞRULAMA**: bu alan iki deponun
+      (`İstanbul/Pendik`, `Kocaeli/Gölcük`) `inventory` toplamına **birebir eşit**
+      (3.437 = 3.437, 266 üründe 0 fark) → depo depo gezmeye gerek yok, tek çağrı.
+- [x] İdempotent: yalnız bakiyesi HİÇ OLMAYAN ürüne yazar; alış faturasıyla oluşmuş
+      bakiyeye DOKUNMAZ (gerçek hareket, tahmini açılıştan üstündür).
+- [x] Fark raporu üretildi: `URUN-ESLESTIRME/fatura-stok-fark-2026-09-01.json`
+      (uygulama 1.589 adet ↔ Bizimhesap 3.454 adet; 49 tam eşit, 245 farklı).
+      **Kullanıcı kararı: Bizimhesap rakamı** — fatura stoğu kâğıt izini takip eder,
+      fişle satılan mal Bizimhesap'a çıkış yazmadığı için oradaki bakiye doğru başlangıç.
+- [x] Eşleştirme YALNIZ SKU; bizde-yok / kodsuz / bulut kimliği eksik ürünler raporlanır.
+- [x] Arayüz: Fatura Stoğu > Durum sekmesinde düğme + rapor kutusu.
+- [ ] 🔴 **HENÜZ ÇALIŞTIRILMADI** — düğmeye basılması kullanıcının kararı (2.900 ürünün
+      açılış bakiyesi ortak veritabanına yazılır; geri alması zahmetlidir).
 
 ---
 
