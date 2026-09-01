@@ -51,7 +51,11 @@ export default function FaturaStogu() {
 
   const [sekme, setSekme] = usePersistentState('fatura_stok_sekme', 'durum')
   const [arama, setArama] = usePersistentState('fatura_stok_arama', '')
-  const [sadeceEksik, setSadeceEksik] = usePersistentState('fatura_stok_eksik', true)
+  // Varsayılan HEPSİNİ göster. Eskiden varsayılan "yalnız eksik" idi ve tohumlamadan
+  // sonra ekran boş görünüyordu: tohumlanmış üründe fatura stoğu > gerçek stok olduğu
+  // için hiçbiri süzgece takılmıyordu (01.09 kullanıcı bildirimi). Anahtar adı BİLEREK
+  // değişti — eski kayıtlı 'true' okunmasın, yoksa düzeltme kullanıcıya ulaşmaz.
+  const [sadeceEksik, setSadeceEksik] = usePersistentState('fatura_stok_eksik_v2', false)
 
   const [satirlar, setSatirlar] = useState(null) // null = henüz veri gelmedi (yükleniyor/hata ayrımı için)
   const [yukleniyor, setYukleniyor] = useState(false)
@@ -308,6 +312,14 @@ export default function FaturaStogu() {
                 </details>
               )}
             </div>
+          )}
+
+          {!yukleniyor && !hata && satirlar && (
+            <p className="text-xs text-gray-500 mb-2">
+              {satirlar.filter(s => s.fatura_miktar > 0).length} üründe fatura stoğu kayıtlı ·
+              toplam {satirlar.reduce((t, s) => t + (Number(s.fatura_miktar) || 0), 0)} adet ·
+              listede {satirlarGorunur.length} / {satirlar.length} ürün
+            </p>
           )}
 
           {yukleniyor && (
