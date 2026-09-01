@@ -493,7 +493,7 @@ Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bu
 
 **Interfaces:** Produces `fatura_kes_bitir(p_fatura_senk_id uuid, p_durum text, p_guid text, p_url text, p_fatura_no text, p_belge_tipi text, p_belge_tipi_kaynak text) returns boolean`
 
-- [ ] **Step 1:** Migration'ı yaz. Kurallar (Task 2'nin öğrendikleri, aynen geçerli):
+- [x] **Step 1:** Migration'ı yaz. Kurallar (Task 2'nin öğrendikleri, aynen geçerli):
   - `exception when` bloğu **EKLEME** (savepoint yutması → yetim `kuyrukta` satırı).
   - `security invoker` (varsayılan) — RLS devrede kalsın.
   - `set search_path = 'public'`.
@@ -502,8 +502,8 @@ Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bu
   - `p_durum` yalnız `'tamam'` veya `'belirsiz'` olabilir; başka değer → `raise exception 'GECERSIZ_DURUM'`.
   - `'belirsiz'`de `saglayici_guid` NULL kalır ama `hata_mesaji` doldurulur; **stok İADE EDİLMEZ** (spec §⑤).
   - `belge_tipi_kaynak` varsayılan `'tahmin'` — tahmini kesin bilgi gibi yazma.
-- [ ] **Step 2:** Dosyayı kontrolöre bildir. 🔴 **Canlıya UYGULAMA.**
-- [ ] **Step 3:** Commit: `feat: fatura_kes_bitir rpc`
+- [x] **Step 2:** Dosyayı kontrolöre bildir. 🔴 **Canlıya UYGULAMA.**
+- [x] **Step 3:** Commit: `feat: fatura_kes_bitir rpc`
 
 ---
 
@@ -519,20 +519,20 @@ Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bu
   `bagimliliklar = { saglayici, rpc, jwtAl }` — **sağlayıcı ENJEKTE edilir**, `require` ile içeriden
   bağlanmaz. Gerekçe: Bizimhesap adaptörü hâlâ inceleme altında; ayrıca Mikro'ya geçiş tek satır olur.
 
-- [ ] **Step 1:** `set-coz` için başarısız testleri yaz. Vakalar:
+- [x] **Step 1:** `set-coz` için başarısız testleri yaz. Vakalar:
   - farklı KDV oranlı iki bileşen → ağırlıklı dağıtım (eşit bölme YANLIŞ sonuç verir, test bunu yakalasın)
   - kuruş farkı: `100,00 TL` set, 3 eşit bileşen → `33,33 + 33,33 + 33,34` (son satır düzeltir)
   - set adedi > 1
   - bileşen fiyatlarının toplamı 0 → sıfıra bölme YOK, Türkçe hata
-- [ ] **Step 2:** `setCoz`'u yaz. Formül spec §③'ten; `yuvarla` **satis-hesapla.js'ten** alınır, yeni hesaplayıcı yazılmaz.
-- [ ] **Step 3:** `cekirdek` testleri — üç sonuç sınıfı ayrı ayrı:
+- [x] **Step 2:** `setCoz`'u yaz. Formül spec §③'ten; `yuvarla` **satis-hesapla.js'ten** alınır, yeni hesaplayıcı yazılmaz.
+- [x] **Step 3:** `cekirdek` testleri — üç sonuç sınıfı ayrı ayrı:
   - sağlayıcı `is_hatasi` → `fatura_kes_telafi` ÇAĞRILIR (stok iade)
   - sağlayıcı `ag` → telafi **ÇAĞRILMAZ**, `fatura_kes_bitir(..., 'belirsiz', ...)` çağrılır
   - başarı → `fatura_kes_bitir(..., 'tamam', guid, url, ...)`
   - guard: SKU'su boş kalem → ağa **hiç çıkılmaz**, hangi ürün olduğu mesajda geçer
   - guard: fatura stoğu yetersiz → mesaj **hangi üründen ne kadar eksik** olduğunu taşır
-- [ ] **Step 4:** Çekirdeği yaz. Sıra: guard → `fatura_kes_basla` (sahiplen + stok düş) → sağlayıcıya gönder → `fatura_kes_bitir` / `fatura_kes_telafi`.
-- [ ] **Step 5:** `npm test` — hepsi geçmeli. Commit: `feat: fatura cekirdegi (set cozme + durum akisi)`
+- [x] **Step 4:** Çekirdeği yaz. Sıra: guard → `fatura_kes_basla` (sahiplen + stok düş) → sağlayıcıya gönder → `fatura_kes_bitir` / `fatura_kes_telafi`.
+- [x] **Step 5:** `npm test` — hepsi geçmeli. Commit: `feat: fatura cekirdegi (set cozme + durum akisi)`
 
 ---
 
@@ -540,11 +540,11 @@ Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bu
 
 **Files:** Modify `electron/db/database.js` (ALTER), `electron/ikas/index.js` (doldurma) + test.
 
-- [ ] **Step 1:** `try { db.exec("ALTER TABLE setler ADD COLUMN ikas_varyant_id TEXT") } catch {}` — dosyadaki mevcut ALTER deseniyle aynı yerde.
-- [ ] **Step 2:** Doldurma: ikas ürün çekiminde SKU→varyant kimliği haritası kurulur (`web-link` aynı listeyi çekiyor). `setler.sku` ile eşleşen varyantın kimliği yazılır.
+- [x] **Step 1:** `try { db.exec("ALTER TABLE setler ADD COLUMN ikas_varyant_id TEXT") } catch {}` — dosyadaki mevcut ALTER deseniyle aynı yerde.
+- [ ] **Step 2:** (ENGEL: index.js'te commit edilmemis is var) Doldurma: ikas ürün çekiminde SKU→varyant kimliği haritası kurulur (`web-link` aynı listeyi çekiyor). `setler.sku` ile eşleşen varyantın kimliği yazılır.
   🔴 Ad ile eşleştirme **birincil yol DEĞİL** — yalnız SKU. SKU'su boş set = kullanıcıya rapor.
-- [ ] **Step 3:** Sipariş kalemi eşleştirmesine set yolunu ekle: `urun_id` NULL ise `setler.ikas_varyant_id` denenir.
-- [ ] **Step 4:** Test + commit: `feat: setler ikas varyant kimligi`
+- [x] **Step 3:** Sipariş kalemi eşleştirmesine set yolunu ekle: `urun_id` NULL ise `setler.ikas_varyant_id` denenir.
+- [x] **Step 4:** Test + commit: `feat: setler ikas varyant kimligi`
 
 ---
 
