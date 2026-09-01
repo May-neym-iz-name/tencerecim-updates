@@ -541,7 +541,7 @@ Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bu
 **Files:** Modify `electron/db/database.js` (ALTER), `electron/ikas/index.js` (doldurma) + test.
 
 - [x] **Step 1:** `try { db.exec("ALTER TABLE setler ADD COLUMN ikas_varyant_id TEXT") } catch {}` — dosyadaki mevcut ALTER deseniyle aynı yerde.
-- [ ] **Step 2:** (ENGEL: index.js'te commit edilmemis is var) Doldurma: ikas ürün çekiminde SKU→varyant kimliği haritası kurulur (`web-link` aynı listeyi çekiyor). `setler.sku` ile eşleşen varyantın kimliği yazılır.
+- [x] **Step 2:** ✔ Doldurma `urunEsle`'ye eklendi (ekstra.js — aynı çekimden SKU→varyant haritası; ikinci ikas çağrısı yok). Ayrıca `setler.ikas_varyant_id` senkron kolonlarına eklendi (bulut migration'ı gerekmedi: senk_kayitlar jsonb). Doldurma: ikas ürün çekiminde SKU→varyant kimliği haritası kurulur (`web-link` aynı listeyi çekiyor). `setler.sku` ile eşleşen varyantın kimliği yazılır.
   🔴 Ad ile eşleştirme **birincil yol DEĞİL** — yalnız SKU. SKU'su boş set = kullanıcıya rapor.
 - [x] **Step 3:** Sipariş kalemi eşleştirmesine set yolunu ekle: `urun_id` NULL ise `setler.ikas_varyant_id` denenir.
 - [x] **Step 4:** Test + commit: `feat: setler ikas varyant kimligi`
@@ -552,13 +552,13 @@ Task 1-3 tamamlandıktan sonra keşifte **iki boşluk** çıktı; Task 4 ve 5 bu
 
 **Files:** Create `electron/fatura/kanal/ikas.js` + testi.
 
-- [ ] **Step 1:** `siparisiFaturayaCevir(siparisId)` → `{ musteri, kalemler, fatura_no, tarih }`.
+- [x] **Step 1:** `siparisiFaturayaCevir(siparisId)` → `{ musteri, kalemler, fatura_no, tarih }`.
   - Müşteri: `fatura_unvan` / `fatura_vergi_no` / `fatura_vergi_dairesi` / `fatura_tc` **sipariş satırından**; boşsa `musteri_ad` + teslimat adresi yedek.
   - Kalemler: `urun_id` doluysa doğrudan; set ise `setCoz`; ikisi de değilse **guard hatası** (ürün adıyla — kullanıcı ikas'ta düzeltebilsin).
   - KDV oranı sipariş kaleminde YOK → `urunler.kdv_orani` / `setler.kdv_orani`'ndan alınır.
   - `iade_miktar` düşülür: iade edilmiş adede fatura kesilmez.
-- [ ] **Step 2:** Testler: iadeli sipariş, setli sipariş, vergi kimliği eksik sipariş, SKU'suz ürün.
-- [ ] **Step 3:** Commit: `feat: ikas kanal adaptoru`
+- [x] **Step 2:** Testler: iadeli sipariş, setli sipariş, vergi kimliği eksik sipariş, SKU'suz ürün.
+- [x] **Step 3:** Commit: `feat: ikas kanal adaptoru`
 
 ---
 
