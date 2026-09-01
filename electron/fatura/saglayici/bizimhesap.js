@@ -272,12 +272,21 @@ async function baglantiSina(ayarlar) {
   }
   let veri = null
   try { veri = ham ? JSON.parse(ham) : null } catch { veri = null }
-  if (veri && veri.error) {
-    throw new SaglayiciHatasi('Bizimhesap reddetti: ' + veri.error, 'is_hatasi', veri)
+
+  // 🔴 B2B GET uçlarının yanıt biçimi addinvoice'tan FARKLI (01.09'da canlı
+  // yanıttan okundu, tahmin DEĞİL):
+  //   { resultCode: 1, errorText: '', data: { products: [...] } }
+  // Başarı kodu 1'dir — 0 varsayılsaydı her başarılı çağrı hata sayılırdı.
+  if (veri && veri.errorText) {
+    throw new SaglayiciHatasi('Bizimhesap reddetti: ' + veri.errorText, 'is_hatasi', { resultCode: veri.resultCode })
+  }
+  if (veri && veri.resultCode != null && Number(veri.resultCode) !== 1) {
+    throw new SaglayiciHatasi(`Bizimhesap beklenmeyen sonuç kodu döndürdü (${veri.resultCode})`, 'is_hatasi',
+      { resultCode: veri.resultCode })
   }
   // firmId'yi bu uç doğrulamaz (onu yalnız addinvoice kullanır) — girilmiş mi
   // bilgisini ayrıca döndür ki kullanıcı eksiği görsün.
-  const liste = (veri && (veri.products || veri.data || veri.Products)) || []
+  const liste = (veri && veri.data && veri.data.products) || []
   return {
     ok: true,
     urunSayisi: Array.isArray(liste) ? liste.length : null,

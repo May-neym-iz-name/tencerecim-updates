@@ -248,13 +248,14 @@ describe('baglantiSina — salt okunur kimlik denemesi', () => {
   })
 
   test('başarılı yanıtta ürün sayısı ve firmId durumu döner', async () => {
-    sahteIstek({ status: 200, govdeMetni: JSON.stringify({ products: [{ id: 1 }, { id: 2 }] }) })
+    // Gerçek biçim (01.09 canlı yanıt): { resultCode: 1, errorText: '', data: { products: [] } }
+    sahteIstek({ status: 200, govdeMetni: JSON.stringify({ resultCode: 1, errorText: '', data: { products: [{ id: 1 }, { id: 2 }] } }) })
     const s = await baglantiSina({ token: 'T', firm_id: 'F' })
     expect(s).toMatchObject({ ok: true, urunSayisi: 2, firmIdGirilmis: true })
   })
 
   test('firmId girilmemişse bunu bildirir (bu uç firmId doğrulamaz)', async () => {
-    sahteIstek({ status: 200, govdeMetni: JSON.stringify({ products: [] }) })
+    sahteIstek({ status: 200, govdeMetni: JSON.stringify({ resultCode: 1, errorText: '', data: { products: [] } }) })
     const s = await baglantiSina({ token: 'T' })
     expect(s.firmIdGirilmis).toBe(false)
   })
@@ -277,5 +278,15 @@ describe('baglantiSina — salt okunur kimlik denemesi', () => {
   test('ağ hatası belirsiz değil, doğrudan bildirilir (yazma yok, tekrar denenebilir)', async () => {
     sahteIstek({ hataMesaji: 'ECONNRESET' })
     await expect(baglantiSina({ token: 'T' })).rejects.toMatchObject({ kod: 'ag' })
+  })
+
+  test('errorText dolu ise iş hatasıdır (200 dönse bile)', async () => {
+    sahteIstek({ status: 200, govdeMetni: JSON.stringify({ resultCode: 0, errorText: 'Token gecersiz', data: null }) })
+    await expect(baglantiSina({ token: 'T' })).rejects.toMatchObject({ kod: 'is_hatasi' })
+  })
+
+  test('başarı kodu 1 DEĞİLSE hata sayılır (0 başarı DEĞİL)', async () => {
+    sahteIstek({ status: 200, govdeMetni: JSON.stringify({ resultCode: 0, errorText: '', data: {} }) })
+    await expect(baglantiSina({ token: 'T' })).rejects.toThrow(/sonuç kodu/)
   })
 })
