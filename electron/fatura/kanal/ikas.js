@@ -24,6 +24,12 @@ function _depoKur(db) {
   const urunS = db.prepare('SELECT id, senk_id, sku, ad, barkod, kdv_orani, satis_fiyati FROM urunler WHERE id = ?')
   // Set, sipariş kalemine urun_id ile bağlanamaz (setler urunler tablosunda değil) —
   // tek bağ ikas varyant kimliği (Faz 2 / Task 5A).
+  // 🔴 Geçmiş sipariş kalemlerinin %98'inde urun_id BOŞ: çekim anında
+  // urunler.ikas_varyant_id doluysa yazılıyor, o alan çoğu üründe boştu.
+  // Eşleştirmeyi sonradan çalıştırmak geçmiş kalemleri DÜZELTMEZ (siparişler
+  // yeniden çekilmiyor), o yüzden fatura anında varyanttan çözüyoruz.
+  const urunVaryantS = db.prepare(
+    'SELECT id, senk_id, sku, ad, barkod, kdv_orani, satis_fiyati FROM urunler WHERE ikas_varyant_id = ? AND aktif = 1')
   const setS = db.prepare('SELECT id, senk_id, sku, ad, ikas_varyant_id FROM setler WHERE ikas_varyant_id = ? AND aktif = 1')
   const bilesenS = db.prepare(`SELECT u.senk_id, u.sku, u.ad, u.barkod, u.kdv_orani, u.satis_fiyati, su.miktar
       FROM set_urunler su JOIN urunler u ON u.id = su.urun_id
@@ -32,6 +38,7 @@ function _depoKur(db) {
     siparisGetir: (id) => siparisS.get(id),
     kalemleriGetir: (id) => kalemS.all(id),
     urunGetir: (id) => urunS.get(id),
+    urunGetirVaryanttan: (vid) => (vid ? urunVaryantS.get(vid) : null),
     setGetirVaryanttan: (vid) => (vid ? setS.get(vid) : null),
     setBilesenleriGetir: (setId) => bilesenS.all(setId),
   }
@@ -120,6 +127,13 @@ function siparisiFaturayaCevir(siparisId, depo) {
       const u = d.urunGetir(k.urun_id)
       if (!u) throw new KanalHatasi(`"${k.urun_adi}" ürünü katalogda bulunamadı, faturaya yazılamaz`)
       kalemler.push(_urunKalemi(u, adet, k.birim_fiyat, k.urun_adi))
+      continue
+    }
+
+    // Önce ÜRÜN: eşleşme tekildir, set çözmeye göre daha kesin.
+    const varyantUrun = d.urunGetirVaryanttan && d.urunGetirVaryanttan(k.ikas_varyant_id)
+    if (varyantUrun) {
+      kalemler.push(_urunKalemi(varyantUrun, adet, k.birim_fiyat, k.urun_adi))
       continue
     }
 

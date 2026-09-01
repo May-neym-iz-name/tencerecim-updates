@@ -4,11 +4,12 @@ const { siparisiFaturayaCevir, KanalHatasi } = require('./ikas')
 // Saf sorgu-tablosu taklidi: gerçek SQLite yerine, adaptörün sorduğu her şeyi
 // veren küçük bir "depo" enjekte ediliyor. Adaptörün SQL'i değil KARARLARI test
 // ediliyor (hangi kalem faturaya girer, hangisi guard'a takılır).
-function depo({ siparis, kalemler = [], urunler = {}, setler = {}, bilesenler = {} }) {
+function depo({ siparis, kalemler = [], urunler = {}, urunVaryant = {}, setler = {}, bilesenler = {} }) {
   return {
     siparisGetir: () => siparis,
     kalemleriGetir: () => kalemler,
     urunGetir: (id) => urunler[id] || null,
+    urunGetirVaryanttan: (vid) => urunVaryant[vid] || null,
     setGetirVaryanttan: (vid) => setler[vid] || null,
     setBilesenleriGetir: (setId) => bilesenler[setId] || [],
   }
@@ -185,5 +186,41 @@ describe('siparisiFaturayaCevir — guardlar', () => {
       expect(e).toBeInstanceOf(KanalHatasi)
       expect(e.kod).toBe('dogrulama')
     }
+  })
+})
+
+describe('siparisiFaturayaCevir — urun_id boş kalem (geçmiş siparişler)', () => {
+  // 🔴 Sipariş kalemleri ikas çekiminde ürüne YALNIZ ikas_varyant_id ile bağlanıyor;
+  // o alan çoğu üründe boş olduğu için 763 kalemin 754'ü urun_id'siz kaydedilmiş
+  // (01.09.2026 canlı tespit). Eşleştirmeyi sonradan çalıştırmak GEÇMİŞ kalemleri
+  // düzeltmez — çözüm fatura anında varyant kimliğinden çözmek.
+  test('urun_id yoksa varyant kimliğinden ÜRÜN çözülür', () => {
+    const f = siparisiFaturayaCevir(1, depo({
+      siparis: SIPARIS,
+      kalemler: [{ urun_id: null, ikas_varyant_id: 'V-9', urun_adi: 'Tencere', miktar: 2, birim_fiyat: 120, iade_miktar: 0 }],
+      urunVaryant: { 'V-9': URUN },
+    }))
+    expect(f.kalemler).toHaveLength(1)
+    expect(f.kalemler[0]).toMatchObject({ urun_senk_id: 'u-10', sku: 'TNC.LAV.00001', miktar: 2, satir_toplam: 240 })
+  })
+
+  test('ürün varyantı SET varyantından ÖNCE denenir', () => {
+    const f = siparisiFaturayaCevir(1, depo({
+      siparis: SIPARIS,
+      kalemler: [{ urun_id: null, ikas_varyant_id: 'V-9', urun_adi: 'X', miktar: 1, birim_fiyat: 120, iade_miktar: 0 }],
+      urunVaryant: { 'V-9': URUN },
+      setler: { 'V-9': { id: 3, senk_id: 's-3', sku: 'TNC.SET.1', ad: 'Set' } },
+      bilesenler: { 3: [{ senk_id: 'u-1', sku: 'A', ad: 'Tabak', miktar: 1, satis_fiyati: 60, kdv_orani: 20 }] },
+    }))
+    // Ürün eşleşmesi tekildir; set çözme yalnız ürün bulunamadığında devreye girer.
+    expect(f.kalemler).toHaveLength(1)
+    expect(f.kalemler[0].sku).toBe('TNC.LAV.00001')
+  })
+
+  test('varyant kimliği de boşsa anlaşılır hata (ürün adıyla)', () => {
+    expect(() => siparisiFaturayaCevir(1, depo({
+      siparis: SIPARIS,
+      kalemler: [{ urun_id: null, ikas_varyant_id: null, urun_adi: 'Gizemli', miktar: 1, birim_fiyat: 10, iade_miktar: 0 }],
+    }))).toThrow(/Gizemli/)
   })
 })
