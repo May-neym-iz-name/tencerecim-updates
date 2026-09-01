@@ -75,6 +75,37 @@ export default function FaturaStogu() {
   const [hareketArama, setHareketArama] = usePersistentState('fatura_stok_hareket_arama', '')
   // Bizimhesap'tan açılış bakiyesi (Faz 2 / Task 9). Sunucu tarafı idempotent:
   // bakiyesi zaten olan ürüne DOKUNMAZ, ikinci basış hiçbir şeyi katlamaz.
+  // --- KONTROL BEKLİYOR (Task 8) ---------------------------------------------
+  // durum='belirsiz' faturalar: sağlayıcıya ulaşılamadığı için sonuç doğrulanamadı.
+  // 🔴 Stok İADE EDİLMEDİ (spec §⑤) — fatura karşı tarafta oluşmuş olabilir; kararı
+  // insan verir. Liste boş değilse mükerrer fatura riski birikiyor demektir.
+  const [belirsizler, setBelirsizler] = useState(null)
+  const [belirsizYukleniyor, setBelirsizYukleniyor] = useState(false)
+  const [belirsizMesgul, setBelirsizMesgul] = useState('')
+  const [guidGirdi, setGuidGirdi] = useState({})
+
+  const belirsizYukle = useCallback(async () => {
+    setBelirsizYukleniyor(true)
+    try { setBelirsizler(await faturaStokApi.belirsizler()) }
+    catch (e) { toast.error(e.message); setBelirsizler([]) }
+    finally { setBelirsizYukleniyor(false) }
+  }, [])
+  useEffect(() => { if (sekme === 'belirsiz') belirsizYukle() }, [belirsizYukle, sekme])
+
+  async function belirsizKarar(satir, kesilmis) {
+    setBelirsizMesgul(satir.senk_id)
+    try {
+      await faturaStokApi.belirsizKarar({
+        senk_id: satir.senk_id,
+        kesilmis,
+        guid: kesilmis ? (guidGirdi[satir.senk_id] || '').trim() : null,
+      })
+      toast.success(kesilmis ? 'Fatura kesilmiş olarak işaretlendi.' : 'Stok iade edildi, sipariş yeniden faturalanabilir.')
+      await belirsizYukle()
+    } catch (e) { toast.error(e.message) }
+    finally { setBelirsizMesgul('') }
+  }
+
   const [tohumMesgul, setTohumMesgul] = useState(false)
   const [tohumSonuc, setTohumSonuc] = useState(null)
   async function tohumla() {
@@ -223,7 +254,7 @@ export default function FaturaStogu() {
       <h2 className="text-2xl font-bold text-gray-800 mb-4">🧾 Fatura Stoğu</h2>
 
       <div className="flex gap-1 mb-4 border-b">
-        {[['durum', '📊 Durum'], ['alis', '📥 Alış Faturaları'], ['hareket', '🔀 Hareketler']]
+        {[['durum', '📊 Durum'], ['alis', '📥 Alış Faturaları'], ['hareket', '🔀 Hareketler'], ['belirsiz', '⚠️ Kontrol Bekliyor']]
           .map(([k, l]) => (
             <button key={k} onClick={() => setSekme(k)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${sekme === k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
@@ -495,6 +526,73 @@ export default function FaturaStogu() {
           sonradan false olduğunda state sıfırlanmaz. Koşullu mount + `key`
           ile her açılışta bileşen sıfırdan kurulur, önceki faturanın
           kalemleri bir sonraki girişe sızmaz (bkz. MalKabul.jsx aynı desen). */}
+      {sekme === 'belirsiz' && (
+        <>
+          <div className="flex gap-3 items-center mb-3 flex-wrap">
+            <p className="text-sm text-gray-500 flex-1">
+              Bu faturalarda Bizimhesap'a ulaşılamadı ve sonuç <b>doğrulanamadı</b>.
+              Fatura orada oluşmuş olabilir; bu yüzden stok iade EDİLMEDİ. Bizimhesap'ta kontrol edip karar verin.
+            </p>
+            <button type="button" onClick={belirsizYukle} disabled={belirsizYukleniyor}
+              className="px-3 py-2 rounded-lg text-sm border hover:bg-gray-50 disabled:opacity-50">
+              🔄 Tekrar Dene
+            </button>
+          </div>
+
+          {belirsizYukleniyor && <p className="text-center text-gray-400 py-8">Yükleniyor…</p>}
+
+          {!belirsizYukleniyor && belirsizler && belirsizler.length === 0 && (
+            <p className="text-center text-gray-500 py-8">Kontrol bekleyen fatura yok.</p>
+          )}
+
+          {!belirsizYukleniyor && belirsizler && belirsizler.length > 0 && (
+            <div className="bg-white rounded-xl border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600 text-left">
+                  <tr>
+                    <th className="px-4 py-2.5">Tarih</th>
+                    <th className="px-4 py-2.5">Sipariş</th>
+                    <th className="px-4 py-2.5">Hata</th>
+                    <th className="px-4 py-2.5">Karar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {belirsizler.map(b => (
+                    <tr key={b.senk_id} className="border-t align-top">
+                      <td className="px-4 py-2.5 whitespace-nowrap">{hareketTarihiGoster(b.tarih)}</td>
+                      <td className="px-4 py-2.5">
+                        <span className="font-medium">{b.kanal_siparis_id}</span>
+                        <span className="block text-xs text-gray-400">{b.kanal}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-xs text-gray-500 max-w-xs">{b.hata_mesaji || '—'}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input value={guidGirdi[b.senk_id] || ''}
+                            onChange={e => setGuidGirdi(g => ({ ...g, [b.senk_id]: e.target.value }))}
+                            placeholder="Bizimhesap fatura kimliği (guid)"
+                            className="border rounded px-2 py-1 text-xs w-56" />
+                          <button type="button" disabled={belirsizMesgul === b.senk_id}
+                            onClick={() => belirsizKarar(b, true)}
+                            className="px-3 py-1 rounded text-xs bg-emerald-600 text-white disabled:opacity-50">
+                            Kesilmiş
+                          </button>
+                          <button type="button" disabled={belirsizMesgul === b.senk_id}
+                            onClick={() => belirsizKarar(b, false)}
+                            className="px-3 py-1 rounded text-xs border hover:bg-gray-50 disabled:opacity-50"
+                            title="Stok iade edilir, siparişe yeniden fatura kesilebilir">
+                            Kesilmemiş
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
       {duzenleYetkisi && formAcik && (
         <AlisFaturaFormu
           acik={formAcik}

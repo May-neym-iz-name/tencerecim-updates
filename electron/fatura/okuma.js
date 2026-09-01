@@ -58,4 +58,26 @@ async function alisKalemGetir(alis_fatura_senk_id, jwt) {
     `select=*&alis_fatura_senk_id=eq.${encodeURIComponent(alis_fatura_senk_id)}`, jwt)
 }
 
-module.exports = { faturaStokGetir, hareketGetir, alisFaturaGetir, alisKalemGetir }
+// Kesilen faturalar — sipariş listesinde satır durumunu göstermek için.
+// Kanal bazında çekilir; kanal_siparis_id ile eşleştirilir (yerel id her PC'de farklı).
+async function kesilenFaturaGetir({ kanal = 'ikas' } = {}, jwt) {
+  const parcalar = [
+    'select=senk_id,kanal,kanal_siparis_id,durum,saglayici_guid,saglayici_url,fatura_no,toplam,hata_mesaji,tarih',
+    `kanal=eq.${encodeURIComponent(kanal)}`,
+    'order=tarih.desc',
+    `limit=${UST_LIMIT}`,
+  ]
+  const satirlar = await sec('kesilen_faturalar', parcalar.join('&'), jwt)
+  kirpilmaUyar('kesilen_faturalar', satirlar.length, UST_LIMIT)
+  return satirlar
+}
+
+// "Kontrol Bekliyor" listesi: sonucu doğrulanamamış faturalar (spec §⑤).
+// Bu liste boş DEĞİLSE kullanıcı uyarılmalı — sessiz birikirse mükerrer fatura riski.
+async function belirsizFaturaGetir(jwt) {
+  return sec('kesilen_faturalar',
+    'select=*&durum=eq.belirsiz&order=tarih.desc&limit=200', jwt)
+}
+
+module.exports = { faturaStokGetir, hareketGetir, alisFaturaGetir, alisKalemGetir,
+  kesilenFaturaGetir, belirsizFaturaGetir }

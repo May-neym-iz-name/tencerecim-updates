@@ -89,6 +89,13 @@ export const faturaStokApi = {
 
   // Bizimhesap'tan açılış bakiyesi. İDEMPOTENT: bakiyesi olan ürüne dokunmaz.
   tohumla: () => invoke('fatura-stok:tohumla'),
+
+  // Fatura kesme (Faz 2). kes/topluKes sonucu: durum 'tamam' | 'hata' | 'belirsiz'.
+  kes: (siparis_id) => invoke('fatura:kes', { siparis_id }),
+  topluKes: (siparis_idler) => invoke('fatura:toplu-kes', { siparis_idler }),
+  durumlar: (kanal) => invoke('fatura:durumlar', { kanal }),
+  belirsizler: () => invoke('fatura:belirsizler'),
+  belirsizKarar: (veri) => invoke('fatura:belirsiz-karar', veri),
 }
 
 export const lokasyonApi = {
