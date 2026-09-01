@@ -1,0 +1,27 @@
+<!-- kaynak: https://ikas.dev/docs/api/type-definitions/admin-api/enums/order-package-status-enum -->
+
+# OrderPackageStatusEnum
+
+```graphql
+enum OrderPackageStatusEnum {
+  CANCELLED
+  CANCEL_REJECTED
+  CANCEL_REQUESTED
+  DELIVERED
+  FULFILLED
+  PARTIALLY_CANCELLED
+  PARTIALLY_DELIVERED
+  PARTIALLY_FULFILLED
+  PARTIALLY_READY_FOR_SHIPMENT
+  PARTIALLY_REFUNDED
+  READY_FOR_PICK_UP
+  READY_FOR_SHIPMENT
+  REFUNDED
+  REFUND_REJECTED
+  REFUND_REQUESTED
+  REFUND_REQUEST_ACCEPTED
+  UNABLE_TO_DELIVER
+  UNFULFILLED
+}
+```
+Copy

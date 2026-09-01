@@ -1,0 +1,33 @@
+<!-- kaynak: https://ikas.dev/docs/theme/api/enums/ikas-theme-json-page-type -->
+
+# IkasThemeJsonPageType
+
+```typescript
+enum IkasThemeJsonPageType {
+  INDEX = 'INDEX',
+  CATEGORY = 'CATEGORY',
+  BRAND = 'BRAND',
+  PRODUCT = 'PRODUCT',
+  CUSTOM = 'CUSTOM',
+  ACCOUNT = 'ACCOUNT',
+  ADDRESSES = 'ADDRESSES',
+  ORDERS = 'ORDERS',
+  ORDER_DETAIL = 'ORDER_DETAIL',
+  LOGIN = 'LOGIN',
+  REGISTER = 'REGISTER',
+  FORGOT_PASSWORD = 'FORGOT_PASSWORD',
+  RECOVER_PASSWORD = 'RECOVER_PASSWORD',
+  CART = 'CART',
+  FAVORITE_PRODUCTS = 'FAVORITE_PRODUCTS',
+  SEARCH = 'SEARCH',
+  NOT_FOUND = 'NOT_FOUND',
+  BLOG = 'BLOG',
+  BLOG_INDEX = 'BLOG_INDEX',
+  BLOG_CATEGORY = 'BLOG_CATEGORY',
+  CHECKOUT = 'CHECKOUT',
+  RAFFLE = 'RAFFLE',
+  RAFFLE_DETAIL = 'RAFFLE_DETAIL',
+  RAFFLE_ACCOUNT = 'RAFFLE_ACCOUNT',
+}
+```
+Copy

@@ -1,0 +1,19 @@
+<!-- kaynak: https://ikas.dev/docs/theme/api/enums/ikas-order-line-item-status -->
+
+# IkasOrderLineItemStatus
+
+```typescript
+enum IkasOrderLineItemStatus {
+  CANCELLED = 'CANCELLED',
+  CANCEL_REJECTED = 'CANCEL_REJECTED',
+  CANCEL_REQUESTED = 'CANCEL_REQUESTED',
+  DELIVERED = 'DELIVERED',
+  FULFILLED = 'FULFILLED',
+  REFUNDED = 'REFUNDED',
+  REFUND_REJECTED = 'REFUND_REJECTED',
+  REFUND_REQUESTED = 'REFUND_REQUESTED',
+  REFUND_REQUEST_ACCEPTED = 'REFUND_REQUEST_ACCEPTED',
+  UNFULFILLED = 'UNFULFILLED',
+}
+```
+Copy

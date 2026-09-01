@@ -1,5 +1,9 @@
 # ikas Admin API Reference (v1)
 
+> **TAM KÜTÜPHANE:** `docs/ikas/` — ikas.dev'in 987 sayfasının tamamı yerelde.
+> Başlangıç: `docs/ikas/00-INDEX.md`. Bu dosya ise **bizim kullandığımız** alt kümenin özeti.
+
+
 Curated reference for the Tencerecim desktop app's ikas integration (private app, OAuth client-credentials, Admin GraphQL).
 
 - **GraphQL endpoint:** `https://api.myikas.com/api/v1/admin/graphql`

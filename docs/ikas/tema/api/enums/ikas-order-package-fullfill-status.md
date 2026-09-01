@@ -1,0 +1,22 @@
+<!-- kaynak: https://ikas.dev/docs/theme/api/enums/ikas-order-package-fullfill-status -->
+
+# IkasOrderPackageFullfillStatus
+
+```typescript
+enum IkasOrderPackageFullfillStatus {
+  CANCELLED = 'CANCELLED',
+  CANCEL_REJECTED = 'CANCEL_REJECTED',
+  CANCEL_REQUESTED = 'CANCEL_REQUESTED',
+  DELIVERED = 'DELIVERED',
+  ERROR = 'ERROR',
+  FULFILLED = 'FULFILLED',
+  READY_FOR_PICK_UP = 'READY_FOR_PICK_UP',
+  READY_FOR_SHIPMENT = 'READY_FOR_SHIPMENT',
+  REFUNDED = 'REFUNDED',
+  REFUND_REJECTED = 'REFUND_REJECTED',
+  REFUND_REQUESTED = 'REFUND_REQUESTED',
+  REFUND_REQUEST_ACCEPTED = 'REFUND_REQUEST_ACCEPTED',
+  UNABLE_TO_DELIVER = 'UNABLE_TO_DELIVER',
+}
+```
+Copy
