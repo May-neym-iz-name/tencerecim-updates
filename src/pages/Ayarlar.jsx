@@ -242,6 +242,13 @@ export default function Ayarlar() {
     try {
       const r = await ikasApi.urunEsle()
       toast.success(`${r.eslesen} ürün eşleşti (${r.adEslesen || 0} tanesi ürün adıyla; ikas'ta ${r.ikasToplam} varyant tarandı).`)
+      // Setler ürün tablosunda olmadığı için ayrı raporlanır; SKU'su boş set fatura
+      // kesilirken bileşenlerine çözülemez, kullanıcı bunu görmeli.
+      if (r.setYazilan) toast.success(`${r.setYazilan} setin ikas bağlantısı güncellendi.`)
+      const setEksik = (r.setSkusuz?.length || 0) + (r.setIkastaYok?.length || 0)
+      if (setEksik) {
+        toast.error(`${setEksik} set ikas'a bağlanamadı (stok kodu eksik ya da ikas'ta yok) — bu setlere fatura kesilemez.`)
+      }
       await ikasDurumYenile()
     } catch (e) { toast.error('Ürün eşleştirme hatası: ' + e.message) }
     finally { setIkasMesgul('') }

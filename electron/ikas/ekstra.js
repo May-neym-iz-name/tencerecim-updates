@@ -5,6 +5,7 @@
 //  #6 paket durumu     → updateOrderPackageStatus / cancelFulfillment
 // client.js token/GraphQL'i yönetir.
 const { getDb } = require('../db/database')
+const { setVaryantEslestir } = require('./set-varyant')
 const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
 
@@ -297,6 +298,9 @@ async function urunEsle({ adIleEsle = true } = {}) {
   const guncelle = db.prepare('UPDATE urunler SET ikas_urun_id = ?, ikas_varyant_id = ? WHERE id = ?')
 
   let page = 1, eslesen = 0, adEslesen = 0, ikasToplam = 0, eslesmeyen = 0
+  // Setler urunler tablosunda DEGIL; ayni cekimden SKU -> varyant kimligi haritasi
+  // biriktirilir, dongu bitince setlere yazilir (ikinci bir ikas cagrisi gerekmez).
+  const skuVaryant = new Map()
   for (;;) {
     const data = await graphql(URUN_SORGU, { page, limit: SAYFA_LIMIT })
     const liste = data?.listProduct
@@ -310,7 +314,7 @@ async function urunEsle({ adIleEsle = true } = {}) {
           ikasToplam++
           let yerel = null
           const sku = (v.sku || '').trim()
-          if (sku) yerel = bulSku.get(sku)
+          if (sku) { skuVaryant.set(sku, v.id); yerel = bulSku.get(sku) }
           if (!yerel && Array.isArray(v.barcodeList)) {
             for (const b of v.barcodeList) {
               const bk = (b || '').trim()
@@ -332,7 +336,19 @@ async function urunEsle({ adIleEsle = true } = {}) {
     if (!liste.hasNext) break
     page++
   }
-  return { ikasToplam, eslesen, adEslesen, eslesmeyen }
+  // SETLER — ikas'ta satilan bir set siparis kalemine urun_id ile baglanamaz; fatura
+  // kesme icin varyant kimligi sart (Faz 2 / Task 5A). Eslestirme YALNIZ SKU ile.
+  const setler = db.prepare("SELECT id, ad, sku, ikas_varyant_id FROM setler WHERE aktif = 1").all()
+  const setSonuc = setVaryantEslestir(setler, skuVaryant)
+  if (setSonuc.eslesen.length) {
+    const setGuncelle = db.prepare('UPDATE setler SET ikas_varyant_id = ? WHERE id = ?')
+    db.transaction(() => {
+      for (const s of setSonuc.eslesen) setGuncelle.run(s.ikas_varyant_id, s.id)
+    })()
+  }
+
+  return { ikasToplam, eslesen, adEslesen, eslesmeyen,
+    setYazilan: setSonuc.eslesen.length, setSkusuz: setSonuc.skusuz, setIkastaYok: setSonuc.ikasta_yok }
 }
 
 // =====================================================================
