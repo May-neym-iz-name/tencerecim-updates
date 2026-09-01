@@ -52,7 +52,7 @@ Faz 1'in bütün-dal incelemesinden devredilen borçlar:
 **Interfaces:**
 - Produces: IPC hata nesnesi artık `{ ok: false, error, kod }` taşır; renderer tarafında fırlatılan `Error` nesnesinin `kod` alanı dolu olur.
 
-- [ ] **Step 1: Önce başarısız testi yaz**
+- [x] **Step 1: Önce başarısız testi yaz**
 
 `electron/db/fatura-stok-kaydet.test.js` sonuna ekle:
 
@@ -68,12 +68,12 @@ describe('yetki kontrolü', () => {
 
 (`gecerliVeri()` ve `sahteYetkiKontrol` dosyanın mevcut kurulumundan gelir — dosyayı açıp gerçek adlarına uydur.)
 
-- [ ] **Step 2: Testi çalıştır, başarısız olduğunu gör**
+- [x] **Step 2: Testi çalıştır, başarısız olduğunu gör**
 
 Run: `npm test -- fatura-stok-kaydet`
 Expected: FAIL (yetkiKontrol mock'u henüz iddia edilmiyor ya da adı farklı)
 
-- [ ] **Step 3: IPC sarmalayıcısını `kod` taşıyacak şekilde değiştir**
+- [x] **Step 3: IPC sarmalayıcısını `kod` taşıyacak şekilde değiştir**
 
 `electron/main.js`:
 
@@ -98,7 +98,7 @@ Expected: FAIL (yetkiKontrol mock'u henüz iddia edilmiyor ya da adı farklı)
 
 (Gerçek değişken adlarını dosyadan al; yapıyı bozma.)
 
-- [ ] **Step 4: Devredilen üç borcu kapat**
+- [x] **Step 4: Devredilen üç borcu kapat**
 
 `electron/fatura/okuma.js`:
 - `sec()` null dönebildiği için `faturaStokGetir` sonucunu `|| []` ile koru.
@@ -106,12 +106,12 @@ Expected: FAIL (yetkiKontrol mock'u henüz iddia edilmiyor ya da adı farklı)
 
 `electron/db/fatura-stok.js`: `alis-fatura:kaydet`'in `yetkiKontrol('fatura_stok_duzenle')` çağrısı zaten var — testin onu doğruladığından emin ol.
 
-- [ ] **Step 5: Testleri çalıştır**
+- [x] **Step 5: Testleri çalıştır**
 
 Run: `npm test`
 Expected: tümü PASS (631 + yeniler)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add electron/main.js src/api/ipc.js electron/fatura/okuma.js electron/fatura/bulut.js electron/db/fatura-stok-kaydet.test.js electron/fatura/bulut.test.js
@@ -130,7 +130,7 @@ git commit -m "feat: IPC hata kodu renderer'a tasiniyor + devredilen borclar kap
 
 Bu, spec §⑤'in kalbi: mükerrer faturayı **veritabanı kısıtıyla** imkânsız kılar ve stoğu tüm PC'lerde aynı anda düşürür.
 
-- [ ] **Step 1: Migration'ı yaz**
+- [x] **Step 1: Migration'ı yaz**
 
 ```sql
 -- Faz 2: fatura kesme sahiplenmesi + fatura stoğu düşümü, TEK transaction.
@@ -207,7 +207,7 @@ revoke execute on function fatura_kes_basla(text, text, jsonb, text) from anon, 
 grant execute on function fatura_kes_basla(text, text, jsonb, text) to authenticated;
 ```
 
-- [ ] **Step 2: Telafi (geri alma) fonksiyonunu aynı dosyaya ekle**
+- [x] **Step 2: Telafi (geri alma) fonksiyonunu aynı dosyaya ekle**
 
 İş hatasında stoğu iade etmek için. **Ağ hatasında ÇAĞRILMAZ** (sonuç belirsiz).
 
@@ -242,7 +242,7 @@ revoke execute on function fatura_kes_telafi(uuid, text) from anon, public;
 grant execute on function fatura_kes_telafi(uuid, text) to authenticated;
 ```
 
-- [ ] **Step 3: `durum` için CHECK kısıtı ekle**
+- [x] **Step 3: `durum` için CHECK kısıtı ekle**
 
 Faz 1'de bilerek ertelenmişti (durum makinesi bu fazda netleşiyor):
 
@@ -252,11 +252,11 @@ alter table kesilen_faturalar add constraint kesilen_faturalar_durum_gecerli
   check (durum in ('kuyrukta','saglayici_ok','pdf_alindi','pazaryeri_yuklendi','tamam','hata','belirsiz'));
 ```
 
-- [ ] **Step 4: SQL sözdizimini gözle doğrula, ÇALIŞTIRMA**
+- [x] **Step 4: SQL sözdizimini gözle doğrula, ÇALIŞTIRMA**
 
 Migration'ı kontrolör uygulayacak. Raporunda "uygulanmadı, kontrolör bekliyor" yaz.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/15_fatura_kes_rpc.sql
@@ -280,7 +280,7 @@ git commit -m "feat: fatura kesme RPC - atomik sahiplenme, stok dusumu ve telafi
 `fatura` şekli: `{ musteri: {id, unvan, vergi_no, vergi_dairesi, tc, eposta, telefon, adres}, kalemler: [{sku, ad, barkod, miktar, birim_fiyat, kdv_orani}], fatura_no, tarih, not }`
 `ayarlar` şekli: `{ firmId }`
 
-- [ ] **Step 1: Başarısız testi yaz**
+- [x] **Step 1: Başarısız testi yaz**
 
 `electron/fatura/saglayici/bizimhesap.test.js`:
 
@@ -329,12 +329,12 @@ describe('_yukOlustur', () => {
 })
 ```
 
-- [ ] **Step 2: Testi çalıştır, başarısız olduğunu gör**
+- [x] **Step 2: Testi çalıştır, başarısız olduğunu gör**
 
 Run: `npm test -- saglayici/bizimhesap`
 Expected: FAIL — modül yok
 
-- [ ] **Step 3: Adaptörü yaz**
+- [x] **Step 3: Adaptörü yaz**
 
 🔴 `fetch` KULLANMA — `https.request`. `electron/fatura/bulut.js`'i model al (aynı desen, farklı sunucu).
 
@@ -445,19 +445,19 @@ async function faturaGonder(fatura, ayarlar) {
 module.exports = { faturaGonder, SaglayiciHatasi, _yukOlustur }
 ```
 
-- [ ] **Step 4: Testi çalıştır, geçtiğini gör**
+- [x] **Step 4: Testi çalıştır, geçtiğini gör**
 
 Run: `npm test -- saglayici/bizimhesap`
 Expected: PASS (4 test)
 
-- [ ] **Step 5: `https.request` yolunu da test et**
+- [x] **Step 5: `https.request` yolunu da test et**
 
 `vi.spyOn(https, 'request')` ile (`bulut.test.js` deseni) en az 3 test ekle:
 - başarılı yanıt (`{error:'', guid:'G', url:'U'}`) → `{guid:'G', url:'U'}`
 - `{error:'Hatalı para birimi'}` → `SaglayiciHatasi` `kod:'is_hatasi'`
 - ağ hatası → `kod:'ag'`, mesajda "doğrulanamadı" geçmeli (kesinlik iddia etmemeli)
 
-- [ ] **Step 6: Electron'un Node'unda yüklendiğini kanıtla**
+- [x] **Step 6: Electron'un Node'unda yüklendiğini kanıtla**
 
 ```
 ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron -e "const s=require('./electron/fatura/saglayici/bizimhesap.js'); console.log('node:', process.version, '| yuklendi:', Object.keys(s))"
@@ -465,7 +465,7 @@ ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron -e "const s=require('./elect
 
 Çıktıyı rapora yaz. `node:` v16.x olmalı.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add electron/fatura/saglayici/bizimhesap.js electron/fatura/saglayici/bizimhesap.test.js
