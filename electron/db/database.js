@@ -549,6 +549,11 @@ function migrate() {
   try { db.exec("ALTER TABLE setler ADD COLUMN aciklama TEXT") } catch {}
   try { db.exec("ALTER TABLE setler ADD COLUMN marka_id INTEGER REFERENCES markalar(id)") } catch {}
   try { db.exec("ALTER TABLE setler ADD COLUMN kategori_id INTEGER REFERENCES kategoriler(id)") } catch {}
+  // Faz 2 fatura kesme: ikas'ta satilan bir SET siparis kalemine urun_id ile
+  // baglanamaz (setler urunler tablosunda degil). Varyant kimligi olmadan set
+  // kalemi bilesenlerine cozulemez ve o siparise fatura kesilemez.
+  // Deger SKU uzerinden doldurulur (ad ile eslestirme birincil yol DEGIL).
+  try { db.exec("ALTER TABLE setler ADD COLUMN ikas_varyant_id TEXT") } catch {}
   // online sipariş iadeleri — ikas'tan okunan iade gerçeği (v1.2.174).
   // ikas sipariş TOPLAMINI iade sonrası güncellemez (16.626 TL kalır) ve kargo etiketi
   // iade edilen ürünü listelemeye devam ederdi. Kalan tutarı/kalemi kendimiz tutuyoruz.
