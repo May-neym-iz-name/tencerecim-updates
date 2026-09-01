@@ -290,3 +290,25 @@ describe('baglantiSina — salt okunur kimlik denemesi', () => {
     await expect(baglantiSina({ token: 'T' })).rejects.toThrow(/sonuç kodu/)
   })
 })
+
+describe('ayar modülü ile dikiş (contract)', () => {
+  // 🔴 db/fatura-ayarlar.js `{ firm_id, token }` döndürür. Bu dosya eskiden
+  // `ayarlar.firmId` okuyordu ve testler kendi uydurduğum `{ firmId }` şekliyle
+  // yazıldığı için hata CANLIDA çıktı ("firmId tanımlı değil"), üstelik
+  // "Bağlantıyı Sına" geçiyordu (o fonksiyon firm_id okuyor).
+  test('ayarlariGetir çıktısının şekliyle (firm_id) yük kurulur', () => {
+    const y = _yukOlustur(gecerliFatura, { firm_id: 'GERCEK-FIRM', token: 'T' })
+    expect(y.firmId).toBe('GERCEK-FIRM')
+  })
+
+  test('eski camelCase şekli de kabul edilir (geriye dönük)', () => {
+    expect(_yukOlustur(gecerliFatura, { firmId: 'X' }).firmId).toBe('X')
+  })
+
+  test('gerçek ayar modülü firm_id ve token anahtarlarını kullanır', () => {
+    // Ad değişirse burası kırmızı olur; canlıda öğrenmeyiz.
+    const kaynak = require('fs').readFileSync(
+      require('path').join(__dirname, '..', '..', 'db', 'fatura-ayarlar.js'), 'utf8')
+    expect(kaynak).toMatch(/HASSAS = new Set\(\['firm_id', 'token'\]\)/)
+  })
+})

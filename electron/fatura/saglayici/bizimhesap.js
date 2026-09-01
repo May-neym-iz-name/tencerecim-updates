@@ -64,7 +64,13 @@ function _sayi(deger, alan, urunAdi) {
 // sırayla yeniden doğruluyor; sıra bozulursa SATIR_TOPLAM_UYUSMUYOR ile geçerli
 // fatura reddedilir.
 function _yukOlustur(fatura, ayarlar) {
-  if (!ayarlar || !ayarlar.firmId) {
+  // 🔴 Ayar modülü `firm_id` (snake_case) döndürür, bu dosya eskiden yalnız
+  // `firmId` okuyordu → CANLIDA "firmId tanımlı değil" hatası (01.09.2026).
+  // baglantiSina zaten `firm_id` okuduğu için "Bağlantıyı Sına" geçiyor, fatura
+  // kesme patlıyordu: aynı dosyanın iki fonksiyonu farklı ad bekliyordu.
+  // İkisi de kabul edilir; kanonik ad `firm_id`.
+  const firmId = ayarlar && (ayarlar.firm_id || ayarlar.firmId)
+  if (!firmId) {
     throw new SaglayiciHatasi('Bizimhesap firmId tanımlı değil (Ayarlar > Fatura)', 'yapilandirma')
   }
   if (!fatura || !fatura.tarih) {
@@ -134,7 +140,7 @@ function _yukOlustur(fatura, ayarlar) {
   kdvToplam = yuvarla(kdvToplam)
   genelToplam = yuvarla(genelToplam)
   return {
-    firmId: ayarlar.firmId,
+    firmId,
     invoiceNo: fatura.fatura_no || '',
     invoiceType: FATURA_TIPI_SATIS,
     note: fatura.not || '',
