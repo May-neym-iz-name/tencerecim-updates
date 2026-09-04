@@ -20,6 +20,18 @@ describe('kargoEtiketHtml', () => {
     expect(h).not.toContain('@page')
   })
 
+  test('A4 düzende PDF Kaydet düğmesi var ve önizleme dışında gizli kalır', () => {
+    const h = kargoEtiketHtml(veri)
+    expect(h).toContain('id="pdfBtn"')
+    expect(h).toContain('hidden')          // preload yoksa görünmez
+    expect(h).toContain('window.tncEtiket')
+  })
+
+  test('termal düzende PDF düğmesi YOK (yazıcıya sessiz basılır)', () => {
+    const h = kargoEtiketHtml(veri, { termal: true, genislikMm: 100, yukseklikMm: 135 })
+    expect(h).not.toContain('pdfBtn')
+  })
+
   test('termal düzen: sayfa ölçüsü ayarlardan gelir, barkod dikey şeritte', () => {
     const h = kargoEtiketHtml(veri, { termal: true, genislikMm: 100, yukseklikMm: 135 })
     expect(h).toContain('size: 100mm 135mm')

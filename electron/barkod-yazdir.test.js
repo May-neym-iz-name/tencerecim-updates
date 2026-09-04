@@ -3,7 +3,7 @@
 import { describe, test, expect } from 'vitest'
 import barkodYazdir from './barkod-yazdir.js'
 
-const { _wmicCsvAyristir: ayristir, _bufferCoz: coz } = barkodYazdir
+const { _wmicCsvAyristir: ayristir, _bufferCoz: coz, _pdfDosyaAdi } = barkodYazdir
 
 describe('_wmicCsvAyristir', () => {
   test('wmic CSV satırlarını (Node,Default,Name) yazıcıya çevirir', () => {
@@ -47,5 +47,19 @@ describe('_bufferCoz', () => {
 
   test('düz utf8 çıktı olduğu gibi döner', () => {
     expect(coz(Buffer.from('PC,TRUE,Türkçe Yazıcı', 'utf8'))).toBe('PC,TRUE,Türkçe Yazıcı')
+  })
+})
+
+describe('_pdfDosyaAdi', () => {
+  test('önerilen PDF adı sipariş numarasından üretilir', () => {
+    expect(_pdfDosyaAdi('Kargo-Etiketi-SIP-123')).toBe('Kargo-Etiketi-SIP-123.pdf')
+  })
+
+  test('yasak karakterler atılır', () => {
+    expect(_pdfDosyaAdi('Kargo/Etiket: SIP*9')).toBe('KargoEtiket-SIP9.pdf')
+  })
+
+  test('ad boşsa yine de bir dosya adı döner (kutu boş açılmaz)', () => {
+    expect(_pdfDosyaAdi('')).toBe('etiket.pdf')
   })
 })

@@ -271,7 +271,7 @@ export const onlineSiparisApi = {
   getir: (id) => invoke('online-siparis:getir', id),
   kalemLokasyon: (kalemId, lokasyonId) => invoke('online-siparis:kalem-lokasyon', { kalemId, lokasyonId }),
   etiketVeri: (id) => invoke('kargo-etiket:veri', id),
-  etiketOnizle: (html, baslik) => invoke('kargo-etiket:onizle', { html, baslik }),
+  etiketOnizle: (html, baslik, dosyaAdi) => invoke('kargo-etiket:onizle', { html, baslik, dosyaAdi }),
 }
 
 export const bildirimApi = {

@@ -1,7 +1,9 @@
 // Ürün barkod etiketi yazdırma.
 // Renderer, JsBarcode ile etiketlerin HTML'ini üretip buraya gönderir; burada gizli bir
 // BrowserWindow'da yüklenip yazıcıya basılır. 45mm x 20mm OS-214 plus etiketi içindir.
-const { BrowserWindow } = require('electron')
+const { BrowserWindow, dialog } = require('electron')
+const fs = require('fs')
+const path = require('path')
 const { htmlYukle } = require('./html-yukle')
 
 // Varsayılan etiket ölçüsü (renderer boyut gönderirse o kullanılır — 40x20 XP-470B vb.)
@@ -118,25 +120,73 @@ async function barkodYazdir({ html, yazici, genislikMm, yukseklikMm }) {
 // ~50 MB). main.js'teki dış bağlantı penceresiyle aynı desen: yenisini açmak
 // öncekinin yerine geçer.
 let onizlemePencere = null
+// Açık önizlemenin önerilecek PDF adı ('kargo-etiket:pdf' bunu kullanır). Pencere
+// yeniden kullanıldığı için her açılışta tazelenir.
+let onizlemeDosyaAdi = ''
 
-async function onizlemeAc({ html, baslik }) {
+// Windows dosya adında yasak karakterleri atar; boşsa yedek ada düşer.
+function _pdfDosyaAdi(ad) {
+  const temiz = String(ad || '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+  return (temiz || 'etiket') + '.pdf'
+}
+
+async function onizlemeAc({ html, baslik, dosyaAdi }) {
   if (!html) throw new Error('Önizlenecek içerik boş')
+  // Geçici HTML dosyasının adı = belgenin adı: "Microsoft Print to PDF" kaydetme
+  // kutusunu buradan doldurur (bkz. html-yukle.js).
+  const adKoku = dosyaAdi || baslik
   if (onizlemePencere && !onizlemePencere.isDestroyed()) {
-    await htmlYukle(onizlemePencere, html)
+    await htmlYukle(onizlemePencere, html, adKoku)
     // Başlık yüklemeden SONRA: HTML'in kendi <title>'ı varsa yükleme sırasında
     // pencere başlığını ezer, önce yazsaydık kaybolurdu.
     onizlemePencere.setTitle(baslik || 'Önizleme')
+    onizlemeDosyaAdi = adKoku || ''
     if (onizlemePencere.isMinimized()) onizlemePencere.restore()
     onizlemePencere.focus()
     return { acildi: true }
   }
   onizlemePencere = new BrowserWindow({
     width: 820, height: 1000, title: baslik || 'Önizleme',
-    autoHideMenuBar: true, webPreferences: { offscreen: false },
+    autoHideMenuBar: true,
+    // Dar preload: önizleme penceresine yalnız "PDF kaydet" açılır, ana pencerenin
+    // tüm IPC yüzeyi DEĞİL (bkz. onizleme-preload.js).
+    webPreferences: { offscreen: false, preload: path.join(__dirname, 'onizleme-preload.js') },
   })
-  onizlemePencere.on('closed', () => { onizlemePencere = null })
-  await htmlYukle(onizlemePencere, html)
+  onizlemePencere.on('closed', () => { onizlemePencere = null; onizlemeDosyaAdi = '' })
+  await htmlYukle(onizlemePencere, html, adKoku)
+  onizlemeDosyaAdi = adKoku || ''
   return { acildi: true }
+}
+
+// Önizlemedeki belgeyi doğrudan PDF'e yazar. Yazıcı iletişim kutusundan geçmediği için
+// dosya adı BİZİM elimizdedir — kullanıcının şikâyeti tam buydu: "Print to PDF"
+// kaydetme kutusu adı boş geliyordu.
+async function onizlemePdfKaydet() {
+  if (!onizlemePencere || onizlemePencere.isDestroyed()) {
+    throw new Error('Önizleme penceresi kapalı.')
+  }
+  const sonuc = await dialog.showSaveDialog(onizlemePencere, {
+    title: 'Kargo Etiketi PDF Kaydet',
+    defaultPath: _pdfDosyaAdi(onizlemeDosyaAdi),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (sonuc.canceled || !sonuc.filePath) return { kaydedildi: false }
+  const pdf = await onizlemePencere.webContents.printToPDF({
+    printBackground: true, pageSize: 'A4', margins: { marginType: 'default' },
+  })
+  fs.writeFileSync(sonuc.filePath, pdf)
+  // KVKK denetim kaydı: etiket müşteri adı/adresi taşır, dosya olarak programdan çıktı
+  // (istek-pdf.js ile aynı desen).
+  try {
+    const d = require('./db/disa-aktarim-canli')
+    d._kaydet({ tur: d._TURLER.PDF, kapsam: 'kargo etiketi', kayit_sayisi: null,
+      dosya_adi: path.basename(sonuc.filePath) })
+  } catch {}
+  return { kaydedildi: true, yol: sonuc.filePath }
 }
 
 module.exports = {
@@ -144,5 +194,7 @@ module.exports = {
   _bufferCoz,
   'barkod:yazicilar': () => yazicilariGetir(),
   'barkod:yazdir': ({ html, yazici, genislikMm, yukseklikMm }) => barkodYazdir({ html, yazici, genislikMm, yukseklikMm }),
-  'kargo-etiket:onizle': ({ html, baslik }) => onizlemeAc({ html, baslik }),
+  _pdfDosyaAdi,
+  'kargo-etiket:onizle': ({ html, baslik, dosyaAdi }) => onizlemeAc({ html, baslik, dosyaAdi }),
+  'kargo-etiket:pdf': () => onizlemePdfKaydet(),
 }

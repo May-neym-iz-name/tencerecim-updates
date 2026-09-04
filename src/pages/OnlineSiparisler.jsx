@@ -259,7 +259,13 @@ export default function OnlineSiparisler() {
         toast.success('Etiket yazıcıya gönderildi.', { id: bekle })
       } else {
         const html = kargoEtiketHtml({ ...veri, barkodSvg: svg, logo: logoData })
-        await onlineSiparisApi.etiketOnizle(html, `Kargo Etiketi ${veri.siparis_no || ''}`)
+        // dosyaAdi: önizlemedeki "PDF Kaydet"in ve Windows "Print to PDF" kutusunun
+        // ÖNERDİĞİ ad. Boş bırakılırsa kullanıcı her seferinde adı elle yazıyordu.
+        await onlineSiparisApi.etiketOnizle(
+          html,
+          `Kargo Etiketi ${veri.siparis_no || ''}`,
+          `Kargo-Etiketi-${veri.siparis_no || veri.takip_no || id}`,
+        )
         toast.success('Önizleme açıldı.', { id: bekle })
       }
     } catch (e) {

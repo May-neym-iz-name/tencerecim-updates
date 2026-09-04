@@ -67,6 +67,7 @@ export function kargoEtiketHtml(d, secenekler = {}) {
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; margin: 0; padding: 28px 34px; font-size: 13px; }
   .toolbar { position: sticky; top: 0; text-align: right; margin: -10px -10px 10px; }
   .toolbar button { font-size: 14px; padding: 8px 18px; border: 0; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; }
+  .toolbar button.pdf { background: #0f766e; margin-right: 8px; }
   .head { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e5e5; padding-bottom: 10px; }
   .head .tarih { font-size: 12px; color: #333; flex: 1; }
   .head .logo { flex: 1; text-align: center; }
@@ -99,7 +100,10 @@ export function kargoEtiketHtml(d, secenekler = {}) {
   @media print { .toolbar { display: none; } body { padding: 12px 18px; } }
 </style></head>
 <body>
-  <div class="toolbar"><button onclick="window.print()">🖨 Yazdır</button></div>
+  <div class="toolbar">
+    <button class="pdf" id="pdfBtn" hidden>📄 PDF Kaydet</button>
+    <button onclick="window.print()">🖨 Yazdır</button>
+  </div>
   <div class="head">
     <span class="tarih">${esc(d.siparis_tarihi || '')}</span>
     <span class="logo">${d.logo ? `<img src="${esc(d.logo)}" alt="">` : ''}</span>
@@ -129,6 +133,24 @@ export function kargoEtiketHtml(d, secenekler = {}) {
     <div><span>KDV</span><span>${tl(kdvToplam)}</span></div>
     <div class="net"><span>Net Toplam</span><span>${tl(netToplam)}</span></div>
   </div>
+  <script>
+    // PDF Kaydet yalnız önizleme penceresinde görünür (preload 'tncEtiket'i orada tanımlar).
+    // Yazıcı iletişim kutusundan geçmediği için dosya adı HAZIR gelir; "Print to PDF"
+    // yolunda kaydetme kutusunun adı boş kalıyordu, kullanıcının şikâyeti buydu.
+    (function () {
+      var b = document.getElementById('pdfBtn')
+      if (!b || !window.tncEtiket) return
+      b.hidden = false
+      b.onclick = function () {
+        var eski = b.textContent
+        b.disabled = true
+        b.textContent = 'Kaydediliyor...'
+        window.tncEtiket.pdfKaydet()
+          .catch(function (e) { alert('PDF kaydedilemedi: ' + ((e && e.message) || e)) })
+          .then(function () { b.disabled = false; b.textContent = eski })
+      }
+    })()
+  <\/script>
 </body></html>`
 }
 
