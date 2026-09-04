@@ -10,6 +10,18 @@ function gondericiGetir(lokasyonId) {
   return getDb().prepare('SELECT * FROM lokasyon_gonderici WHERE lokasyon_id = ?').get(lokasyonId) || null
 }
 
+// Gönderici adresi TANIMLI mağazaların id listesi. "Tanımlı" = UPS'in zorunlu tuttuğu
+// dört alan SATIRIN KENDİSİNDE dolu (eksikse global ayara düşer, yani mağaza gerçekte
+// tanımlı değildir). Arayüzdeki karşılığı: src/lib/gondericiSecim.js gondericiTanimliMi.
+function tanimliLokasyonIdler() {
+  return getDb().prepare(`
+    SELECT g.lokasyon_id FROM lokasyon_gonderici g
+    JOIN lokasyonlar l ON l.id = g.lokasyon_id AND COALESCE(l.aktif, 1) = 1
+    WHERE TRIM(COALESCE(g.ad, '')) <> '' AND TRIM(COALESCE(g.adres, '')) <> ''
+      AND g.il_kodu IS NOT NULL AND g.ilce_kodu IS NOT NULL
+  `).all().map(r => r.lokasyon_id)
+}
+
 // İl/ilçe adından UPS kodlarını bulur (Türkçe büyük/küçük duyarsız).
 function ilIlceKodBul(il, ilce) {
   if (!il) return null
@@ -33,6 +45,7 @@ function ilIlceKodBul(il, ilce) {
 
 module.exports = {
   _gondericiGetir: gondericiGetir,
+  _tanimliLokasyonIdler: tanimliLokasyonIdler,
 
   // Tüm mağaza gönderici bilgilerini { lokasyon_id: {...} } olarak döner.
   'lokasyon-gonderici:getir': () => {

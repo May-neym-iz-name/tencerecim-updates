@@ -1,7 +1,7 @@
 // UPS kargo işlemleri: gönderi oluşturma, takip, iptal, kurye çağırma.
 const { getDb } = require('../db/database')
 const { _ayarlariGetir } = require('../db/ups-ayarlar')
-const { _gondericiGetir } = require('../db/lokasyon-gonderici')
+const { _gondericiGetir, _tanimliLokasyonIdler } = require('../db/lokasyon-gonderici')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const soap = require('./soap')
 
@@ -107,6 +107,13 @@ module.exports = {
   'kargo:olustur': async (veri) => {
     yetkiKontrol('kargo_yonet')
     const ayar = _ayarlariGetir()
+    // Gönderici mağaza SEÇİLMEDİYSE ve birden çok mağazanın adresi tanımlıysa dur.
+    // Sessizce global adrese düşmek, Gölcük'ten çıkan paketi Pendik adresiyle
+    // göndermek demekti (kullanıcı bildirimi, 04.09.2026). Arayüz de zorunlu tutuyor;
+    // burası ikinci kapı — başka bir çağıran (ör. toplu iş) formu atlayabilir.
+    if (!veri.gondericiLokasyonId && _tanimliLokasyonIdler().length > 1) {
+      throw new Error('Gönderici mağaza seçilmedi. Paketin hangi mağazadan çıktığını seçin.')
+    }
     // Gönderici mağaza seçildiyse o mağazanın gönderici adresini kullan.
     const lok = veri.gondericiLokasyonId ? _gondericiGetir(veri.gondericiLokasyonId) : null
     gondericiKontrol(ayar, lok)

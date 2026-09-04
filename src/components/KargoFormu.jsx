@@ -4,6 +4,7 @@ import { kargoApi, lokasyonApi, musteriApi, lokasyonGondericiApi } from '../api/
 import { telefonGoster, telefonHam, telefonHatasi } from '../lib/girdiMaske'
 import { KARGO_YAZICI_KEY, yaziciAyarOku, kargoOlcuOku, kargoOtomatikEtiketOku } from '../lib/yaziciAyarlari'
 import IlIlceSecici from './IlIlceSecici'
+import { gondericiSecenekleri, baslangicGondericiId } from '../lib/gondericiSecim'
 
 const BOS = {
   aliciAd: '', aliciTelefon: '', aliciCep: '', aliciEmail: '', aliciAdres: '',
@@ -20,6 +21,7 @@ const BOS = {
 export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
   const [form, setForm] = useState(BOS)
   const [gonderiliyor, setGonderiliyor] = useState(false)
+  // Gönderici adresi TANIMLI mağazalar (id + ad). Boşsa seçici hiç gösterilmez.
   const [magazalar, setMagazalar] = useState([])
   // Alıcı adına yazıldıkça çıkan kayıtlı müşteri önerileri.
   const [oneriler, setOneriler] = useState([])
@@ -29,7 +31,16 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
     if (acik) {
       setForm({ ...BOS, ...(baslangic || {}) })
       setOneriler([]); setOneriGoster(false)
-      lokasyonApi.listele().then(setMagazalar).catch(() => {})
+      // Mağaza listesi ile gönderici adresleri BİRLİKTE okunur: adresi tanımlı olmayan
+      // mağazayı seçtirmek anlamsız (UPS isteği global adrese düşerdi). Tek tanımlı
+      // mağaza varsa doğrudan seçili gelir; iki tanımlı varsa seçim zorunlu kalır.
+      Promise.all([lokasyonApi.listele(), lokasyonGondericiApi.getir()])
+        .then(([lokasyonlar, gondericiler]) => {
+          const secenekler = gondericiSecenekleri(lokasyonlar, gondericiler)
+          setMagazalar(secenekler)
+          setForm(f => ({ ...f, gondericiLokasyonId: baslangicGondericiId(secenekler, f.gondericiLokasyonId) }))
+        })
+        .catch(() => setMagazalar([]))
     }
   }, [acik, baslangic])
 
@@ -89,6 +100,10 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
 
   async function gonder(e) {
     e.preventDefault()
+    // Gönderici mağaza: tanımlı adres varsa seçim zorunlu (tek tanımlıysa zaten seçili gelir).
+    if (magazalar.length > 0 && !form.gondericiLokasyonId) {
+      toast.error(form.iade ? 'Teslim mağazasını seçin' : 'Gönderici mağazayı seçin'); return
+    }
     if (!form.aliciAd.trim()) { toast.error('Alıcı adı zorunlu'); return }
     if (!form.aliciAdres.trim()) { toast.error('Alıcı adresi zorunlu'); return }
     if (!form.ilKodu || !form.ilceKodu) { toast.error('İl ve ilçe/semt seçin'); return }
@@ -154,8 +169,13 @@ export default function KargoFormu({ acik, kapat, baslangic, onTamam }) {
             <label className="block text-sm">
               <span className="font-medium text-gray-600">{form.iade ? 'Teslim Mağazası (iadenin geleceği yer)' : 'Gönderici Mağaza'}</span>
               <select value={form.gondericiLokasyonId || ''} onChange={e => alan('gondericiLokasyonId', e.target.value ? Number(e.target.value) : null)}
-                className="border rounded px-2 py-1.5 text-sm w-full mt-1 bg-white">
-                <option value="">Varsayılan (Ayarlar'daki gönderici)</option>
+                className={`border rounded px-2 py-1.5 text-sm w-full mt-1 bg-white
+                  ${form.gondericiLokasyonId ? '' : 'border-amber-400 bg-amber-50'}`}>
+                {/* "Varsayılan" seçeneği KALDIRILDI: sessizce global adrese düşmek,
+                    Gölcük'ten çıkan paketi Pendik adresiyle göndermeye yol açıyordu.
+                    Boş seçenek yalnız birden çok mağaza tanımlıyken ve henüz seçim
+                    yapılmamışken durur — seçilince listeden düşer. */}
+                {!form.gondericiLokasyonId && <option value="">— Mağaza seçin —</option>}
                 {magazalar.map(m => <option key={m.id} value={m.id}>{m.ad}</option>)}
               </select>
             </label>
