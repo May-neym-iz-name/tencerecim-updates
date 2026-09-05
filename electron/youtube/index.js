@@ -1,8 +1,10 @@
 // YouTube modülü — IPC kanalları.
-// Bu dosya şu an YALNIZCA BAĞLANTI katmanını açar (kur / durum / tazele / kes).
-// Video yükleme, yorum yönetimi ve Analytics raporu sonraki fazlarda buraya eklenecek;
-// hepsi client.cagir() üzerinden gider, token yönetimini tekrar yazmaya gerek yoktur.
+// Bağlantı katmanı + video yükleme / bilgi düzenleme.
+// Yorum yönetimi ve Analytics raporu sonraki fazlarda buraya eklenecek;
+// hepsi client.cagir() üzerinden gider, token yönetimi tekrar yazılmaz.
 const client = require('./client')
+const kota = require('./kota')
+const yukle = require('./yukle')
 const { _baglantiSil } = require('../db/youtube-ayarlar')
 
 module.exports = {
@@ -10,10 +12,26 @@ module.exports = {
   'youtube:durum': () => client.durum(),
 
   // Gerçek doğrulama: kanal bilgisini API'den çeker ve ayarlara yazar (1 birim kota).
-  // "Bağlantıyı test et" düğmesi bunu çağırır.
-  'youtube:tazele': () => client.kurulumTamamla(),
+  'youtube:tazele': async () => {
+    kota.kotaKontrol('channels.list')
+    const r = await client.kurulumTamamla()
+    kota.harca('channels.list')
+    return r
+  },
 
   // Yetkiyi yerel olarak siler. DİKKAT: Google tarafındaki izni kaldırmaz —
   // onun için Google Hesabı → Güvenlik → Üçüncü taraf uygulamalar gerekir.
   'youtube:baglantiKes': () => _baglantiSil(),
+
+  // Bugün ne kadar kota harcandı, kaç video daha sığar.
+  'youtube:kota': () => kota.durum(),
+
+  // Video yükleme. Uzun sürer; arayüz 'youtube:yuklemeDurum' ile ilerlemeyi yoklar.
+  'youtube:videoYukle': (p) => yukle.videoYukle(p || {}),
+
+  // Devam eden/biten yüklemelerin ilerlemesi.
+  'youtube:yuklemeDurum': (id) => yukle.ilerlemeDurum(id),
+
+  // Var olan videonun baslik/aciklama/etiketlerini gunceller (50 birim).
+  'youtube:videoGuncelle': (p) => yukle.videoGuncelle(p || {}),
 }

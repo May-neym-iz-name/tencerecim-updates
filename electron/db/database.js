@@ -445,6 +445,16 @@ function createTables() {
       deger TEXT
     );
 
+    -- YouTube günlük kota sayacı. Google 10.000 birim/gün verir ve kota Pasifik
+    -- saatiyle gece yarısı sıfırlanır — bu yüzden anahtar YEREL tarih değil,
+    -- Pasifik tarihidir (bkz. youtube/kota.js pasifikGun()).
+    -- videos.insert=1600 → günde en fazla 6 video. Sayaç olmadan 7. yüklemede
+    -- yarım yüklenmiş video ve anlaşılmaz bir hata ile karşılaşılır.
+    CREATE TABLE IF NOT EXISTS youtube_kota (
+      gun TEXT PRIMARY KEY,   -- 'YYYY-MM-DD' (Pasifik)
+      birim INTEGER NOT NULL DEFAULT 0
+    );
+
     -- Sosyal medya gelen kutusu ÖNBELLEĞİ (kaynak Meta; burada saklamak Supabase'i şişirmez).
     -- harici_id: Meta comment/message id (UNIQUE → aynı öğe iki kez düşmez, idempotent çekim).
     -- tur: 'yorum' | 'dm'. platform: 'facebook' | 'instagram'. yon: 'gelen' | 'giden'.
