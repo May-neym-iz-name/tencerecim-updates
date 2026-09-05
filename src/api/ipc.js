@@ -237,6 +237,19 @@ export const metaApi = {
   gorselOnbellek: () => invoke('meta:gorselOnbellek'),
 }
 
+// YouTube entegrasyonu (Google Cloud projesi: tencerecim-youtube).
+// Şimdilik yalnız BAĞLANTI katmanı; video yükleme/yorum/analiz sonraki fazlarda eklenir.
+export const youtubeApi = {
+  ayarGetir: () => invoke('youtube-ayar:getir'),
+  ayarKaydet: (veri) => invoke('youtube-ayar:kaydet', veri),
+  girisBaslat: () => invoke('youtube:girisBaslat'),
+  // Ucuz: ağa çıkmaz, DB'ye bakar.
+  durum: () => invoke('youtube:durum'),
+  // Gerçek doğrulama: kanal bilgisini API'den çeker (1 birim kota).
+  tazele: () => invoke('youtube:tazele'),
+  baglantiKes: () => invoke('youtube:baglantiKes'),
+}
+
 // Sosyal medya gelen kutusu (yerel önbellek + personel takibi).
 export const sosyalApi = {
   liste: (params) => invoke('sosyal:liste', params),

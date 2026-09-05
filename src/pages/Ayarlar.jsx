@@ -7,6 +7,7 @@ import { useAyarlar } from '../ayarlar/AyarlarContext'
 import { useAuth } from '../auth/AuthContext'
 import IlIlceSecici from '../components/IlIlceSecici'
 import SablonKutuphanesi from '../components/SablonKutuphanesi'
+import YouTubeAyarlariKarti from '../components/YouTubeAyarlariKarti'
 import { ETIKET_BOYUTLARI, VARSAYILAN_BOYUT } from '../lib/barkod'
 import {
   BARKOD_YAZICI_KEY, BARKOD_BOYUT_KEY, KARGO_YAZICI_KEY, KARGO_OLCU_KEY,
@@ -31,6 +32,7 @@ export default function Ayarlar() {
     { kod: 'ikas', ad: '🛍️ ikas' },
     { kod: 'fatura', ad: '🧾 Fatura' },
     { kod: 'meta', ad: '💬 Sosyal Medya' },
+    { kod: 'youtube', ad: '▶️ YouTube' },
     { kod: 'yedek', ad: '💾 Yedekleme' },
   ]
 
@@ -561,6 +563,8 @@ export default function Ayarlar() {
 
       {/* Yazıcı Ayarları — cihaza özel, buluta senkronlanmaz */}
       {sekme === 'yazici' && <YaziciAyarlariKarti yazicilar={yazicilar} />}
+
+      {sekme === 'youtube' && yonetici && <YouTubeAyarlariKarti />}
 
       {/* Mağaza Gönderici Adresleri (online sipariş kargosu için) */}
       {sekme === 'kargo' && yonetici && (

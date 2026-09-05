@@ -435,6 +435,16 @@ function createTables() {
       deger TEXT
     );
 
+    -- YouTube entegrasyon ayarları (anahtar-değer). meta_ayarlar ile aynı model.
+    -- client_id, client_secret (hassas), refresh_token (hassas, SÜRESİZ — çalınırsa
+    -- kanala kalıcı erişim demektir), access_token (1 saatlik, hassas sayılmaz ama
+    -- diskte de tutulur), token_bitis (epoch ms), kanal_id, kanal_adi.
+    -- Google Cloud projesi: tencerecim-youtube. Yerel *.db gitignore'da.
+    CREATE TABLE IF NOT EXISTS youtube_ayarlar (
+      anahtar TEXT PRIMARY KEY,
+      deger TEXT
+    );
+
     -- Sosyal medya gelen kutusu ÖNBELLEĞİ (kaynak Meta; burada saklamak Supabase'i şişirmez).
     -- harici_id: Meta comment/message id (UNIQUE → aynı öğe iki kez düşmez, idempotent çekim).
     -- tur: 'yorum' | 'dm'. platform: 'facebook' | 'instagram'. yon: 'gelen' | 'giden'.

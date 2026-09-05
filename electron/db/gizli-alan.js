@@ -27,6 +27,10 @@ const HASSAS_ANAHTARLAR = {
   ikas_ayarlar: ['client_secret'],
   ups_ayarlar: ['sifre'],
   meta_ayarlar: ['app_secret', 'sayfa_token'],
+  // refresh_token Google'da SÜRESİZDİR: eline geçen, uygulamayı hiç görmeden
+  // kanala video yükleyip yorum silebilir. access_token 1 saatlik ama o da
+  // aynı yetkiyi taşır — ikisi de şifrelenir.
+  youtube_ayarlar: ['client_secret', 'refresh_token', 'access_token'],
   // firm_id de secret: addinvoice'un TEK kimlik dogrulamasi odur — eline gecen
   // herkes bizim hesabimiza fatura kesebilir.
   fatura_ayarlar: ['firm_id', 'token'],
