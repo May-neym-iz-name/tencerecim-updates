@@ -238,7 +238,7 @@ export const metaApi = {
 }
 
 // YouTube entegrasyonu (Google Cloud projesi: tencerecim-youtube).
-// Şimdilik yalnız BAĞLANTI katmanı; video yükleme/yorum/analiz sonraki fazlarda eklenir.
+// Bağlantı + video yükleme + yorum okuma/yanıtlama. Analiz sonraki fazda.
 export const youtubeApi = {
   ayarGetir: () => invoke('youtube-ayar:getir'),
   ayarKaydet: (veri) => invoke('youtube-ayar:kaydet', veri),
@@ -248,6 +248,10 @@ export const youtubeApi = {
   // Gerçek doğrulama: kanal bilgisini API'den çeker (1 birim kota).
   tazele: () => invoke('youtube:tazele'),
   baglantiKes: () => invoke('youtube:baglantiKes'),
+  // Kanalın tüm yorumlarını çeker; sosyal_mesajlar'a platform='youtube' olarak yazar.
+  yorumCek: (params) => invoke('youtube:yorumCek', params),
+  // Bir yoruma yanıt (50 birim kota). harici_id = YouTube yorum kimliği.
+  yorumYanitla: (veri) => invoke('youtube:yorumYanitla', veri),
 }
 
 // Sosyal medya gelen kutusu (yerel önbellek + personel takibi).

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { sosyalApi, metaApi } from '../api/ipc'
+import { sosyalApi, metaApi, youtubeApi } from '../api/ipc'
 import { eslesirMi } from '../utils/arama'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
@@ -16,6 +16,9 @@ const SEKMELER = [
   { kod: 'instagram', ad: 'Instagram', mod: 'dm', platform: 'instagram', sayacKey: 'instagram_dm' },
   { kod: 'fb_yorum', ad: 'Facebook yorumları', mod: 'yorum', platform: 'facebook', sayacKey: 'fb_yorum' },
   { kod: 'ig_yorum', ad: 'Instagram yorumları', mod: 'yorum', platform: 'instagram', sayacKey: 'ig_yorum' },
+  // YouTube yorumları AYNI tabloda durur (platform='youtube', tur='yorum'), bu yüzden
+  // süzgeçler/atama/sayaç ek iş olmadan çalışır. Yalnız ÇEKME ve YANITLAMA farklı API.
+  { kod: 'yt_yorum', ad: 'YouTube yorumları', mod: 'yorum', platform: 'youtube', sayacKey: 'yt_yorum' },
 ]
 
 // Personelin tek dokunuşla ekleyebileceği hazır yanıtlar (mağaza sık kullanılan cevaplar).
@@ -303,6 +306,14 @@ export default function SosyalMedya() {
   async function cek() {
     setCekiliyor(true)
     try {
+      // YouTube sekmesindeyken Meta'yı çekmek yanlış olurdu: kullanıcı gördüğü
+      // listenin tazelenmesini bekler. Kaynak, açık sekmenin platformudur.
+      if (sekme?.platform === 'youtube') {
+        const r = await youtubeApi.yorumCek()
+        toast.success(`${r.satir} yorum güncellendi (${r.konu} konu)`)
+        listeYukle(); sayaclariYukle(); mesajlariTazele()
+        return
+      }
       const r = await metaApi.cek()
       const toplam = (r.fbYorum || 0) + (r.igYorum || 0) + (r.fbDm || 0) + (r.igDm || 0)
       toast.success(`${toplam} öğe güncellendi`)
@@ -353,14 +364,22 @@ export default function SosyalMedya() {
     finally { setMesgul(false) }
   }
 
-  async function yorumCevapla(yorumId) {
+  // Yorumun KENDİSİ geçilir, yalnız id değil: yanıtın hangi API'ye gideceğini
+  // satırdaki platform belirler. Sadece id geçseydi burada tekrar sorgu gerekirdi.
+  async function yorumCevapla(yorum) {
     if (!taslak.trim()) return
     const hedefKonu = seciliKonu?.konu_id
     const metin = taslak
     setTaslak('')
     setMesgul(true)
     try {
-      await metaApi.yorumCevapla({ id: yorumId, metin, kullanici })
+      if (yorum.platform === 'youtube') {
+        // YouTube'da yanıt, yorumun YEREL id'siyle değil harici_id ile verilir.
+        // Durum ve "kim yanıtladı" işaretini modül yazar (Meta'daki gibi).
+        await youtubeApi.yorumYanitla({ harici_id: yorum.harici_id, metin, kullanici })
+      } else {
+        await metaApi.yorumCevapla({ id: yorum.id, metin, kullanici })
+      }
       toast.success('Yoruma yanıt verildi')
       mesajlariTazele(hedefKonu)
       sayaclariYukle(); listeYukle()
@@ -919,9 +938,9 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                       </div>
                       <div className="flex items-center gap-2">
                         <input value={taslak} onChange={e => setTaslak(e.target.value)} autoFocus
-                          onKeyDown={e => { if (e.key === 'Enter') cevapla(y.id) }}
+                          onKeyDown={e => { if (e.key === 'Enter') cevapla(y) }}
                           placeholder="Herkese açık yanıt yaz…" className="flex-1 border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100" />
-                        <button onClick={() => cevapla(y.id)} disabled={mesgul || !taslak.trim()}
+                        <button onClick={() => cevapla(y)} disabled={mesgul || !taslak.trim()}
                           className="text-blue-600 text-sm font-medium disabled:opacity-40">Gönder</button>
                       </div>
                     </div>

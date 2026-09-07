@@ -1,10 +1,11 @@
 // YouTube modülü — IPC kanalları.
-// Bağlantı katmanı + video yükleme / bilgi düzenleme.
-// Yorum yönetimi ve Analytics raporu sonraki fazlarda buraya eklenecek;
-// hepsi client.cagir() üzerinden gider, token yönetimi tekrar yazılmaz.
+// Bağlantı katmanı + video yükleme / bilgi düzenleme + yorum okuma/yanıtlama.
+// Analytics raporu sonraki fazda buraya eklenecek; hepsi client.cagir()
+// üzerinden gider, token yönetimi tekrar yazılmaz.
 const client = require('./client')
 const kota = require('./kota')
 const yukle = require('./yukle')
+const yorumlar = require('./yorumlar')
 const { _baglantiSil } = require('../db/youtube-ayarlar')
 
 module.exports = {
@@ -34,4 +35,11 @@ module.exports = {
 
   // Var olan videonun baslik/aciklama/etiketlerini gunceller (50 birim).
   'youtube:videoGuncelle': (p) => yukle.videoGuncelle(p || {}),
+
+  // Kanalin tum yorumlarini ceker ve sosyal_mesajlar'a yazar (sayfa basi 1 birim).
+  // Meta yorumlariyla ayni tabloya gider; sekme, sizgecler ve atama hazir gelir.
+  'youtube:yorumCek': (p) => yorumlar.yorumlariCek(p || {}),
+
+  // Bir yoruma yanit yazar (50 birim).
+  'youtube:yorumYanitla': (p) => yorumlar.yorumYanitla(p || {}),
 }

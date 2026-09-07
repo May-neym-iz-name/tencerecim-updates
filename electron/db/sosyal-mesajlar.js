@@ -278,6 +278,7 @@ function sayaclar() {
     instagram_dm: q("tur='dm' AND platform='instagram'"),
     fb_yorum: q("tur='yorum' AND platform='facebook'"),
     ig_yorum: q("tur='yorum' AND platform='instagram'"),
+    yt_yorum: q("tur='yorum' AND platform='youtube'"),
   }
 }
 
