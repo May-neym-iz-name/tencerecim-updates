@@ -137,10 +137,18 @@ function dosyaParcasiOku(fd, konum, uzunluk) {
  * @param {string} [p.kategori] YouTube kategori kimliği (varsayılan '22' People & Blogs;
  *                              yemek/tanıtım için '26' Howto & Style uygundur)
  * @param {string} [p.id]       İlerleme takibi için anahtar (verilmezse dosya adı)
+ * @param {string|Date} [p.yayinZamani]  Zamanlanmış yayın anı (RFC3339 / Date).
+ *
+ * YAYIN ZAMANI TUZAĞI: publishAt YALNIZCA privacyStatus 'private' iken çalışır.
+ * 'public' ile birlikte gönderilirse YouTube HATA VERMEZ — publishAt'i sessizce
+ * yok sayar ve video anında yayına girer. Bu yüzden burada gizlilik zorla
+ * 'private' yapılır ve çağıran uyarılır; ayrıca yükleme sonrası dönen
+ * gercek_yayin alanı İSTENEN ile karşılaştırılmalıdır (bkz. sonuç nesnesi).
+ * Geçmiş bir an gönderilmesi de tutarsız davranır; burada peşinen reddedilir.
  */
 async function videoYukle({
   dosya, baslik, aciklama, etiketler, gizlilik = 'private',
-  kategori = '22', dil = 'tr', id,
+  kategori = '22', dil = 'tr', id, yayinZamani,
 }) {
   if (!dosya || !fs.existsSync(dosya)) throw new Error(`Video dosyası bulunamadı: ${dosya}`)
   if (!baslik || !baslik.trim()) throw new Error('Video başlığı boş olamaz.')
@@ -148,6 +156,23 @@ async function videoYukle({
   if (aciklama && aciklama.length > 5000) throw new Error(`Açıklama 5000 karakteri aşıyor (${aciklama.length}).`)
   if (!['private', 'unlisted', 'public'].includes(gizlilik)) {
     throw new Error(`Geçersiz gizlilik: ${gizlilik}`)
+  }
+
+  // Zamanlanmış yayın: doğrulama ve zorunlu 'private' düzeltmesi.
+  let yayinISO = null
+  if (yayinZamani) {
+    const an = yayinZamani instanceof Date ? yayinZamani : new Date(yayinZamani)
+    if (Number.isNaN(an.getTime())) throw new Error(`Geçersiz yayın zamanı: ${yayinZamani}`)
+    if (an.getTime() <= Date.now()) {
+      // Sessizce "şimdi yayınla"ya düşmek, kaçırılan slotu fark edilmez kılar.
+      throw new Error(
+        `Yayın zamanı geçmişte: ${an.toISOString()}. Geçmiş slot için yayinZamani ` +
+        'verilmemeli, gizlilik doğrudan "public" seçilmelidir.',
+      )
+    }
+    yayinISO = an.toISOString()
+    // publishAt yalnızca private ile çalışır — public gönderilirse sessizce yok sayılır.
+    gizlilik = 'private'
   }
 
   // Yükleme BAŞLAMADAN kota kontrolü: yarım yüklenmiş video bırakmayalım.
@@ -173,6 +198,7 @@ async function videoYukle({
       privacyStatus: gizlilik,
       // Google zorunlu kılıyor: belirtilmezse yükleme reddedilebilir.
       selfDeclaredMadeForKids: false,
+      ...(yayinISO ? { publishAt: yayinISO } : {}),
     },
   }
 
@@ -232,6 +258,12 @@ async function videoYukle({
           istenen_gizlilik: gizlilik,
           gercek_gizlilik: v.status && v.status.privacyStatus,
           yuklenme_durumu: v.status && v.status.uploadStatus,
+          // Aynı gerekçe yayın zamanı için de geçerli — hatta daha güçlü:
+          // publishAt sessizce yok sayılabilen bir alandır, "hata gelmedi"
+          // onun kurulduğunun kanıtı DEĞİLDİR. İkisi de kaydedilir ki
+          // çağıran karşılaştırabilsin.
+          istenen_yayin: yayinISO,
+          gercek_yayin: (v.status && v.status.publishAt) || null,
         }
         _ilerleme.set(anahtar, { dosya, toplam: boyut, gonderilen: boyut, durum: 'bitti', video_id: sonuc.video_id })
         return sonuc
