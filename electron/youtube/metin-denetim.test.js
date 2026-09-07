@@ -21,6 +21,16 @@ describe('yasakBul — GERCEK vakalar (2026-09-07 uretimi)', () => {
     expect(b.some(x => x.sinif === 'guvenlik')).toBe(true)
   })
 
+  it('"Çizilme ve Yapışma Yapmaz" DOLAYLI kalibini yakalar', () => {
+    // Ilk listeyi asti: kalip fiile degil sifata bakiyordu. Iddia ayni.
+    expect(yasakBul('Maxx Doria ... - Çizilme ve Yapışma Yapmaz').length).toBeGreaterThan(0)
+    expect(yasakBul('Çizilme yapmayan yüzey').length).toBeGreaterThan(0)
+  })
+
+  it('"yapışma yapmaz" TEK BASINA serbest — yapismazlik mesru terim', () => {
+    expect(yasakBul('Yüzeyi yapışma yapmaz, az yağla pişirir')).toEqual([])
+  })
+
   it('"Kararmaz, leke tutmaz ve koku yapmaz" ucunu birden yakalar', () => {
     // Bu cumle ILK yasak listesini asti (07.09) — liste, model her yeni
     // ifade uydurdugunda buyumek zorunda.

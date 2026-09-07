@@ -28,6 +28,10 @@ function katla(metin) {
 const YASAKLAR = [
   // Mutlak dayaniklilik — olculemez, urun bunu vaat etmiyor.
   { kalip: /çizilme(z|yen)/, sinif: 'dayaniklilik', oneri: '"çizilmeye dayanıklı" de' },
+  // Ayni iddianin dolayli kalibi: "cizilme ... YAPMAZ". Ilk liste bunu kacirdi
+  // ve "Cizilme ve Yapisma Yapmaz" basligi denetimden gecti (07.09).
+  // Iddia ayni; yalnizca fiil degismis.
+  { kalip: /çizilme( ve yapışma)? yapma(z|yan)/, sinif: 'dayaniklilik', oneri: '"çizilmeye dirençli" de' },
   { kalip: /kırılma(z|yan)/, sinif: 'dayaniklilik', oneri: '"darbeye dayanıklı" de' },
   { kalip: /(^|\W)yanma(z|yan)/, sinif: 'dayaniklilik', oneri: '"yüksek ısıya dayanıklı" de' },
   { kalip: /bozulma(z|yan)/, sinif: 'dayaniklilik', oneri: '"uzun ömürlü" de' },
