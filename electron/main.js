@@ -497,6 +497,8 @@ const handlerModules = [
   require('./meta/yurutucu'),
   require('./meta'),
   require('./meta/giris'),
+  require('./db/ai-ayarlar'),
+  require('./ai'),
   require('./db/youtube-ayarlar'),
   require('./youtube'),
   require('./youtube/giris'),

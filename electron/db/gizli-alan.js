@@ -34,6 +34,8 @@ const HASSAS_ANAHTARLAR = {
   // firm_id de secret: addinvoice'un TEK kimlik dogrulamasi odur — eline gecen
   // herkes bizim hesabimiza fatura kesebilir.
   fatura_ayarlar: ['firm_id', 'token'],
+  // Gemini anahtari: eline gecen bizim adimiza fatura cikarir (kullandikca odeme).
+  ai_ayarlar: ['gemini_anahtar'],
 }
 
 function sifreliMi(deger) {

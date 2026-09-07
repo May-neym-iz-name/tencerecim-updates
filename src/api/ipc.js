@@ -254,6 +254,15 @@ export const youtubeApi = {
   yorumYanitla: (veri) => invoke('youtube:yorumYanitla', veri),
 }
 
+// Yapay zeka (Gemini) — yorum yanıtı önerisi.
+// Üretilen metin doğrudan yayınlanmaz; 'temiz' bayrağıyla döner, gönderme kararı kullanıcının.
+export const aiApi = {
+  ayarGetir: () => invoke('ai-ayar:getir'),
+  ayarKaydet: (veri) => invoke('ai-ayar:kaydet', veri),
+  hazir: () => invoke('ai:hazir'),
+  yorumYanitOner: (veri) => invoke('ai:yorumYanitOner', veri),
+}
+
 // Sosyal medya gelen kutusu (yerel önbellek + personel takibi).
 export const sosyalApi = {
   liste: (params) => invoke('sosyal:liste', params),

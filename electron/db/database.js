@@ -461,6 +461,14 @@ function createTables() {
     -- konu_id: gönderi id (yorum) veya konuşma id (DM) — cevap için grup anahtarı.
     -- durum: 'yeni' | 'okundu' | 'cevaplandi'. atanan_kullanici/cevaplayan_kullanici:
     -- "kim neye baktı/cevapladı" personel takibi (yerel; Supabase'e gitmez).
+    -- Yapay zeka ayarlari (anahtar-deger). Simdilik yalniz Gemini anahtari ve
+    -- model tercihi. SENKRONLANMAZ: anahtar diskte DPAPI ile sifreli durur ve
+    -- sifreli deger baska PC'de cozulemez (bkz. gizli-alan.js uyarisi).
+    CREATE TABLE IF NOT EXISTS ai_ayarlar (
+      anahtar TEXT PRIMARY KEY,
+      deger TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS sosyal_mesajlar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       platform TEXT NOT NULL,

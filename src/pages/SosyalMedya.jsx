@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { sosyalApi, metaApi, youtubeApi } from '../api/ipc'
+import { sosyalApi, metaApi, youtubeApi, aiApi } from '../api/ipc'
 import { eslesirMi } from '../utils/arama'
+import { adSadelestir, adBasHarfi } from '../utils/ad'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
 import OtomasyonPaneli from '../components/OtomasyonPaneli'
@@ -142,9 +143,11 @@ function FiltreCip({ secili, onClick, renk, pasif, children }) {
 // Facebook Messenger'da Meta profil fotoğrafına izin vermiyor ((#3) capability hatası),
 // orada harf-avatar kalır — bu bir eksiklik değil, platform kısıtı.
 function Avatar({ ad, platform, boyut = 40, konuId }) {
-  const harf = (ad || '?').trim().charAt(0).toUpperCase()
+  // Harf SADELEŞMİŞ addan alınır: ham tanıtıcıda baştaki "@" avatarda
+  // görünüp bütün müşterileri birbirinin aynısı yapıyordu.
+  const harf = adBasHarfi(ad)
   const harfAvatar = (
-    <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-300 to-slate-400 flex items-center justify-center text-white font-semibold"
+    <div className="w-full h-full rounded-full bg-marka-50 border border-marka-100 flex items-center justify-center text-marka-900 font-semibold"
       style={{ fontSize: boyut * 0.4 }}>{harf}</div>
   )
   const rozet = { width: boyut * 0.36, height: boyut * 0.36 }
@@ -159,6 +162,15 @@ function Avatar({ ad, platform, boyut = 40, konuId }) {
       )}
       {platform === 'facebook' && (
         <div className="absolute -bottom-0.5 -right-0.5 rounded" style={{ ...rozet, background: '#1877f2' }} />
+      )}
+      {platform === 'youtube' && (
+        <div className="absolute -bottom-0.5 -right-0.5 rounded-[3px] flex items-center justify-center"
+          style={{ ...rozet, background: '#ff0000' }}>
+          <div style={{ width: 0, height: 0, marginLeft: 1,
+            borderTop: `${rozet.height * 0.18}px solid transparent`,
+            borderBottom: `${rozet.height * 0.18}px solid transparent`,
+            borderLeft: `${rozet.width * 0.3}px solid white` }} />
+        </div>
       )}
     </div>
   )
@@ -436,8 +448,10 @@ export default function SosyalMedya() {
           const aktif = s.kod === sekmeKod
           return (
             <button key={s.kod} onClick={() => setSekmeKod(s.kod)}
-              className={`flex items-center gap-2 px-3 py-2 text-sm rounded-t-lg whitespace-nowrap border-b-2 -mb-px transition-colors
-                ${aktif ? 'border-blue-600 text-blue-600 font-semibold bg-blue-50/40' : 'border-transparent text-gray-600 hover:text-gray-900'}`}>
+              className={`flex items-center gap-2 px-3.5 py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors
+                ${aktif
+                  ? 'border-krem-400 text-marka-900 font-semibold'
+                  : 'border-transparent text-gray-500 hover:text-marka-900'}`}>
               {s.ad}
               {n > 0 && <span className="bg-red-600 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">{n}</span>}
             </button>
@@ -463,7 +477,7 @@ export default function SosyalMedya() {
         <div className="w-[340px] flex-shrink-0 border-r flex flex-col">
           <div className="p-3 space-y-2">
             <input value={arama} onChange={e => setArama(e.target.value)} placeholder="🔍  Ara"
-              className="w-full bg-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+              className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:bg-white focus:border-marka-400 focus:ring-2 focus:ring-marka-50" />
             {/* Tarih filtresi: gönderileri/konuşmaları tarihe göre süz. */}
             <div className="flex items-center gap-1">
               <input type="date" value={tarihBas} onChange={e => setTarihBas(e.target.value)} title="Başlangıç"
@@ -522,23 +536,35 @@ export default function SosyalMedya() {
             )}
             {liste.map(satir => {
               const secili = seciliKonu?.konu_id === satir.konu_id
-              const baslik = satir.kind === 'yorum' ? (satir.konu_baslik || '(gönderi)') : (satir.kisi || 'Müşteri')
-              const altYazi = satir.kind === 'yorum'
-                ? `${satir.son_yorumcu || ''}${satir.son_yorumcu ? ' · ' : ''}${satir.yorum_sayisi} yorum`
-                : (satir.son_metin || '')
+              const baslik = satir.kind === 'yorum' ? (satir.konu_baslik || '(gönderi)') : adSadelestir(satir.kisi || 'Müşteri', 28)
+              // Yorum satırında ASIL kimlik son yorumcudur; gönderi adı bağlamdır.
+              // Bu yüzden ad ayrı ve belirgin, gönderi adı ikincil yazılır.
+              const sonKisi = satir.kind === 'yorum' ? adSadelestir(satir.son_yorumcu || '', 22) : ''
               return (
                 <button key={satir.kind + satir.konu_id} onClick={() => konuSec(satir)}
-                  className={`w-full text-left px-3 py-2.5 flex gap-3 items-start border-l-2 ${secili ? 'bg-blue-50 border-blue-500' : 'border-transparent hover:bg-gray-50'}`}>
+                  className={`w-full text-left px-3 py-3 flex gap-3 items-start border-l-[3px] transition-colors
+                    ${secili ? 'bg-marka-50 border-krem-400' : 'border-transparent hover:bg-gray-50'}`}>
                   {satir.kind === 'yorum'
                     ? <SosyalGorsel konuId={satir.konu_id} className="w-10 h-10 rounded object-cover flex-shrink-0 bg-gray-100"
                         yedek={<Avatar ad={baslik} platform={satir.platform} />} />
                     : <Avatar ad={baslik} platform={satir.platform} konuId={satir.konu_id} />}
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1">
-                      <span className={`text-sm truncate flex-1 ${satir.okunmamis ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{baslik}</span>
+                    <div className="flex items-baseline gap-2">
+                      {/* AD ÖNCE ve BELİRGİN: listede aranan şey "kim yazdı"dır,
+                          hangi videoya yazdığı ikinci sorudur. */}
+                      <span className={`text-[15px] leading-tight truncate flex-1 ${satir.okunmamis ? 'font-bold text-marka-900' : 'font-semibold text-gray-800'}`}>
+                        {sonKisi || baslik}
+                      </span>
                       <span className="text-[11px] text-gray-400 flex-shrink-0">{zaman(satir.son_zaman)}</span>
                     </div>
-                    <p className={`text-xs truncate ${satir.okunmamis ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>{altYazi}</p>
+                    {satir.kind === 'yorum'
+                      ? (
+                        <p className="text-[12px] text-gray-500 truncate mt-0.5">
+                          {baslik}
+                          <span className="text-gray-400"> · {satir.yorum_sayisi} yorum</span>
+                        </p>
+                      )
+                      : <p className={`text-[13px] truncate mt-0.5 ${satir.okunmamis ? 'text-gray-700' : 'text-gray-500'}`}>{satir.son_metin || ''}</p>}
                     <div className="flex items-center gap-1 flex-wrap">
                       <YanitSuresi satir={satir} />
                       {satir.atanan && (
@@ -791,13 +817,15 @@ function MesajEki({ m, bizden }) {
 
 // --- DM görünümü: sohbet balonları ---
 function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirmaRef, banaAta, kullanici, okunduIsaretle, hizliYanitlar, hizliKaydet }) {
-  const kisi = [...mesajlar].reverse().find(m => m.yon === 'gelen')?.gonderen_ad || konu.kisi || 'Müşteri'
+  const kisi = adSadelestir(
+    [...mesajlar].reverse().find(m => m.yon === 'gelen')?.gonderen_ad || konu.kisi || 'Müşteri',
+  )
   const ekle = (t) => setTaslak(v => v && v.trim() ? `${v.trim()} ${t}` : t)
   return (
     <div className="flex-1 flex flex-col min-w-0">
-      <div className="flex items-center gap-3 px-5 py-3 border-b">
-        <Avatar ad={kisi} platform={konu.platform} boyut={38} konuId={konu.konu_id} />
-        <div className="font-semibold text-gray-800 truncate">{kisi}</div>
+      <div className="flex items-center gap-3 px-5 py-3.5 border-b bg-white">
+        <Avatar ad={kisi} platform={konu.platform} boyut={40} konuId={konu.konu_id} />
+        <div className="text-[17px] font-bold text-marka-900 truncate tracking-tight">{kisi}</div>
         <AtamaButonu konu={konu} banaAta={banaAta} kullanici={kullanici} />
         {okunduIsaretle && (
           <button type="button" onClick={okunduIsaretle} title="Yanıt vermeden okunmadı rozetini kapat"
@@ -806,16 +834,18 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
           </button>
         )}
       </div>
-      <div ref={kaydirmaRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-2 bg-gray-50/50">
+      <div ref={kaydirmaRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-2 bg-kagit">
         {mesajlar.map(m => {
           const bizden = m.yon === 'giden'
           return (
             <div key={m.id} className={`flex ${bizden ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[70%] px-4 py-2 rounded-2xl text-sm whitespace-pre-wrap
-                ${bizden ? 'bg-violet-600 text-white rounded-br-md' : 'bg-gray-200 text-gray-800 rounded-bl-md'}`}>
+              <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-[14px] leading-relaxed whitespace-pre-wrap
+                ${bizden
+                  ? 'bg-marka-900 text-white rounded-br-md'
+                  : 'bg-white text-gray-900 border border-gray-200 rounded-bl-md shadow-sm'}`}>
                 <MesajEki m={m} bizden={bizden} />
                 {m.metin}
-                <div className={`text-[10px] mt-1 ${bizden ? 'text-violet-200' : 'text-gray-400'}`}>{zaman(m.mesaj_tarihi)}{m.cevaplayan_kullanici ? ` · ${m.cevaplayan_kullanici}` : ''}</div>
+                <div className={`text-[10px] mt-1 ${bizden ? 'text-white/60' : 'text-gray-400'}`}>{zaman(m.mesaj_tarihi)}{m.cevaplayan_kullanici ? ` · ${m.cevaplayan_kullanici}` : ''}</div>
               </div>
             </div>
           )
@@ -826,7 +856,7 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
           <HizliYanitlar onSec={ekle} yanitlar={hizliYanitlar} onKaydet={hizliKaydet} />
           <div className="mb-2"><SablonSecici onSec={ekle} /></div>
         </div>
-        <div className="flex items-end gap-2 bg-gray-100 rounded-2xl px-3 py-2">
+        <div className="flex items-end gap-2 bg-white border border-gray-200 rounded-2xl px-3 py-2 focus-within:border-marka-400 focus-within:ring-2 focus-within:ring-marka-50 transition-colors">
           <textarea value={taslak} onChange={e => setTaslak(e.target.value)} rows={1}
             // İçerik uzadıkça kutu kendiliğinden büyür (maks ~14 satır, sonrası kaydırma) —
             // sabit yükseklikte üstteki satırlar görünmez kalıyordu.
@@ -837,10 +867,10 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
             }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); gonder() } }}
             placeholder={`${konu.platform === 'instagram' ? 'Instagram' : 'Messenger'}'da yanıtla…`}
-            className="flex-1 bg-transparent resize-none text-sm focus:outline-none overflow-y-auto"
+            className="flex-1 bg-transparent resize-none text-[14px] text-gray-900 placeholder:text-gray-400 focus:outline-none overflow-y-auto"
             style={{ maxHeight: 320 }} />
           <button onClick={gonder} disabled={mesgul || !taslak.trim()}
-            className="bg-violet-600 text-white text-sm px-4 py-1.5 rounded-full hover:bg-violet-700 disabled:opacity-40">Gönder</button>
+            className="bg-marka-900 text-white text-sm font-medium px-5 py-1.5 rounded-full hover:bg-marka-700 disabled:opacity-40 transition-colors">Gönder</button>
         </div>
       </div>
     </div>
@@ -855,16 +885,37 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
   const hariciSet = new Set(yorumlar.map(y => y.harici_id))
   const ustler = yorumlar.filter(y => y.yon === 'gelen' && (!y.ust_id || !hariciSet.has(y.ust_id)))
   const [cevapId, setCevapId] = useState(null) // yalnızca bu yorumun yanıt kutusu açık
+  const [uretiliyor, setUretiliyor] = useState(null) // yanıt önerisi üretilen yorumun id'si
+  const [uyari, setUyari] = useState('')             // denetime takılan ifadeler
   const ekle = (t) => setTaslak(v => v && v.trim() ? `${v.trim()} ${t}` : t)
+
+  // Yoruma yanıt ÖNERİSİ üretir ve kutuya yazar. GÖNDERMEZ.
+  //
+  // Kullanıcı "butona basınca yanıt versin" dedi; araya tek bir onay adımı
+  // koyuyorum çünkü metin herkese açık kanalda mağazayı temsil ediyor ve aynı
+  // model bu projede daha önce olmayan özellik uydurdu. Metin kutuya hazır
+  // düşüyor, göndermek tek tık.
+  async function yanitUret(y) {
+    setUretiliyor(y.id)
+    setUyari('')
+    try {
+      const r = await aiApi.yorumYanitOner({ harici_id: y.harici_id })
+      setTaslak(r.metin)
+      if (!r.temiz) setUyari(r.ozet)
+      else toast.success(`Yanıt hazır (${r.model})`)
+    } catch (e) {
+      toast.error('Üretilemedi: ' + e.message)
+    } finally { setUretiliyor(null) }
+  }
   return (
     <>
       <div className="flex-1 flex flex-col min-w-0 border-r">
         {/* Gönderi başlığı */}
-        <div className="flex items-center gap-3 px-5 py-3 border-b">
-          <SosyalGorsel konuId={konu.konu_id} className="w-11 h-11 rounded object-cover bg-gray-100" />
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b bg-white">
+          <SosyalGorsel konuId={konu.konu_id} className="w-12 h-12 rounded-lg object-cover bg-gray-100 border border-gray-200" />
           <div className="min-w-0">
-            <p className="font-semibold text-gray-800 truncate">{konu.konu_baslik || 'Gönderi'}</p>
-            <p className="text-xs text-gray-400">{konu.yorum_sayisi} yorum{konu.konu_link ? '' : ''}</p>
+            <p className="text-[15px] font-semibold text-marka-900 truncate">{konu.konu_baslik || 'Gönderi'}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{konu.yorum_sayisi} yorum</p>
           </div>
           <div className="ml-auto flex items-center gap-3 flex-shrink-0">
             <AtamaButonu konu={konu} banaAta={banaAta} kullanici={kullanici} />
@@ -873,11 +924,11 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                 className="text-xs text-gray-500 hover:text-gray-700 hover:underline">✓ Okundu işaretle</button>
             )}
             {konu.konu_link && <a href={konu.konu_link} target="_blank" rel="noopener noreferrer"
-              className="text-xs text-blue-600 hover:underline">Gönderiyi aç ↗</a>}
+              className="text-xs text-marka-900 font-medium hover:underline">Gönderiyi aç ↗</a>}
           </div>
         </div>
         {/* Yorumlar */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5 bg-kagit">
           {ustler.map(y => {
             // Bu yorumun altındaki TÜM yanıtlar: müşteri yanıtları (gelen) + bizim yanıtlarımız (giden), zaman sırasıyla.
             const cocuklar = yorumlar.filter(r => r.ust_id === y.harici_id)
@@ -886,13 +937,19 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
               <div key={y.id} className="flex gap-3">
                 <Avatar ad={y.gonderen_ad} platform={konu.platform} boyut={34} />
                 <div className="min-w-0 flex-1">
-                  <div className="bg-gray-100 rounded-2xl px-3 py-2 inline-block max-w-full">
-                    <span className="font-semibold text-sm text-gray-800">{y.gonderen_ad}</span>{' '}
-                    <span className="text-sm text-gray-700">{y.metin}</span>
+                  {/* AD, metinle AYNI satırda değil: satır içi ad, uzun yorumların
+                      arasında kayboluyordu. Ayrı satır + koyu marka rengi ile
+                      "kim yazdı" bir bakışta okunuyor. */}
+                  <p className="text-[14px] font-bold text-marka-900 leading-tight mb-1" title={y.gonderen_ad}>
+                    {adSadelestir(y.gonderen_ad)}
+                  </p>
+                  <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-md px-3.5 py-2.5 inline-block max-w-full shadow-sm">
+                    <span className="text-[14px] leading-relaxed text-gray-900 whitespace-pre-wrap">{y.metin}</span>
                   </div>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 pl-2">
+                  <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 pl-1">
                     <span>{zaman(y.mesaj_tarihi)}</span>
-                    <button onClick={() => { setCevapId(cevapId === y.id ? null : y.id); setTaslak(''); setOzelMesaj(null) }} className="hover:text-gray-800 font-medium">Yanıtla</button>
+                    <button onClick={() => { setCevapId(cevapId === y.id ? null : y.id); setTaslak(''); setOzelMesaj(null); setUyari('') }}
+                      className="text-marka-900 hover:underline font-semibold">Yanıtla</button>
                     {/* YouTube'da ÖZEL MESAJ API'si YOKTUR — Instagram/Messenger'daki DM yarısı
                         buraya taşınamaz. Düğme görünseydi metaApi.yorumdanMesaj çağrılır ve
                         her denemede hataya düşerdi. Yanıt yalnızca yorum altına yazılabilir. */}
@@ -917,20 +974,24 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                     )}
                     {y.cevaplayan_kullanici && <span className="text-emerald-600">✓ {y.cevaplayan_kullanici}</span>}
                   </div>
-                  {/* Yanıtlar: bizimkiler (giden) mor kutuda; müşteri yanıtları (gelen) girintili yorum olarak. */}
+                  {/* Yanıtlar: bizimkiler marka renginde, müşteri yanıtları girintili yorum olarak. */}
                   {cocuklar.map(r => r.yon === 'giden' ? (
-                    <div key={r.id} className="mt-2 ml-4 text-sm text-gray-600 bg-violet-50 rounded-lg px-3 py-1.5">
-                      <b>Yanıtınız:</b> {r.metin}
+                    <div key={r.id} className="mt-2 ml-4 flex gap-2 items-start">
+                      <span className="text-marka-400 text-sm leading-6">↳</span>
+                      <div className="bg-marka-900 text-white rounded-2xl rounded-tl-md px-3.5 py-2 text-[13px] leading-relaxed">
+                        <span className="block text-[10px] uppercase tracking-wide text-white/50 mb-0.5">Yanıtınız</span>
+                        {r.metin}
+                      </div>
                     </div>
                   ) : (
                     <div key={r.id} className="mt-2 ml-4 flex gap-2">
-                      <Avatar ad={r.gonderen_ad} platform={konu.platform} boyut={26} />
+                      <Avatar ad={r.gonderen_ad} platform={konu.platform} boyut={28} />
                       <div className="min-w-0 flex-1">
-                        <div className="bg-gray-50 border rounded-2xl px-3 py-1.5 inline-block max-w-full">
-                          <span className="font-semibold text-xs text-gray-800">{r.gonderen_ad}</span>{' '}
-                          <span className="text-sm text-gray-700">{r.metin}</span>
+                        <p className="text-[13px] font-bold text-marka-900 leading-tight mb-0.5">{adSadelestir(r.gonderen_ad)}</p>
+                        <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-md px-3 py-2 inline-block max-w-full">
+                          <span className="text-[13px] leading-relaxed text-gray-900 whitespace-pre-wrap">{r.metin}</span>
                         </div>
-                        <div className="text-[11px] text-gray-400 mt-0.5 pl-2">↳ {zaman(r.mesaj_tarihi)}</div>
+                        <div className="text-[11px] text-gray-400 mt-0.5 pl-1">{zaman(r.mesaj_tarihi)}</div>
                       </div>
                     </div>
                   ))}
@@ -944,10 +1005,27 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                       <div className="flex items-center gap-2">
                         <input value={taslak} onChange={e => setTaslak(e.target.value)} autoFocus
                           onKeyDown={e => { if (e.key === 'Enter') cevapla(y) }}
-                          placeholder="Herkese açık yanıt yaz…" className="flex-1 border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100" />
+                          placeholder="Herkese açık yanıt yaz…"
+                          className="flex-1 bg-white border border-gray-200 rounded-full px-4 py-2 text-[14px] text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-marka-400 focus:ring-2 focus:ring-marka-50" />
+                        {/* YouTube'da yanıt önerisi: model yorumu okuyup taslak yazar.
+                            DOĞRUDAN GÖNDERMEZ — metin kutuya düşer, gönderme kararı sizde.
+                            Sebebi ölçülmüş: aynı model 07.09'da olmayan "titanyum gövde"
+                            ve "çizilmez" yazdı. Burası herkese açık bir kanal. */}
+                        {y.platform === 'youtube' && (
+                          <button type="button" onClick={() => yanitUret(y)} disabled={uretiliyor === y.id}
+                            title="Yoruma göre yanıt taslağı üret (göndermez)"
+                            className="text-[13px] font-medium px-3 py-1.5 rounded-full border border-krem-400 bg-krem-50 text-krem-600 hover:bg-krem-200 disabled:opacity-50 whitespace-nowrap transition-colors">
+                            {uretiliyor === y.id ? 'Yazıyor…' : '✨ Yanıt üret'}
+                          </button>
+                        )}
                         <button onClick={() => cevapla(y)} disabled={mesgul || !taslak.trim()}
-                          className="text-blue-600 text-sm font-medium disabled:opacity-40">Gönder</button>
+                          className="bg-marka-900 text-white text-sm font-medium px-4 py-1.5 rounded-full hover:bg-marka-700 disabled:opacity-40 whitespace-nowrap transition-colors">Gönder</button>
                       </div>
+                      {uyari && (
+                        <p className="mt-1.5 text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                          ⚠ Üretilen metinde denetime takılan ifade var, göndermeden düzeltin:<br />{uyari}
+                        </p>
+                      )}
                     </div>
                   )}
                   {/* Özel mesaj (private reply) kutusu */}
