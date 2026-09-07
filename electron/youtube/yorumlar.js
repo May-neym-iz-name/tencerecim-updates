@@ -9,7 +9,9 @@
 // videos.insert 1600 birim olduğu için yorum tarafı pratikte bedava; kısıt yüklemede.
 const client = require('./client')
 const kota = require('./kota')
-const { _upsertMesaj, _gonderiKaydet, _yanitlananlariKapat } = require('../db/sosyal-mesajlar')
+const {
+  _upsertMesaj, _gonderiKaydet, _yanitlananlariKapat, _gorunmeyenleriIsaretle,
+} = require('../db/sosyal-mesajlar')
 const { getDb } = require('../db/database')
 
 const SAYFA_BOYUT = 100      // commentThreads.list üst sınırı
@@ -112,6 +114,9 @@ async function yorumlariCek({ sayfaSiniri = 10, gunluk = () => {} } = {}) {
   let sayfa = null
   let toplam = 0
   let yeni = 0
+  // Tarama TÜKENDİ mi? Sayfa sınırına takılıp yarıda kaldıysak "listede yok"
+  // demek "silinmiş" demek DEĞİLDİR — silme süpürücüsü ancak tam taramada çalışır.
+  let tamTarama = false
   const tumSatirlar = []
   for (let i = 0; i < sayfaSiniri; i++) {
     kota.kotaKontrol('commentThreads.list')
@@ -131,7 +136,7 @@ async function yorumlariCek({ sayfaSiniri = 10, gunluk = () => {} } = {}) {
     toplam += items.length
     gunluk(`sayfa ${i + 1}: ${items.length} konu`)
     sayfa = r.nextPageToken
-    if (!sayfa) break
+    if (!sayfa) { tamTarama = true; break }
   }
 
   // Video meta verisi ÖNCE yazılır: liste ekranı başlığa göre gruplandığı için
@@ -144,8 +149,21 @@ async function yorumlariCek({ sayfaSiniri = 10, gunluk = () => {} } = {}) {
     const id = _upsertMesaj(satir)
     if (id) yeni++
   }
+  // YouTube'da SİLİNEN (veya moderasyona alınan) yorumlar artık listede dönmez.
+  // Yerel kopyayı işaretle ki gelen kutusunda cevap bekliyormuş gibi durmasın.
+  const silme = _gorunmeyenleriIsaretle(
+    'youtube', new Set(tumSatirlar.map(s => s.harici_id)), tamTarama,
+  )
   _yanitlananlariKapat()
-  return { konu: toplam, satir: tumSatirlar.length, yazilan: yeni, kota: kota.durum() }
+  return {
+    konu: toplam,
+    satir: tumSatirlar.length,
+    yazilan: yeni,
+    tamTarama,
+    silinen: silme.isaretlenen,
+    geriGelen: silme.geriGelen,
+    kota: kota.durum(),
+  }
 }
 
 /**

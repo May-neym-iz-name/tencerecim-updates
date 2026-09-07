@@ -164,6 +164,36 @@ function _silinenGonderileriIsaretle(platform, gorulenIdler, enEskiTarih) {
   }
 }
 
+/**
+ * Kaynakta ARTIK GÖRÜNMEYEN yorumları işaretler (silindi=1).
+ *
+ * YALNIZCA TAM TARAMADAN sonra çağrılabilir. Sayfalama yarıda kesildiyse
+ * "listede yok" demek "silinmiş" demek DEĞİLDİR — o durumda çağıran `tam`
+ * bayrağını false verir ve hiçbir şey işaretlenmez. Bu ayrım olmadan, sayfa
+ * sınırına takılan her çekim binlerce yorumu yanlışlıkla siler.
+ *
+ * "Görünmüyor" ≠ "kullanıcı sildi": moderasyona alınan veya istenmeyen
+ * işaretlenen yorumlar da listeden düşer. Üçü de gelen kutusunda cevap bekleyen
+ * soru sayılmamalı, bu yüzden aynı işaret kullanılır. Satır SİLİNMEZ; geri
+ * gelirse işaret kaldırılır (yanlış pozitif kendini onarır).
+ */
+function _gorunmeyenleriIsaretle(platform, gorulenIdler, tam) {
+  if (!tam || !gorulenIdler) return { isaretlenen: 0, geriGelen: 0 }
+  const db = getDb()
+  const satirlar = db.prepare(
+    "SELECT id, harici_id, COALESCE(silindi,0) silindi FROM sosyal_mesajlar WHERE platform = ? AND tur = 'yorum'",
+  ).all(platform)
+  const guncelle = db.prepare('UPDATE sosyal_mesajlar SET silindi = ? WHERE id = ?')
+  let isaretlenen = 0
+  let geriGelen = 0
+  for (const r of satirlar) {
+    const gorunuyor = gorulenIdler.has(r.harici_id)
+    if (!gorunuyor && !r.silindi) { guncelle.run(1, r.id); isaretlenen++ }
+    else if (gorunuyor && r.silindi) { guncelle.run(0, r.id); geriGelen++ }
+  }
+  return { isaretlenen, geriGelen }
+}
+
 // Yanıtlanmış ama 'yeni' kalmış gelenleri kapatır. Uygulama İÇİNDEN yanıt zaten kapatıyor;
 // bu süpürücü uygulama DIŞINDAN (telefon, Business Suite) verilen yanıtları yakalar:
 // - DM: gelen mesajdan SONRA bizim giden mesaj varsa o gelen yanıtlanmıştır.
@@ -233,6 +263,8 @@ function konu(konu_id) {
     FROM sosyal_mesajlar s
     LEFT JOIN sosyal_gonderiler g ON g.konu_id = s.konu_id
     WHERE s.konu_id = ? AND s.tur != 'gonderi'
+      -- Kaynakta artik gorunmeyen (silinmis/moderasyonda) yorumlar listelenmez.
+      AND COALESCE(s.silindi, 0) = 0
     ORDER BY COALESCE(s.mesaj_tarihi, s.cekilme_tarihi) ASC`
   ).all(konu_id)
 }
@@ -263,14 +295,17 @@ function notKaydet({ id, ic_not }) {
 
 // Okunmamış (yeni) öğe sayısı — navigasyon rozeti için.
 function sayac() {
-  return getDb().prepare("SELECT COUNT(*) n FROM sosyal_mesajlar WHERE durum = 'yeni' AND yon = 'gelen'").get().n
+  return getDb().prepare(
+    "SELECT COUNT(*) n FROM sosyal_mesajlar WHERE durum = 'yeni' AND yon = 'gelen' AND COALESCE(silindi,0) = 0",
+  ).get().n
 }
 
 // Üst sekme sayaçları (Meta Business Suite tarzı): her sekmedeki okunmamış adet.
 function sayaclar() {
   const db = getDb()
   const q = (kosul) => db.prepare(
-    `SELECT COUNT(*) n FROM sosyal_mesajlar WHERE durum='yeni' AND yon='gelen' AND ${kosul}`
+    `SELECT COUNT(*) n FROM sosyal_mesajlar WHERE durum='yeni' AND yon='gelen'
+       AND COALESCE(silindi,0) = 0 AND ${kosul}`
   ).get().n
   return {
     hepsi: q('1=1'),
@@ -322,6 +357,9 @@ function gonderiler({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
     WHERE ${kosul.join(' AND ')} AND s.konu_id IS NOT NULL
       -- Meta'da silinmiş gönderiler listelenmez (yorumları da anlamını yitirir).
       AND s.konu_id NOT IN (SELECT konu_id FROM sosyal_mesajlar WHERE tur = 'gonderi' AND silindi = 1)
+      -- Silinmis TEKIL yorumlar sayimlara da girmez (aksi halde gonderi listesinde
+      -- "3 yorum" yazip acildiginda 1 yorum gorunur).
+      AND COALESCE(s.silindi, 0) = 0
     GROUP BY s.konu_id, s.platform
     ${having.length ? 'HAVING ' + having.join(' AND ') : ''}
     ORDER BY COALESCE(gonderi_tarihi, son_zaman) DESC
@@ -380,6 +418,7 @@ module.exports = {
   _gonderiKaydet,
   _dbAyarla, // YALNIZ TEST — bkz. dosya başındaki test dikişi notu
   _silinenGonderileriIsaretle,
+  _gorunmeyenleriIsaretle,
   _yanitlananlariKapat,
   'sosyal:liste': (arg) => liste(arg),
   'sosyal:konu': (konu_id) => konu(konu_id),

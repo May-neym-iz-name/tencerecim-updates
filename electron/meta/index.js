@@ -581,11 +581,24 @@ async function _gonderiUrlTazele(konuId, platform) {
 
 async function gonderiGorseli(konuId, boyut) {
   if (!konuId) return null
-  const satir = getDb().prepare(
-    'SELECT platform, MAX(konu_gorsel) konu_gorsel FROM sosyal_mesajlar WHERE konu_id = ?'
-  ).get(konuId)
+  // Adres İKİ kaynakta olabilir: eski kayıtlarda mesaj satırında (konu_gorsel),
+  // yeni kayıtlarda sosyal_gonderiler'de tek kopya. Yalnız birine bakmak, YouTube
+  // videolarının kapağını hiç bulamamaya yol açıyordu (2026-09-07).
+  const satir = getDb().prepare(`
+    SELECT MAX(s.platform) platform,
+           COALESCE(MAX(s.konu_gorsel), MAX(g.gorsel)) gorsel
+    FROM sosyal_mesajlar s
+    LEFT JOIN sosyal_gonderiler g ON g.konu_id = s.konu_id
+    WHERE s.konu_id = ?`).get(konuId)
   if (!satir) return null
-  return gorselDosyasi(`gonderi:${konuId}`, satir.konu_gorsel, () => _gonderiUrlTazele(konuId, satir.platform), boyut)
+
+  // YouTube kapakları İMZASIZ ve KALICI (i.ytimg.com/vi/<id>/...). Meta'nın süreli
+  // imzalı adresleri için yazılan "adres öldü → kaynaktan tazele" yolu buraya
+  // UYGULANMAZ: tazeleyici YouTube kimliğini Meta Graph'a sorar ve hep başarısız olur.
+  const tazeleyici = satir.platform === 'youtube'
+    ? null
+    : () => _gonderiUrlTazele(konuId, satir.platform)
+  return gorselDosyasi(`gonderi:${konuId}`, satir.gorsel, tazeleyici, boyut)
 }
 
 // DM'de müşterinin profil fotoğrafı.

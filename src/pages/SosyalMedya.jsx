@@ -893,9 +893,14 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
                   <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 pl-2">
                     <span>{zaman(y.mesaj_tarihi)}</span>
                     <button onClick={() => { setCevapId(cevapId === y.id ? null : y.id); setTaslak(''); setOzelMesaj(null) }} className="hover:text-gray-800 font-medium">Yanıtla</button>
-                    {/* Meta yorum başına YALNIZCA 1 özel mesaj hakkı verir → gönderildiyse butonu kapat,
-                        yoksa ikinci deneme her seferinde hataya düşer. */}
-                    {y.ozel_mesaj_tarihi ? (
+                    {/* YouTube'da ÖZEL MESAJ API'si YOKTUR — Instagram/Messenger'daki DM yarısı
+                        buraya taşınamaz. Düğme görünseydi metaApi.yorumdanMesaj çağrılır ve
+                        her denemede hataya düşerdi. Yanıt yalnızca yorum altına yazılabilir. */}
+                    {y.platform === 'youtube' ? (
+                      <span className="text-gray-400" title="YouTube özel mesaj API'si sunmuyor; yanıt yalnızca yorum altına yazılabilir.">
+                        mesaj yok
+                      </span>
+                    ) : y.ozel_mesaj_tarihi ? (
                       <span className="text-blue-600" title={`Özel mesaj gönderildi: ${zaman(y.ozel_mesaj_tarihi)} (yorum başına tek hak)`}>
                         💬 Mesaj gönderildi
                       </span>
