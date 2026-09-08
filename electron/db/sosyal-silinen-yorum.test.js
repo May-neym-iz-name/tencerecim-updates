@@ -39,7 +39,8 @@ const SEMA = `
     mesaj_tarihi TEXT, cekilme_tarihi TEXT,
     konu_baslik TEXT, konu_gorsel TEXT, konu_link TEXT,
     ozel_mesaj_tarihi TEXT, ozel_mesaj_hata TEXT, ozel_mesaj_deneme INTEGER,
-    ek_tur TEXT, ek_baslik TEXT, ek_gorsel TEXT, ek_link TEXT, silindi INTEGER DEFAULT 0
+    ek_tur TEXT, ek_baslik TEXT, ek_gorsel TEXT, ek_link TEXT, silindi INTEGER DEFAULT 0,
+    niyet TEXT, ham_ek TEXT, ozel_mesaj_alici TEXT
   );
   CREATE TABLE sosyal_gonderiler (
     konu_id TEXT PRIMARY KEY, platform TEXT, baslik TEXT, gorsel TEXT, link TEXT, guncelleme TEXT

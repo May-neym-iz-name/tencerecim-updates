@@ -277,6 +277,7 @@ export const sosyalApi = {
   sayaclar: () => invoke('sosyal:sayaclar'),
   gonderiler: (params) => invoke('sosyal:gonderiler', params),
   konusmalar: (params) => invoke('sosyal:konusmalar', params),
+  niyetToplu: () => invoke('sosyal:niyetToplu'),
   // Gönderi bazlı otomatik yorum cevabı
   sablonlar: () => invoke('sosyal:sablonlar'),
   sablonMetin: (id) => invoke('sosyal:sablonMetin', id),

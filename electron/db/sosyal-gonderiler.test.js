@@ -52,7 +52,8 @@ const SEMA = `
     mesaj_tarihi TEXT, cekilme_tarihi TEXT,
     konu_baslik TEXT, konu_gorsel TEXT, konu_link TEXT,
     ozel_mesaj_tarihi TEXT, ozel_mesaj_hata TEXT, ozel_mesaj_deneme INTEGER,
-    ek_tur TEXT, ek_baslik TEXT, ek_gorsel TEXT, ek_link TEXT, silindi INTEGER DEFAULT 0
+    ek_tur TEXT, ek_baslik TEXT, ek_gorsel TEXT, ek_link TEXT, silindi INTEGER DEFAULT 0,
+    niyet TEXT, ham_ek TEXT, ozel_mesaj_alici TEXT
   );
   CREATE TABLE sosyal_gonderiler (
     konu_id TEXT PRIMARY KEY, platform TEXT, baslik TEXT, gorsel TEXT, link TEXT,
@@ -262,5 +263,17 @@ describe('gonderiler() — JOIN sonrası belirsiz sütun kalmadı', () => {
     _upsertMesaj(mesaj({ harici_id: 'h2' }))
     _upsertMesaj(mesaj({ harici_id: 'h3' }))
     expect(sosyal['sosyal:gonderiler']({})[0].yorum_sayisi).toBe(3)
+  })
+})
+
+describe('niyet yazımı (08.09.2026)', () => {
+  test('gelen yorum satırı çekimde niyet alır', () => {
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'gelen', metin: 'fiyatı ne kadar', harici_id: 'y1' }))
+    expect(db.prepare('SELECT niyet FROM sosyal_mesajlar WHERE harici_id = ?').get('y1').niyet).toBe('fiyat')
+  })
+  test('DM ve giden satırlar niyet ALMAZ', () => {
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', metin: 'fiyat', harici_id: 'd1' }))
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'giden', metin: 'fiyat', harici_id: 'g1' }))
+    expect(db.prepare("SELECT COUNT(*) n FROM sosyal_mesajlar WHERE niyet IS NOT NULL").get().n).toBe(0)
   })
 })

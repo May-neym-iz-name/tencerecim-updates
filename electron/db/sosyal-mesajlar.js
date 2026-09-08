@@ -2,6 +2,7 @@
 // Meta'dan çekilen yorum/DM'ler buraya idempotent (harici_id UNIQUE) yazılır.
 // Ağ çağrıları electron/meta/index.js'te; bu dosya yalnızca yerel okuma/yazma yapar.
 const database = require('./database')
+const { niyetBul } = require('./niyet')
 const { listeFiltreleri: _listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC } = require('./sosyal-filtre')
 const { kelimeler, likeDeseni } = require('./tr-arama')
 
@@ -123,8 +124,8 @@ function _upsertMesaj(m) {
     INSERT INTO sosyal_mesajlar
       -- konu_baslik/konu_gorsel/konu_link BİLEREK YOK: gönderi meta verisi
       -- sosyal_gonderiler tablosunda tek kopya durur (_gonderiKaydet).
-      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, ek_tur, ek_baslik, ek_gorsel, ek_link)
-    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link)
+      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, ek_tur, ek_baslik, ek_gorsel, ek_link, niyet)
+    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link, @niyet)
   `).run({
     platform: m.platform,
     tur: m.tur,
@@ -141,6 +142,8 @@ function _upsertMesaj(m) {
     ek_baslik: m.ek_baslik || null,
     ek_gorsel: m.ek_gorsel || null,
     ek_link: m.ek_link || null,
+    // Niyet yalnız GELEN YORUMA yazılır (DM ve kendi yanıtlarımız sınıflanmaz) — bkz. niyet.js.
+    niyet: (m.tur === 'yorum' && (m.yon || 'gelen') === 'gelen') ? niyetBul(m.metin) : null,
   })
   return bilgi.lastInsertRowid
 }
@@ -430,4 +433,6 @@ module.exports = {
   'sosyal:sayaclar': () => sayaclar(),
   'sosyal:gonderiler': (arg) => gonderiler(arg),
   'sosyal:konusmalar': (arg) => konusmalar(arg),
+  // Geçmiş yorumları bir kez sınıflar (Ayarlar → Sosyal → Geçmişi sınıfla).
+  'sosyal:niyetToplu': () => require('./niyet').niyetToplu(getDb()),
 }
