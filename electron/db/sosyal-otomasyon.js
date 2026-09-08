@@ -98,12 +98,19 @@ function _adaylar(db, konuId = null) {
   const kosul = konuId ? 'o.konu_id = ?' : 'o.aktif = 1'
   const params = konuId ? [konuId] : []
   return db.prepare(`
-    SELECT m.id, m.konu_id, m.gonderen_ad, m.harici_id, m.platform, o.id AS otomasyon_id
+    SELECT m.id, m.konu_id, m.gonderen_ad, m.harici_id, m.platform, o.id AS otomasyon_id,
+           COALESCE(m.niyet, 'fiyat') AS niyet, COALESCE(o.soru_yaniti_kapali, 0) AS soru_yaniti_kapali
     FROM sosyal_mesajlar m
     JOIN sosyal_otomasyonlar o ON o.konu_id = m.konu_id
     WHERE ${kosul}
       AND m.tur = 'yorum'
       AND m.yon = 'gelen'
+      -- NİYET KAPISI (08.09.2026): yalnız fiyat (ürün kartı) ve soru (teşekkür DM'i, bkz.
+      -- meta/otomasyon.js). Etiket/övgü/emoji/gürültüye hiçbir şey gitmez. NULL = henüz
+      -- sınıflanmamış eski satır → fiyat sayılır (geniş taraf; niyetToplu çalışana kadar
+      -- bugünkü davranış değişmesin).
+      AND (COALESCE(m.niyet, 'fiyat') = 'fiyat'
+           OR (m.niyet = 'soru' AND COALESCE(o.soru_yaniti_kapali, 0) = 0))
       AND m.gonderen_ad != '${SAYFA_ADI}'
       AND m.ozel_mesaj_tarihi IS NULL
       AND COALESCE(m.ozel_mesaj_deneme, 0) < ${MAKS_DENEME}
@@ -128,7 +135,7 @@ function _adaylar(db, konuId = null) {
 //   listeyi göndermeyen bir çağrının (yalnız aç/kapat, ya da güncellenmemiş 2. PC)
 //   bağları sessizce yok etmesine yol açar. Boş dizi ise gerçekten temizlenir.
 function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_idler,
-  ozel_aciklama, whatsapp, urunler, numaralar, mesaj_tipi }, db) {
+  ozel_aciklama, whatsapp, urunler, numaralar, mesaj_tipi, soru_yaniti_kapali }, db) {
   // Otomasyon yorum sahibine ÖZEL MESAJ gönderir. YouTube'un özel mesaj API'si YOKTUR
   // (bkz. electron/meta/yurutucu.js — istek Meta Graph'a gider). Kayıt açılabilseydi
   // _adaylar() YouTube yorumlarını da toplar, her tur başarısız olur ve ozel_mesaj_deneme
@@ -165,20 +172,23 @@ function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_id
     let o = db.prepare('SELECT id, aktif FROM sosyal_otomasyonlar WHERE konu_id = ?').get(konu_id)
     if (!o) {
       const r = db.prepare(`INSERT INTO sosyal_otomasyonlar
-        (platform, konu_id, aktif, acik_yanit_metni, baslangic_tarihi, ozel_aciklama, whatsapp, mesaj_tipi)
-        VALUES (?,?,?,?,?,?,?,?)`).run(platform, konu_id, aktif ? 1 : 0, acik_yanit_metni || null,
+        (platform, konu_id, aktif, acik_yanit_metni, baslangic_tarihi, ozel_aciklama, whatsapp, mesaj_tipi, soru_yaniti_kapali)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(platform, konu_id, aktif ? 1 : 0, acik_yanit_metni || null,
           aktif ? new Date().toISOString() : null, ozel_aciklama || null, whatsapp || null,
-          mesaj_tipi || 'kart')
+          mesaj_tipi || 'kart', soru_yaniti_kapali ? 1 : 0)
       o = { id: r.lastInsertRowid, aktif: 0 }
     } else {
       // baslangic_tarihi yalnız KAPALI→AÇIK geçişinde tazelenir.
       const acildi = aktif && !o.aktif
-      // mesaj_tipi undefined ise DOKUNMA — yalnız aç/kapat yapan çağrı kipi sıfırlamasın.
+      // mesaj_tipi / soru_yaniti_kapali undefined ise DOKUNMA — yalnız aç/kapat yapan çağrı
+      // kipi ya da soru-yanıtı seçimini sıfırlamasın.
       db.prepare(`UPDATE sosyal_otomasyonlar SET aktif=?, acik_yanit_metni=?, ozel_aciklama=?, whatsapp=?
         ${mesaj_tipi !== undefined ? ', mesaj_tipi=?' : ''}
+        ${soru_yaniti_kapali !== undefined ? ', soru_yaniti_kapali=?' : ''}
         ${acildi ? ", baslangic_tarihi=datetime('now','localtime')" : ''} WHERE id=?`)
         .run(...[aktif ? 1 : 0, acik_yanit_metni || null, ozel_aciklama || null, whatsapp || null,
-          ...(mesaj_tipi !== undefined ? [mesaj_tipi] : []), o.id])
+          ...(mesaj_tipi !== undefined ? [mesaj_tipi] : []),
+          ...(soru_yaniti_kapali !== undefined ? [soru_yaniti_kapali ? 1 : 0] : []), o.id])
     }
     // `urunler` ile aynı kural: undefined = DOKUNMA. Koşulsuz silmek, şablon listesini
     // göndermeyen bir çağrının (yalnız aç/kapat) bağları sessizce yok etmesine yol açardı.

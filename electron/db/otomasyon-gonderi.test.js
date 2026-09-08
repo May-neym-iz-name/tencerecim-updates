@@ -52,11 +52,12 @@ beforeEach(() => {
     -- mesaj_tipi: 'kart' (ürün kartı karuseli) | 'metin' (düz metin) — v1.2.197
     CREATE TABLE sosyal_otomasyonlar (id INTEGER PRIMARY KEY, platform TEXT, konu_id TEXT UNIQUE, aktif INTEGER DEFAULT 0,
       acik_yanit_metni TEXT, baslangic_tarihi TEXT, ozel_aciklama TEXT, whatsapp TEXT,
-      mesaj_tipi TEXT DEFAULT 'kart');
+      mesaj_tipi TEXT DEFAULT 'kart', soru_yaniti_kapali INTEGER DEFAULT 0);
     CREATE TABLE sosyal_otomasyon_sablonlar (otomasyon_id INTEGER, sablon_id INTEGER, sira INTEGER DEFAULT 0);
     CREATE TABLE sosyal_otomasyon_urunler (id INTEGER PRIMARY KEY AUTOINCREMENT, otomasyon_id INTEGER,
       urun_id INTEGER, set_id INTEGER, sira INTEGER DEFAULT 0, ozel_fiyat REAL, ozel_ad TEXT);
-    CREATE TABLE sosyal_mesajlar (id INTEGER PRIMARY KEY, konu_id TEXT, ozel_mesaj_tarihi TEXT);
+    CREATE TABLE sosyal_mesajlar (id INTEGER PRIMARY KEY, konu_id TEXT, tur TEXT, yon TEXT, gonderen_ad TEXT,
+      harici_id TEXT, platform TEXT, mesaj_tarihi TEXT, ozel_mesaj_tarihi TEXT, ozel_mesaj_deneme INTEGER, niyet TEXT);
     CREATE TABLE lokasyonlar (id INTEGER PRIMARY KEY, ad TEXT, telefon TEXT, aktif INTEGER DEFAULT 1);
     CREATE TABLE sosyal_otomasyon_numaralar (id INTEGER PRIMARY KEY AUTOINCREMENT, otomasyon_id INTEGER,
       lokasyon_ad TEXT, baslik TEXT, numara TEXT, sira INTEGER DEFAULT 0);
@@ -314,5 +315,36 @@ describe('mesaj_tipi', () => {
   test('geçersiz değer REDDEDİLİR — çalıştırıcı belirsiz kalmasın', () => {
     expect(() => kaydet({ konu_id: 'M4', platform: 'instagram', aktif: 0, mesaj_tipi: 'karusel' }))
       .toThrow(/kart.*metin/i)
+  })
+})
+
+// NİYET KAPISI (08.09.2026): otomasyon yalnız fiyat ve soru niyetine gönderir. NULL niyet
+// (henüz sınıflanmamış eski satır) fiyat sayılır — geniş taraf, toplu iş çalışana kadar
+// bugünkü davranış değişmesin.
+describe('_adaylar niyet kapısı', () => {
+  function kur() {
+    db.exec(`INSERT INTO sosyal_otomasyonlar (id, konu_id, platform, aktif) VALUES (1,'K1','instagram',1)`)
+    const ekle = (id, ad, niyet) => db.prepare(
+      `INSERT INTO sosyal_mesajlar (id, konu_id, tur, yon, gonderen_ad, harici_id, platform, mesaj_tarihi, niyet)
+       VALUES (?, 'K1', 'yorum', 'gelen', ?, ?, 'instagram', datetime('now'), ?)`).run(id, ad, 'h' + id, niyet)
+    ekle(1, 'a', 'fiyat'); ekle(2, 'b', 'soru'); ekle(3, 'c', 'etiket'); ekle(4, 'd', 'ovgu'); ekle(5, 'e', null)
+  }
+  test('yalnız fiyat, soru ve NULL(=fiyat) döner; etiket/övgü dönmez', () => {
+    kur()
+    const a = mod._adaylar(db).map(x => [x.gonderen_ad, x.niyet])
+    expect(a).toEqual([['a', 'fiyat'], ['b', 'soru'], ['e', 'fiyat']])
+  })
+  test('soru_yaniti_kapali otomasyonda soru adayı düşer, fiyat kalır', () => {
+    kur()
+    db.exec('UPDATE sosyal_otomasyonlar SET soru_yaniti_kapali = 1')
+    expect(mod._adaylar(db).map(x => x.gonderen_ad)).toEqual(['a', 'e'])
+  })
+  test('otomasyonKaydet soru_yaniti_kapali yazar; undefined ise DOKUNMAZ', () => {
+    kaydet({ konu_id: 'K9', platform: 'instagram', aktif: 1, soru_yaniti_kapali: 1 })
+    expect(db.prepare("SELECT soru_yaniti_kapali k FROM sosyal_otomasyonlar WHERE konu_id='K9'").get().k).toBe(1)
+    kaydet({ konu_id: 'K9', platform: 'instagram', aktif: 0 })
+    expect(db.prepare("SELECT soru_yaniti_kapali k FROM sosyal_otomasyonlar WHERE konu_id='K9'").get().k).toBe(1)
+    kaydet({ konu_id: 'K9', platform: 'instagram', aktif: 0, soru_yaniti_kapali: 0 })
+    expect(db.prepare("SELECT soru_yaniti_kapali k FROM sosyal_otomasyonlar WHERE konu_id='K9'").get().k).toBe(0)
   })
 })
