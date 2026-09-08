@@ -43,12 +43,15 @@ const urunBaglari = (otoId) => db.prepare(
 beforeEach(() => {
   db = bellekDb()
   db.exec(`
-    CREATE TABLE urunler (id INTEGER PRIMARY KEY, ad TEXT, satis_fiyati REAL, web_link TEXT, sku TEXT);
+    -- ikas_urun_id: Instagram ürün kartının görseli bu id ile ikas'tan çekilir (v1.2.197).
+    CREATE TABLE urunler (id INTEGER PRIMARY KEY, ad TEXT, satis_fiyati REAL, web_link TEXT, sku TEXT, ikas_urun_id TEXT);
     CREATE TABLE setler (id INTEGER PRIMARY KEY, ad TEXT, fiyat REAL, web_link TEXT);
     CREATE TABLE sosyal_sablonlar (id INTEGER PRIMARY KEY, ad TEXT, tur TEXT DEFAULT 'urun', aktif INTEGER DEFAULT 1,
       urun_id INTEGER, set_id INTEGER, urun_adi TEXT, aciklama TEXT, fiyat REAL, link TEXT, whatsapp TEXT, serbest_metin TEXT);
+    -- mesaj_tipi: 'kart' (ürün kartı karuseli) | 'metin' (düz metin) — v1.2.197
     CREATE TABLE sosyal_otomasyonlar (id INTEGER PRIMARY KEY, platform TEXT, konu_id TEXT UNIQUE, aktif INTEGER DEFAULT 0,
-      acik_yanit_metni TEXT, baslangic_tarihi TEXT, ozel_aciklama TEXT, whatsapp TEXT);
+      acik_yanit_metni TEXT, baslangic_tarihi TEXT, ozel_aciklama TEXT, whatsapp TEXT,
+      mesaj_tipi TEXT DEFAULT 'kart');
     CREATE TABLE sosyal_otomasyon_sablonlar (otomasyon_id INTEGER, sablon_id INTEGER, sira INTEGER DEFAULT 0);
     CREATE TABLE sosyal_otomasyon_urunler (id INTEGER PRIMARY KEY AUTOINCREMENT, otomasyon_id INTEGER,
       urun_id INTEGER, set_id INTEGER, sira INTEGER DEFAULT 0, ozel_fiyat REAL, ozel_ad TEXT);
@@ -123,9 +126,11 @@ describe('otomasyonKaydet — bağların korunması', () => {
 describe('_gonderiUrunleriCoz — canlı kaynak çözümü', () => {
   test('ürün ve setin adı/fiyatı/linki canlı tablodan gelir', () => {
     const { id } = kaydet({ konu_id: 'K1', platform: 'instagram', aktif: 0, urunler: [{ urun_id: 1 }, { set_id: 5 }] })
+    // ikas_urun_id: ürün kartının görseli için (v1.2.197). Setlerin ikas ürünü olmadığı
+    // için NULL kalır → o kart görselsiz gider, mesaj yine ulaşır.
     expect(mod._gonderiUrunleriCoz(db, id)).toEqual([
-      { ad: 'Tava 24', fiyat: 890, web_link: 'https://tencerecim.store/tava-24' },
-      { ad: 'Kase Seti', fiyat: 3550, web_link: 'https://tencerecim.store/kase-seti' },
+      { ad: 'Tava 24', fiyat: 890, web_link: 'https://tencerecim.store/tava-24', ikas_urun_id: null },
+      { ad: 'Kase Seti', fiyat: 3550, web_link: 'https://tencerecim.store/kase-seti', ikas_urun_id: null },
     ])
   })
 
@@ -280,5 +285,33 @@ describe('otomasyonKaydet — YouTube kapısı', () => {
   test('Meta platformları etkilenmez', () => {
     expect(() => kaydet({ konu_id: 'K9', platform: 'instagram', aktif: 1 })).not.toThrow()
     expect(() => kaydet({ konu_id: 'K8', platform: 'facebook', aktif: 1 })).not.toThrow()
+  })
+})
+
+// --- mesaj_tipi (v1.2.197): kart mı düz metin mi? Kullanıcı gönderi bazında seçer. ---
+// Meta yorum başına TEK mesaj veriyor ve kart mesajı METİN TAŞIMIYOR (08.09.2026 ölçüldü),
+// bu yüzden ikisi birleştirilemez; seçim kalıcı olmalı ve aç/kapat onu SIFIRLAMAMALI.
+describe('mesaj_tipi', () => {
+  test('varsayılan kart', () => {
+    const { id } = kaydet({ konu_id: 'M1', platform: 'instagram', aktif: 0 })
+    expect(db.prepare('SELECT mesaj_tipi FROM sosyal_otomasyonlar WHERE id=?').get(id).mesaj_tipi).toBe('kart')
+  })
+
+  test('metin seçilebilir ve saklanır', () => {
+    const { id } = kaydet({ konu_id: 'M2', platform: 'instagram', aktif: 0, mesaj_tipi: 'metin' })
+    expect(db.prepare('SELECT mesaj_tipi FROM sosyal_otomasyonlar WHERE id=?').get(id).mesaj_tipi).toBe('metin')
+  })
+
+  test('verilmezse mevcut kip KORUNUR (yalnız aç/kapat sıfırlamaz)', () => {
+    kaydet({ konu_id: 'M3', platform: 'instagram', aktif: 0, mesaj_tipi: 'metin' })
+    kaydet({ konu_id: 'M3', platform: 'instagram', aktif: 1 })   // mesaj_tipi verilmedi
+    const o = db.prepare("SELECT mesaj_tipi, aktif FROM sosyal_otomasyonlar WHERE konu_id='M3'").get()
+    expect(o.mesaj_tipi).toBe('metin')
+    expect(o.aktif).toBe(1)
+  })
+
+  test('geçersiz değer REDDEDİLİR — çalıştırıcı belirsiz kalmasın', () => {
+    expect(() => kaydet({ konu_id: 'M4', platform: 'instagram', aktif: 0, mesaj_tipi: 'karusel' }))
+      .toThrow(/kart.*metin/i)
   })
 })

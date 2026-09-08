@@ -927,6 +927,12 @@ function migrate() {
   // Çözüm: gönderiye ait veri gönderinin kendi satırında dursun.
   try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN ozel_aciklama TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN whatsapp TEXT") } catch {}
+  // mesaj_tipi: 'kart' = ürün kartı karuseli (görsel + fiyat + Ürünü İncele/WhatsApp butonları),
+  // 'metin' = eski düz metin. Kullanıcı gönderi bazında seçer (v1.2.197).
+  // Kart mesajı METİN TAŞIYAMAZ (Meta: text ile attachment aynı mesajda gitmiyor) → açıklama
+  // yazısı önemliyse 'metin' seçilir. Varsayılan 'kart': ürünler görselli ve tıklanabilir gider
+  // ve 1000 karakter sınırı devreye girmez.
+  try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN mesaj_tipi TEXT DEFAULT 'kart'") } catch {}
   // Gönderi başına ürün seçimi. sosyal_otomasyon_sablonlar KALDIRILMADI: eski otomasyonlar
   // yeni modele taşınana kadar çalışmaya devam etsin (bkz. _gonderiUrunleriCoz / _sablonlariCoz).
   // urun_id XOR set_id — şablonlardaki ile aynı kural (setlerin urunler'de karşılığı yok).

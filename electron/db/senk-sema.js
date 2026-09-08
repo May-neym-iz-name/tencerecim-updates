@@ -58,7 +58,16 @@ const TABLOLAR = {
   // aynı yoruma iki DM. konu_id (Meta gönderi kimliği) tüm PC'lerde AYNI → doğal anahtar
   // olarak iki kaydın birleşmesini garanti eder, yani mükerrer otomasyon üretilemez.
   // Çift gönderimi asıl engelleyen: yürütmenin tek PC'de olması (bkz. meta/yurutucu.js).
-  sosyal_otomasyonlar: { kolonlar: ['konu_id', 'platform', 'aktif', 'acik_yanit_metni', 'baslangic_tarihi'],
+  // ozel_aciklama + whatsapp v1.2.197'de EKLENDİ. v1.2.173'te gönderi bazlı modele
+  // geçilirken sütunlar açılmış ama senkron listesine yazılmamıştı — setler.web_link ve
+  // sosyal_otomasyon_numaralar ile BİREBİR aynı hata (üçüncü tekrar).
+  // Sonucu sessizdi: yürütücü PC, otomasyonun kurulduğu PC'den farklıysa açıklama
+  // BOŞ okunuyor, mesaj eksik gidiyordu.
+  // mesaj_tipi ('kart' | 'metin') de senkronlanmalı: yürütücü PC gönderimi yapan taraftır,
+  // kip orada okunur. Listeye yazılmazsa panelde "düz metin" seçilse bile yürütücü PC
+  // varsayılan 'kart' ile gönderir — yukarıdaki hatanın dördüncü tekrarı olurdu.
+  sosyal_otomasyonlar: { kolonlar: ['konu_id', 'platform', 'aktif', 'acik_yanit_metni', 'baslangic_tarihi',
+                                    'ozel_aciklama', 'whatsapp', 'mesaj_tipi'],
                          fk: {}, dogal: ['konu_id'], sonradanEklendi: true },
   sosyal_otomasyon_sablonlar: { kolonlar: ['sira'],
                                 fk: { otomasyon_id: 'sosyal_otomasyonlar', sablon_id: 'sosyal_sablonlar' },
@@ -81,6 +90,20 @@ const TABLOLAR = {
                                 fk: { otomasyon_id: 'sosyal_otomasyonlar' },
                                 zorunluFk: ['otomasyon_id'],
                                 dogalCift: ['otomasyon_id', 'sira'], sonradanEklendi: true },
+
+  // Gönderiye bağlı ürün/set satırları (v1.2.197'de senkrona eklendi).
+  // SENKRONLANMALI: mesajı üreten yürütücü BAŞKA bir PC olabilir; bu satırlar yayılmazsa
+  // o PC ürünsüz mesaj üretir ve gonderiMesajiOlustur BOŞ metin döndürür → müşteriye
+  // hiçbir şey gitmez, yalnız log'a hata düşer (sessiz kayıp).
+  //
+  // urun_id / set_id zorunlu DEĞİL: biri çözülemezse satır ürünsüz kalır ama otomasyonun
+  // kendisi ve açıklaması çalışmaya devam eder. Zorunlu yapmak, tek bir çözülemeyen ürün
+  // yüzünden tüm gönderinin otomasyonunu ertelerdi.
+  // ozel_fiyat/ozel_ad NULL = kataloğa sor (sosyal_sablonlar ile aynı semantik).
+  sosyal_otomasyon_urunler: { kolonlar: ['sira', 'ozel_fiyat', 'ozel_ad'],
+                              fk: { otomasyon_id: 'sosyal_otomasyonlar', urun_id: 'urunler', set_id: 'setler' },
+                              zorunluFk: ['otomasyon_id'],
+                              dogalCift: ['otomasyon_id', 'sira'], sonradanEklendi: true },
 
   // --- Faz 2: işlemsel veri (append-mostly). lokasyon_id her PC'de aynı seed → düz kolon. ---
   satislar:           { kolonlar: ['fis_no', 'lokasyon_id', 'odeme_tipi', 'durum', 'tip', 'ara_toplam', 'iskonto_toplam', 'kdv_toplam', 'genel_toplam', 'notlar', 'tarih', 'on_siparis', 'on_siparis_durum', 'on_siparis_not'], fk: { musteri_id: 'musteriler', iade_kaynak_id: 'satislar' }, cakismaKolon: 'fis_no', dogal: [] },
@@ -132,6 +155,8 @@ const SIRA = [
   'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar', 'urun_barkodlar',
   'setler', 'set_urunler', 'sosyal_sablonlar',
   'sosyal_otomasyonlar', 'sosyal_otomasyon_sablonlar', 'sosyal_otomasyon_numaralar',
+  // urunler/setler listenin başında → FK'ları bu satıra gelindiğinde çözülmüş olur.
+  'sosyal_otomasyon_urunler',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',

@@ -30,6 +30,7 @@ export default function OtomasyonPaneli({ konu }) {
   const [numaralar, setNumaralar] = useState([])
   const [magazalar, setMagazalar] = useState([])
   const [yanit, setYanit] = useState(VARSAYILAN_YANIT)
+  const [mesajTipi, setMesajTipi] = useState('kart')
   const [onizleme, setOnizleme] = useState(null)
   const [secici, setSecici] = useState(false)
   const [mesgul, setMesgul] = useState(false)
@@ -44,6 +45,7 @@ export default function OtomasyonPaneli({ konu }) {
         lokasyon_ad: n.lokasyon_ad || '', baslik: n.ozel_baslik || '', numara: n.ozel_numara || '',
       })))
       setYanit(o?.acik_yanit_metni ?? VARSAYILAN_YANIT)
+      setMesajTipi(o?.mesaj_tipi === 'metin' ? 'metin' : 'kart')
     }).catch(() => {})
   }, [konu?.konu_id])
 
@@ -95,6 +97,7 @@ export default function OtomasyonPaneli({ konu }) {
         konu_id: konu.konu_id, platform: konu.platform, aktif,
         acik_yanit_metni: yanit,
         ozel_aciklama: aciklama,
+        mesaj_tipi: mesajTipi,
         numaralar,
         urunler: urunler.map(u => ({ urun_id: u.urun_id, set_id: u.set_id, ozel_fiyat: u.ozel_fiyat, ozel_ad: u.ozel_ad })),
         // Şablon bağları YALNIZCA gönderi gerçekten yeni modele geçtiyse kaldırılır.
@@ -175,6 +178,28 @@ export default function OtomasyonPaneli({ konu }) {
         <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
           Bu gönderi eski şablon düzeninde: <b>{oto.sablonlar.map(s => s.ad).join(', ')}</b>.
           Ürünleri aşağıdan ekleyip kaydedince yeni düzene geçer.
+        </p>
+      )}
+
+      {/* Mesaj tipi — Meta yorum başına TEK mesaj veriyor ve kart mesajı METİN TAŞIMIYOR
+          (08.09.2026 ölçüldü). Bu yüzden ikisi birlikte gönderilemez, kullanıcı seçer. */}
+      <label className="text-[11px] font-semibold text-gray-600">Mesaj tipi</label>
+      <div className="flex gap-2 mb-3 mt-1">
+        {[
+          { d: 'kart', b: '🖼️ Ürün kartı', a: 'Her ürün görseli, fiyatı ve "Ürünü İncele" + WhatsApp butonlarıyla kart olarak gider (en fazla 10 ürün). Açıklama yazısı GİTMEZ — kart mesajı metin taşıyamıyor.' },
+          { d: 'metin', b: '📝 Düz metin', a: 'Eski biçim: açıklama + ürün adı/fiyat/link alt alta yazılır. Görsel ve buton yoktur, 1000 karakter sınırı geçerlidir.' },
+        ].map(s => (
+          <button key={s.d} type="button" title={s.a} disabled={!yonetebilir}
+            onClick={() => setMesajTipi(s.d)}
+            className={`text-xs px-3 py-1.5 rounded-lg border transition disabled:opacity-50 ${
+              mesajTipi === s.d ? 'bg-lacivert text-white border-lacivert font-semibold' : 'bg-white text-gray-700 hover:bg-gray-50'
+            }`}>{s.b}</button>
+        ))}
+      </div>
+      {mesajTipi === 'kart' && aciklama.trim() && (
+        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">
+          ⚠️ Kart tipinde <b>açıklama yazısı gönderilmez</b> (Meta kart mesajına metin eklemiyor).
+          Açıklaman önemliyse “Düz metin” seç.
         </p>
       )}
 

@@ -34,7 +34,10 @@ function _gonderiUrunleriCoz(db, otomasyonId) {
   return db.prepare(`
     SELECT COALESCE(ou.ozel_ad, u.ad, st.ad) AS ad,
            COALESCE(ou.ozel_fiyat, u.satis_fiyati, st.fiyat) AS fiyat,
-           COALESCE(u.web_link, st.web_link) AS web_link
+           COALESCE(u.web_link, st.web_link) AS web_link,
+           -- Instagram ürün kartının görseli ikas'tan bu id ile çekilir (setlerin ikas ürünü
+           -- olmadığı için NULL kalır → o kart görselsiz gider, mesaj yine ulaşır).
+           u.ikas_urun_id AS ikas_urun_id
     FROM sosyal_otomasyon_urunler ou
     LEFT JOIN urunler u ON u.id = ou.urun_id
     LEFT JOIN setler st ON st.id = ou.set_id
@@ -124,7 +127,7 @@ function _adaylar(db, konuId = null) {
 //   listeyi göndermeyen bir çağrının (yalnız aç/kapat, ya da güncellenmemiş 2. PC)
 //   bağları sessizce yok etmesine yol açar. Boş dizi ise gerçekten temizlenir.
 function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_idler,
-  ozel_aciklama, whatsapp, urunler, numaralar }, db) {
+  ozel_aciklama, whatsapp, urunler, numaralar, mesaj_tipi }, db) {
   // Otomasyon yorum sahibine ÖZEL MESAJ gönderir. YouTube'un özel mesaj API'si YOKTUR
   // (bkz. electron/meta/yurutucu.js — istek Meta Graph'a gider). Kayıt açılabilseydi
   // _adaylar() YouTube yorumlarını da toplar, her tur başarısız olur ve ozel_mesaj_deneme
@@ -134,6 +137,11 @@ function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_id
   }
   if (ozel_aciklama && ozel_aciklama.length > 1000) {
     throw new Error('Gönderi açıklaması 1000 karakteri aşamaz.')
+  }
+  // Yalnız iki kip var. Bilinmeyen değer sessizce kabul edilirse çalıştırıcı hangi yolu
+  // seçeceğini bilemez; burada durdurulur. undefined = DOKUNMA (mevcut kip korunur).
+  if (mesaj_tipi !== undefined && mesaj_tipi !== 'kart' && mesaj_tipi !== 'metin') {
+    throw new Error("Mesaj tipi yalnız 'kart' veya 'metin' olabilir.")
   }
   if (urunler) {
     for (const u of urunler) {
@@ -156,16 +164,20 @@ function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_id
     let o = db.prepare('SELECT id, aktif FROM sosyal_otomasyonlar WHERE konu_id = ?').get(konu_id)
     if (!o) {
       const r = db.prepare(`INSERT INTO sosyal_otomasyonlar
-        (platform, konu_id, aktif, acik_yanit_metni, baslangic_tarihi, ozel_aciklama, whatsapp)
-        VALUES (?,?,?,?,?,?,?)`).run(platform, konu_id, aktif ? 1 : 0, acik_yanit_metni || null,
-          aktif ? new Date().toISOString() : null, ozel_aciklama || null, whatsapp || null)
+        (platform, konu_id, aktif, acik_yanit_metni, baslangic_tarihi, ozel_aciklama, whatsapp, mesaj_tipi)
+        VALUES (?,?,?,?,?,?,?,?)`).run(platform, konu_id, aktif ? 1 : 0, acik_yanit_metni || null,
+          aktif ? new Date().toISOString() : null, ozel_aciklama || null, whatsapp || null,
+          mesaj_tipi || 'kart')
       o = { id: r.lastInsertRowid, aktif: 0 }
     } else {
       // baslangic_tarihi yalnız KAPALI→AÇIK geçişinde tazelenir.
       const acildi = aktif && !o.aktif
+      // mesaj_tipi undefined ise DOKUNMA — yalnız aç/kapat yapan çağrı kipi sıfırlamasın.
       db.prepare(`UPDATE sosyal_otomasyonlar SET aktif=?, acik_yanit_metni=?, ozel_aciklama=?, whatsapp=?
+        ${mesaj_tipi !== undefined ? ', mesaj_tipi=?' : ''}
         ${acildi ? ", baslangic_tarihi=datetime('now','localtime')" : ''} WHERE id=?`)
-        .run(aktif ? 1 : 0, acik_yanit_metni || null, ozel_aciklama || null, whatsapp || null, o.id)
+        .run(...[aktif ? 1 : 0, acik_yanit_metni || null, ozel_aciklama || null, whatsapp || null,
+          ...(mesaj_tipi !== undefined ? [mesaj_tipi] : []), o.id])
     }
     // `urunler` ile aynı kural: undefined = DOKUNMA. Koşulsuz silmek, şablon listesini
     // göndermeyen bir çağrının (yalnız aç/kapat) bağları sessizce yok etmesine yol açardı.

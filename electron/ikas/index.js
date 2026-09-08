@@ -116,6 +116,69 @@ async function merchantIdAl() {
   return _merchantIdCache
 }
 
+/**
+ * Müşterinin GERÇEKTE ÖDEDİĞİ fiyat: indirim varsa `discountPrice`, yoksa `sellPrice`.
+ *
+ * 🔴 `sellPrice` LİSTE fiyatıdır, indirim uygulanmamış hâlidir. 08.09.2026'da ölçüldü:
+ * otomasyonlardaki 21 üründen 10'unda indirim var ve fark büyük
+ * (Falez Rapid 8 Lt: liste 7.129 → indirimli 5.550). Yalnız `sellPrice` okunursa
+ * müşteriye FAZLA fiyat söylenir.
+ *
+ * Bu, [[siparis-kalem-fiyat-hatasi]] ile AYNI tuzağın kardeşi: orada da `price` liste
+ * fiyatıydı, gerçek tahsilat `finalPrice`'taydı ve iki yıl fark edilmemişti.
+ *
+ * @param {{sellPrice?: number, discountPrice?: number|null}|null|undefined} fiyat
+ * @returns {number|null} fiyat okunamazsa null (çağıran yerel fiyata düşer)
+ */
+function musterininOdedigi(fiyat) {
+  if (!fiyat) return null
+  const liste = Number(fiyat.sellPrice)
+  const indirim = fiyat.discountPrice == null ? null : Number(fiyat.discountPrice)
+  if (indirim != null && indirim > 0 && indirim < liste) return indirim
+  return liste > 0 ? liste : null
+}
+
+// Instagram ürün kartı için ikas'tan GÖRSEL + FİYAT + AD okur.
+//
+// FİYAT NEDEN ikas'TAN: kullanıcı kararı 08.09.2026 — *"fiyatları uygulamadan değil web
+// sitesinden alacağız"*. Yerel `satis_fiyati` site fiyatından sapabiliyor (Lava'da 26/26
+// üründe sapmıştı, Saflon 34 cm'de yerel 0 / sitede 2.750 TL). Canlı okuduğumuz için zam
+// kendiliğinden yansır, sabit fiyat bayatlamaz.
+//
+// Gönderim anında, otomasyon başına TEK çağrı yapılır (sonuç çağıranda önbelleklenir).
+// ikas erişilemezse BOŞ map döner → çağıran yerel fiyata/görselsize düşer, DM yine gider.
+//
+// @param {string[]} ikasUrunIdler
+// @returns {Promise<Map<string,{gorsel: string|null, fiyat: number|null, ad: string|null}>>}
+async function urunKartVerisi(ikasUrunIdler) {
+  const sonuc = new Map()
+  const idler = [...new Set((ikasUrunIdler || []).filter(Boolean))]
+  if (!idler.length) return sonuc
+  try {
+    const mid = await merchantIdAl()
+    for (let i = 0; i < idler.length; i += 50) {
+      const d = await graphql(
+        `query G($id:StringFilterInput){ listProduct(id:$id){ data { id name
+           variants { images { imageId isMain } prices { sellPrice discountPrice priceListId } } } } }`,
+        { id: { in: idler.slice(i, i + 50) } },
+      )
+      for (const p of (d?.listProduct?.data || [])) {
+        const gorseller = (p.variants || []).flatMap(v => v.images || [])
+        const ana = gorseller.find(x => x.isMain) || gorseller[0]
+        // Ana fiyat = priceListId'si OLMAYAN satır (diğerleri Trendyol/Hepsiburada listeleri).
+        const fiyatlar = (p.variants || []).flatMap(v => v.prices || [])
+        const anaFiyat = fiyatlar.find(x => !x.priceListId)
+        sonuc.set(p.id, {
+          gorsel: (mid && ana?.imageId) ? `https://cdn.myikas.com/images/${mid}/${ana.imageId}/image_1950.webp` : null,
+          fiyat: musterininOdedigi(anaFiyat),
+          ad: p.name || null,
+        })
+      }
+    }
+  } catch { /* ikas erişilemezse yerel veriyle devam — DM'i engellemez */ }
+  return sonuc
+}
+
 // Kalem birim fiyatı — MÜŞTERİNİN ÖDEDİĞİ tutar, liste fiyatı DEĞİL.
 //
 // SIRA KRİTİK (2026-08-05'te canlı siparişte yakalandı): `price` ikas'ta LİSTE fiyatıdır
@@ -769,6 +832,10 @@ module.exports = {
 
   // Kalem fiyat seçimi — sırası indirimli siparişlerde kritik, testle sabitlendi.
   _birimFiyatHesapla: birimFiyatHesapla,
+  // Instagram ürün kartı: görsel + CANLI SİTE FİYATI (electron/meta/otomasyon.js kullanır).
+  _urunKartVerisi: urunKartVerisi,
+  // Liste fiyatı vs indirimli fiyat seçimi — testle sabitlendi.
+  _musterininOdedigi: musterininOdedigi,
   // satislar.js / stok.js arka plan push için kullanır (main.js _ önekini atlar).
   _pushArkaPlan: pushArkaPlan,
   _pullSiparisler: pullSiparisler,
