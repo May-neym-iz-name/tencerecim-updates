@@ -280,6 +280,10 @@ Expected: FAIL — kolon listede yok.
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ham_ek TEXT") } catch {}
   // Gönderi bazında "fiyat dışı sorulara teşekkür DM'i gönderme" (genel metin Ayarlar'da).
   try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN soru_yaniti_kapali INTEGER DEFAULT 0") } catch {}
+  // Teşekkür DM'i gidince Meta'nın döndürdüğü recipient_id (IGSID). Temsilci "DM'den yanıtla"
+  // derken konuşma bu kimlikle bulunur (private reply hakkı harcandığı için ikinci DM
+  // conversations?user_id yoluyla gider). Ölçüldü 08.09: sütun daha önce YOKTU.
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_alici TEXT") } catch {}
 ```
 
 ```js
@@ -493,7 +497,7 @@ Expected: FAIL — etiket/övgü de dönüyor.
       continue
     }
 ```
-`ozel_mesaj_alici` sütunu yoksa Task 3'e `try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_alici TEXT") } catch {}` ekle (grep ile kontrol et: `grep -n ozel_mesaj_alici electron/db/database.js`).
+`ozel_mesaj_alici` sütunu Task 3'te açıldı (08.09'da ölçüldü: daha önce yoktu).
 
 - [ ] **Step 5: Yeşil gör + kart-mesaj/sablon testleri hâlâ yeşil**
 
