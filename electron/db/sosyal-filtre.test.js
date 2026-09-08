@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest'
-import { listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC } from './sosyal-filtre.js'
+import { listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC, SORU_OKUNMAMIS_SAYAC, KAYNAK_IFADESI } from './sosyal-filtre.js'
 
 const uygula = (secim) => {
   const having = []
@@ -47,5 +47,22 @@ describe('listeFiltreleri', () => {
   test('süzgeçler birleştirilebilir', () => {
     const { having } = uygula({ cevapDurumu: 'cevapsiz', okunma: 'okunmamis', atama: 'atanmamis' })
     expect(having).toEqual(['cevapsiz > 0', 'okunmamis > 0', 'MAX(atanan_kullanici) IS NULL'])
+  })
+})
+
+describe('niyet ve kaynak (08.09.2026)', () => {
+  test('soru sayacı yalnız niyet=soru okunmamışları sayar', () => {
+    expect(SORU_OKUNMAMIS_SAYAC).toContain("niyet='soru'")
+    expect(SORU_OKUNMAMIS_SAYAC).toContain("durum='yeni'")
+    expect(SORU_OKUNMAMIS_SAYAC).toContain("yon='gelen'")
+  })
+  test('kaynak ifadesi hikaye > paylasim > normal önceliğiyle tek değer döner', () => {
+    expect(KAYNAK_IFADESI.indexOf('hikaye')).toBeLessThan(KAYNAK_IFADESI.indexOf('paylasim'))
+    expect(KAYNAK_IFADESI).toContain("'normal'")
+  })
+  test('kaynak süzgeci HAVING koşulu ekler, bilinmeyen değer eklemez (beyaz liste)', () => {
+    expect(uygula({ kaynak: 'hikaye' }).having).toEqual(["kaynak = 'hikaye'"])
+    expect(uygula({ kaynak: 'hepsi' }).having).toEqual([])
+    expect(uygula({ kaynak: "x'; DROP" }).having).toEqual([])
   })
 })
