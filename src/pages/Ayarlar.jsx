@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi, denetimApi, faturaStokApi } from '../api/ipc'
+import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi, denetimApi, faturaStokApi, sosyalApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { veriSenk } from '../lib/veriSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
@@ -789,6 +789,41 @@ export default function Ayarlar() {
                 className="w-4 h-4" />
               <span className="font-medium text-gray-800">Otomatik çekme açık (her 2 dakikada bir yorum/DM)</span>
             </label>
+          </div>
+
+          {/* Fiyat DIŞI sorulara otomatik teşekkür DM'i (08.09.2026, karar 6B: tek genel metin).
+              Otomasyon yorumu niyete göre ayırır: fiyat soran → ürün kartı, soru soran → bu
+              metin + yorum "Sorular" sekmesinde temsilci cevaplayana kadar bekler. Yayında
+              KAPALI başlar; gönderi bazında panelden ayrıca kapatılabilir. */}
+          <div className="mb-4 border-t pt-4 space-y-2">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-semibold text-marka-900 text-sm">❓ Fiyat dışı sorulara otomatik yanıt</div>
+                <div className="text-xs text-gray-500">Fiyat sormayan yorumlara bu teşekkür DM'i gider; yorum "Sorular" sekmesinde temsilci cevaplayana kadar bekler.</div>
+              </div>
+              <label className="flex items-center gap-2 text-sm cursor-pointer flex-shrink-0">
+                <input type="checkbox" className="w-4 h-4" checked={String(meta.soru_yaniti_aktif || '0') === '1'}
+                  onChange={e => metaAlan('soru_yaniti_aktif', e.target.checked ? '1' : '0')} />
+                Açık
+              </label>
+            </div>
+            <textarea rows={2} value={meta.soru_yaniti_metin || ''}
+              onChange={e => metaAlan('soru_yaniti_metin', e.target.value)}
+              placeholder="Merhaba, sorunuzu aldık 🙏 Temsilcimiz en kısa sürede size dönecek."
+              className="w-full border rounded-lg px-3 py-2 text-sm" />
+            <div className="flex items-center gap-3">
+              <button type="button" disabled={!!metaMesgul}
+                onClick={async () => {
+                  setMetaMesgul('niyet')
+                  try { const r = await sosyalApi.niyetToplu(); toast.success(`${r.islenen} yorum sınıflandı`) }
+                  catch (e) { toast.error('Sınıflama başarısız: ' + e.message) }
+                  finally { setMetaMesgul('') }
+                }}
+                className="text-xs border rounded-lg px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50">
+                {metaMesgul === 'niyet' ? 'Sınıflanıyor…' : '🏷️ Geçmiş yorumları sınıfla'}
+              </button>
+              <span className="text-[11px] text-gray-400">Bir kez yeter; yeni yorumlar çekimde kendiliğinden sınıflanır.</span>
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 mb-3">

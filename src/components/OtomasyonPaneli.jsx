@@ -31,6 +31,8 @@ export default function OtomasyonPaneli({ konu }) {
   const [magazalar, setMagazalar] = useState([])
   const [yanit, setYanit] = useState(VARSAYILAN_YANIT)
   const [mesajTipi, setMesajTipi] = useState('kart')
+  // Fiyat dışı sorulara giden genel teşekkür DM'i (Ayarlar → Sosyal) bu gönderide kapalı mı?
+  const [soruYanitiKapali, setSoruYanitiKapali] = useState(false)
   const [onizleme, setOnizleme] = useState(null)
   const [secici, setSecici] = useState(false)
   const [mesgul, setMesgul] = useState(false)
@@ -46,6 +48,7 @@ export default function OtomasyonPaneli({ konu }) {
       })))
       setYanit(o?.acik_yanit_metni ?? VARSAYILAN_YANIT)
       setMesajTipi(o?.mesaj_tipi === 'metin' ? 'metin' : 'kart')
+      setSoruYanitiKapali(!!o?.soru_yaniti_kapali)
     }).catch(() => {})
   }, [konu?.konu_id])
 
@@ -98,6 +101,7 @@ export default function OtomasyonPaneli({ konu }) {
         acik_yanit_metni: yanit,
         ozel_aciklama: aciklama,
         mesaj_tipi: mesajTipi,
+        soru_yaniti_kapali: soruYanitiKapali ? 1 : 0,
         numaralar,
         urunler: urunler.map(u => ({ urun_id: u.urun_id, set_id: u.set_id, ozel_fiyat: u.ozel_fiyat, ozel_ad: u.ozel_ad })),
         // Şablon bağları YALNIZCA gönderi gerçekten yeni modele geçtiyse kaldırılır.
@@ -202,6 +206,14 @@ export default function OtomasyonPaneli({ konu }) {
           Açıklaman önemliyse “Düz metin” seç.
         </p>
       )}
+
+      {/* Fiyat DIŞI sorulara giden teşekkür DM'i genel bir metindir (Ayarlar → Sosyal Medya);
+          burada yalnız bu gönderi için kapatılır. Kapalıyken soru yorumları yine "Sorular"
+          sekmesine düşer, sadece otomatik DM gitmez. */}
+      <label className="flex items-center gap-2 text-[11px] text-gray-600 mb-3 cursor-pointer">
+        <input type="checkbox" checked={soruYanitiKapali} onChange={e => setSoruYanitiKapali(e.target.checked)} />
+        Bu gönderide fiyat dışı sorulara teşekkür DM'i gönderme
+      </label>
 
       <label className="text-[11px] font-semibold text-gray-600">Ürünler</label>
       <div className="space-y-1 mb-2 mt-1">
