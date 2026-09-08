@@ -9,6 +9,7 @@ import OtomasyonPaneli from '../components/OtomasyonPaneli'
 import YoutubeIstatistik from '../components/YoutubeIstatistik'
 import SablonKutuphanesi from '../components/SablonKutuphanesi'
 import SosyalGorsel from '../components/SosyalGorsel'
+import SorularListesi from '../components/SorularListesi'
 import { useGorunurAralik } from '../hooks/useGorunurAralik'
 
 // Üst sekmeler — Meta Business Suite düzeni. mod: 'karma'|'dm'|'yorum'
@@ -16,6 +17,8 @@ const SEKMELER = [
   { kod: 'hepsi', ad: 'Tüm mesajlar', mod: 'karma', sayacKey: 'hepsi' },
   { kod: 'messenger', ad: 'Messenger', mod: 'dm', platform: 'facebook', sayacKey: 'messenger' },
   { kod: 'instagram', ad: 'Instagram', mod: 'dm', platform: 'instagram', sayacKey: 'instagram_dm' },
+  // Fiyat DIŞI yorumlar (niyet='soru'): temsilci cevaplayana kadar burada bekler (08.09.2026).
+  { kod: 'sorular', ad: 'Sorular', mod: 'sorular', sayacKey: 'sorular' },
   { kod: 'fb_yorum', ad: 'Facebook yorumları', mod: 'yorum', platform: 'facebook', sayacKey: 'fb_yorum' },
   { kod: 'ig_yorum', ad: 'Instagram yorumları', mod: 'yorum', platform: 'instagram', sayacKey: 'ig_yorum' },
   // YouTube yorumları AYNI tabloda durur (platform='youtube', tur='yorum'), bu yüzden
@@ -234,7 +237,7 @@ export default function SosyalMedya() {
     } catch (e) { toast.error('Hazır yanıt kaydedilemedi: ' + e.message) }
   }, [])
 
-  const sayaclariYukle = useCallback(() => { sosyalApi.sayaclar().then(setSayaclar).catch(() => {}) }, [])
+  const sayaclariYukle = useCallback(() => { sosyalApi.sayaclar({ kullanici }).then(setSayaclar).catch(() => {}) }, [kullanici])
 
   // Bağlantı + son senkron durumunu yükle (token uyarısı ve sessiz hata göstergesi için).
   const durumYukle = useCallback(() => {
@@ -253,7 +256,9 @@ export default function SosyalMedya() {
         cevapDurumu, okunma, atama, kullanici,
       }
       let sonuc = []
-      if (sekme.mod === 'yorum') {
+      if (sekme.mod === 'sorular') {
+        sonuc = (await sosyalApi.sorular({ arama: aramaGec, atama, kullanici })).map(x => ({ ...x, kind: 'soru' }))
+      } else if (sekme.mod === 'yorum') {
         sonuc = (await sosyalApi.gonderiler({ platform: pf, arama: aramaGec, ...tf })).map(x => ({ ...x, kind: 'yorum' }))
       } else if (sekme.mod === 'dm') {
         sonuc = (await sosyalApi.konusmalar({ platform: pf, arama: aramaGec, ...tf })).map(x => ({ ...x, kind: 'dm' }))
@@ -426,6 +431,42 @@ export default function SosyalMedya() {
     finally { setMesgul(false) }
   }
 
+  // --- "Sorular" sekmesi eylemleri (08.09.2026) ---
+  // Soru satırı seçilince sağda gönderinin yorumları açılır ama yalnız BU yorum ve yanıtları
+  // gösterilir (YorumGorunum'a süzülmüş liste geçilir).
+  async function soruSec(s) {
+    acikKonuRef.current = s.konu_id
+    setSeciliKonu({ ...s, kind: 'soru', konu_baslik: s.gonderi_baslik, konu_link: s.gonderi_link })
+    setTaslak(''); setOzelMesaj(null); setMesajlar([])
+    await mesajlariTazele(s.konu_id)
+  }
+  async function soruUstlen(s) {
+    try {
+      await sosyalApi.ata({ id: s.id, kullanici })
+      toast.success('Size atandı'); listeYukle()
+    } catch (e) { toast.error(e.message) }
+  }
+  async function soruOkundu(s) {
+    try {
+      await sosyalApi.durumGuncelle({ id: s.id, durum: 'okundu' })
+      sayaclariYukle(); listeYukle()
+    } catch (e) { toast.error(e.message) }
+  }
+  // "DM'den yanıtla": teşekkür DM'i (private reply) gittiyse Meta recipient_id döndürmüştü
+  // (ozel_mesaj_alici). O kimlikle konuşma bulunur ve DM görünümü açılır. Yoksa yorum başına
+  // tek olan özel-yanıt hakkı henüz kullanılmamıştır → önce "yoruma özel mesaj" gönderilmeli.
+  async function dmDenYanitla(s) {
+    if (!s.ozel_mesaj_alici) {
+      toast.error('Bu müşteriyle henüz DM yok. Önce "Yoruma özel mesaj" gönderin, sonra DM\'den devam edebilirsiniz.')
+      return
+    }
+    try {
+      const k = (await sosyalApi.konusmalar({ platform: s.platform })).find(x => x.gonderen_id === s.ozel_mesaj_alici)
+      if (!k) { toast.error('Konuşma henüz çekilmedi; "↻ Yenile" deyip tekrar deneyin.'); return }
+      await konuSec({ ...k, kind: 'dm', soruKaynak: s })
+    } catch (e) { toast.error(e.message) }
+  }
+
   const tokenGun = durum?.token_gun_kaldi
   const tokenUyari = durum?.kurulu && tokenGun != null && tokenGun <= TOKEN_UYARI_GUN
 
@@ -477,6 +518,20 @@ export default function SosyalMedya() {
         {/* SOL: liste */}
         <div className="w-[340px] flex-shrink-0 border-r flex flex-col">
           <div className="p-3 space-y-2">
+            {/* Tümü / Bana atananlar — bölümlü anahtar (08.09.2026, seçim 2A). DM ve karma
+                modda atama çiplerinin yerini alır; aynı `atama` state'ini kullanır. */}
+            {(sekme.mod === 'dm' || sekme.mod === 'karma') && (
+              <div className="inline-flex border border-marka-100 rounded-lg overflow-hidden text-[13px]">
+                {[['hepsi', 'Tümü', sayaclar[sekme.sayacKey] || 0], ['bana', 'Bana atananlar', sayaclar.bana || 0]].map(([kod, ad, n]) => (
+                  <button key={kod} type="button" onClick={() => setAtama(kod)} disabled={kod === 'bana' && !kullanici}
+                    className={`px-3.5 py-1.5 font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-40
+                      ${atama === kod ? 'bg-marka-900 text-white' : 'text-marka-400 hover:bg-gray-50'}`}>
+                    {ad}
+                    {n > 0 && <span className={`text-[10px] rounded-full px-1.5 ${atama === kod ? 'bg-red-600 text-white' : 'bg-marka-100 text-marka-400'}`}>{n}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
             <input value={arama} onChange={e => setArama(e.target.value)} placeholder="🔍  Ara"
               className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:bg-white focus:border-marka-400 focus:ring-2 focus:ring-marka-50" />
             {/* Tarih filtresi: gönderileri/konuşmaları tarihe göre süz. */}
@@ -509,13 +564,16 @@ export default function SosyalMedya() {
                   onClick={() => setOkunma(o.kod)} renk="blue">{o.ad}</FiltreCip>
               ))}
             </div>
-            <div className="flex flex-wrap gap-1">
-              {ATAMA_SECENEK.map(o => (
-                <FiltreCip key={o.kod} secili={atama === o.kod}
-                  onClick={() => setAtama(o.kod)} renk="emerald"
-                  pasif={o.kod === 'bana' && !kullanici}>{o.ad}</FiltreCip>
-              ))}
-            </div>
+            {/* Yorum modunda atama çipleri kalır (DM/karma'da yukarıdaki anahtar var). */}
+            {sekme.mod !== 'dm' && sekme.mod !== 'karma' && (
+              <div className="flex flex-wrap gap-1">
+                {ATAMA_SECENEK.map(o => (
+                  <FiltreCip key={o.kod} secili={atama === o.kod}
+                    onClick={() => setAtama(o.kod)} renk="emerald"
+                    pasif={o.kod === 'bana' && !kullanici}>{o.ad}</FiltreCip>
+                ))}
+              </div>
+            )}
             {(cevapDurumu !== 'hepsi' || okunma !== 'hepsi' || atama !== 'hepsi') && (
               <button onClick={() => { setCevapDurumu('hepsi'); setOkunma('hepsi'); setAtama('hepsi') }}
                 className="text-[11px] text-red-500 hover:underline">✕ Süzgeçleri temizle</button>
@@ -535,7 +593,11 @@ export default function SosyalMedya() {
                 <p className="text-sm text-gray-400 text-center p-8">Kayıt yok.<br />"↻ Yenile" ile çekin.</p>
               )
             )}
-            {liste.map(satir => {
+            {sekme.mod === 'sorular' && (
+              <SorularListesi sorular={liste} seciliId={seciliKonu?.kind === 'soru' ? seciliKonu.id : null}
+                onSec={soruSec} onUstlen={soruUstlen} onOkundu={soruOkundu} kullanici={kullanici} />
+            )}
+            {sekme.mod !== 'sorular' && liste.map(satir => {
               const secili = seciliKonu?.konu_id === satir.konu_id
               const baslik = satir.kind === 'yorum' ? (satir.konu_baslik || '(gönderi)') : adSadelestir(satir.kisi || 'Müşteri', 28)
               // Yorum satırında ASIL kimlik son yorumcudur; gönderi adı bağlamdır.
@@ -543,7 +605,7 @@ export default function SosyalMedya() {
               const sonKisi = satir.kind === 'yorum' ? adSadelestir(satir.son_yorumcu || '', 22) : ''
               return (
                 <button key={satir.kind + satir.konu_id} onClick={() => konuSec(satir)}
-                  className={`w-full text-left px-3 py-3 flex gap-3 items-start border-l-[3px] transition-colors
+                  className={`group w-full text-left px-3 py-3 flex gap-3 items-start border-l-[3px] transition-colors
                     ${secili ? 'bg-marka-50 border-krem-400' : 'border-transparent hover:bg-gray-50'}`}>
                   {satir.kind === 'yorum'
                     ? <SosyalGorsel konuId={satir.konu_id} className="w-10 h-10 rounded object-cover flex-shrink-0 bg-gray-100"
@@ -576,6 +638,14 @@ export default function SosyalMedya() {
                     </div>
                   </div>
                   {satir.okunmamis > 0 && <span className="w-2 h-2 rounded-full bg-blue-600 mt-1.5 flex-shrink-0" />}
+                  {/* Üstlen / Bırak — yalnız DM satırında, üzerine gelince (seçim 2A). */}
+                  {satir.kind === 'dm' && kullanici && (
+                    <span role="button" tabIndex={-1}
+                      onClick={e => { e.stopPropagation(); banaAta(satir, satir.atanan === kullanici) }}
+                      className="opacity-0 group-hover:opacity-100 text-[11px] px-2 py-0.5 rounded border border-gray-200 bg-white hover:bg-gray-50 flex-shrink-0 mt-0.5 transition-opacity">
+                      {satir.atanan === kullanici ? 'Bırak' : 'Üstlen'}
+                    </span>
+                  )}
                 </button>
               )
             })}
@@ -590,6 +660,26 @@ export default function SosyalMedya() {
             gonder={dmGonder} mesgul={mesgul} kaydirmaRef={kaydirmaRef}
             banaAta={banaAta} kullanici={kullanici} okunduIsaretle={okunduIsaretle}
             hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
+        ) : seciliKonu.kind === 'soru' ? (
+          // Sorular sekmesi: gönderinin yorumlarından YALNIZ seçili soru ve yanıtları.
+          // Üstte "DM'den yanıtla"; altta mevcut yorum görünümü (açık yanıt + yoruma özel mesaj).
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex items-center gap-2 px-4 py-2 border-b bg-krem-50 text-[12px] text-marka-900">
+              <span className="font-semibold">❓ Fiyat dışı soru</span>
+              <span className="text-marka-400 truncate">· {seciliKonu.gonderi_baslik || 'Gönderi'}</span>
+              <button type="button" onClick={() => dmDenYanitla(seciliKonu)}
+                className="ml-auto bg-marka-900 text-white text-xs font-medium px-3 py-1 rounded-full hover:bg-marka-700">
+                DM'den yanıtla
+              </button>
+            </div>
+            <YorumGorunum konu={seciliKonu}
+              yorumlar={mesajlar.filter(y => y.id === seciliKonu.id || y.ust_id === seciliKonu.harici_id)}
+              taslak={taslak} setTaslak={setTaslak}
+              cevapla={yorumCevapla} mesgul={mesgul}
+              ozelMesaj={ozelMesaj} setOzelMesaj={setOzelMesaj} ozelTaslak={ozelTaslak} setOzelTaslak={setOzelTaslak}
+              ozelGonder={ozelMesajGonder} banaAta={banaAta} kullanici={kullanici} okunduIsaretle={okunduIsaretle}
+              hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
+          </div>
         ) : (
           <YorumGorunum konu={seciliKonu} yorumlar={mesajlar} taslak={taslak} setTaslak={setTaslak}
             cevapla={yorumCevapla} mesgul={mesgul}

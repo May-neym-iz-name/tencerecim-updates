@@ -426,6 +426,9 @@ function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
       ${CEVAPSIZ_SAYAC} cevapsiz,
       -- Konuşmanın kaynağı: hikaye yanıtı / gönderi paylaşımı / normal (süzgeç + gruplu liste).
       ${KAYNAK_IFADESI} kaynak,
+      -- Müşterinin kimliği (IGSID/PSID): "Sorular" sekmesi teşekkür DM'iyle açılan konuşmayı
+      -- ozel_mesaj_alici ile bununla eşler ("DM'den yanıtla").
+      MAX(CASE WHEN yon='gelen' THEN gonderen_id END) gonderen_id,
       MAX(atanan_kullanici) atanan,
       MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)) son_zaman,
       -- SON GELEN mesajın zamanı — Meta'nın 24 saatlik yanıt penceresi BUNDAN başlar,
