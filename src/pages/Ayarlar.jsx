@@ -824,6 +824,11 @@ export default function Ayarlar() {
               </button>
               <span className="text-[11px] text-gray-400">Bir kez yeter; yeni yorumlar çekimde kendiliğinden sınıflanır.</span>
             </div>
+            <label className="flex items-center gap-2 cursor-pointer text-sm pt-2">
+              <input type="checkbox" className="w-4 h-4" checked={String(meta.hizli_urun_paneli ?? '1') !== '0'}
+                onChange={e => metaAlan('hizli_urun_paneli', e.target.checked ? '1' : '0')} />
+              <span className="font-medium text-gray-800">Sohbetin sağında "Hızlı ürünler" panelini göster (tek tıkla ürün kartı)</span>
+            </label>
           </div>
 
           <div className="flex flex-wrap gap-2 mb-3">

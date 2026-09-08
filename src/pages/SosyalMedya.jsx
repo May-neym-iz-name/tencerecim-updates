@@ -11,6 +11,7 @@ import SablonKutuphanesi from '../components/SablonKutuphanesi'
 import SosyalGorsel from '../components/SosyalGorsel'
 import SorularListesi from '../components/SorularListesi'
 import UrunKartiBalonu from '../components/UrunKartiBalonu'
+import HizliUrunler from '../components/HizliUrunler'
 import { useGorunurAralik } from '../hooks/useGorunurAralik'
 
 // Üst sekmeler — Meta Business Suite düzeni. mod: 'karma'|'dm'|'yorum'
@@ -226,9 +227,14 @@ export default function SosyalMedya() {
   // konuşmaya geçtikten sonra ekranı ezmesini engeller (bkz. mesajlariTazele).
   const acikKonuRef = useRef(null)
 
+  // Hızlı ürünler paneli (sağda, seçim 5B) — Ayarlar'dan gizlenebilir; varsayılan açık.
+  const [hizliPanel, setHizliPanel] = useState(true)
   // Hazır yanıtları ayarlardan yükle (meta_ayarlar.hizli_yanitlar).
   useEffect(() => {
-    metaApi.ayarGetir().then(a => setHizliYanitlar(yanitlariCoz(a?.hizli_yanitlar))).catch(() => {})
+    metaApi.ayarGetir().then(a => {
+      setHizliYanitlar(yanitlariCoz(a?.hizli_yanitlar))
+      setHizliPanel(String(a?.hizli_urun_paneli ?? '1') !== '0')
+    }).catch(() => {})
   }, [])
 
   // Ekle/sil sonrası: önce ekranı güncelle, sonra yerel'e yaz (gizli anahtarlara
@@ -688,10 +694,16 @@ export default function SosyalMedya() {
         {!seciliKonu ? (
           <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Soldan bir gönderi veya konuşma seçin.</div>
         ) : seciliKonu.kind === 'dm' ? (
-          <DmGorunum konu={seciliKonu} mesajlar={mesajlar} taslak={taslak} setTaslak={setTaslak}
-            gonder={dmGonder} mesgul={mesgul} kaydirmaRef={kaydirmaRef}
-            banaAta={banaAta} kullanici={kullanici} okunduIsaretle={okunduIsaretle}
-            hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
+          <>
+            <DmGorunum konu={seciliKonu} mesajlar={mesajlar} taslak={taslak} setTaslak={setTaslak}
+              gonder={dmGonder} mesgul={mesgul} kaydirmaRef={kaydirmaRef}
+              banaAta={banaAta} kullanici={kullanici} okunduIsaretle={okunduIsaretle}
+              hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
+            {hizliPanel && seciliKonu.platform !== 'youtube' && (
+              <HizliUrunler kullanici={kullanici} onGonderildi={() => { mesajlariTazele(); listeYukle() }}
+                hedef={(() => { const g = [...mesajlar].reverse().find(m => m.yon === 'gelen'); return g ? { tur: 'dm', id: g.id } : null })()} />
+            )}
+          </>
         ) : seciliKonu.kind === 'soru' ? (
           // Sorular sekmesi: gönderinin yorumlarından YALNIZ seçili soru ve yanıtları.
           // Üstte "DM'den yanıtla"; altta mevcut yorum görünümü (açık yanıt + yoruma özel mesaj).
@@ -712,12 +724,24 @@ export default function SosyalMedya() {
               ozelGonder={ozelMesajGonder} banaAta={banaAta} kullanici={kullanici} okunduIsaretle={okunduIsaretle}
               hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
           </div>
-        ) : (
+        ) : null}
+        {/* Soru görünümünde kart, seçili yoruma özel yanıt olarak gider (yorum başına tek hak;
+            teşekkür DM'i gittiyse Meta reddeder → temsilci "DM'den yanıtla" ile DM'e geçer). */}
+        {seciliKonu?.kind === 'soru' && hizliPanel && (
+          <HizliUrunler kullanici={kullanici} onGonderildi={() => { mesajlariTazele(); listeYukle() }}
+            hedef={seciliKonu.ozel_mesaj_tarihi ? null : { tur: 'yorum', id: seciliKonu.id }} />
+        )}
+        {seciliKonu && seciliKonu.kind !== 'dm' && seciliKonu.kind !== 'soru' && (
           <YorumGorunum konu={seciliKonu} yorumlar={mesajlar} taslak={taslak} setTaslak={setTaslak}
             cevapla={yorumCevapla} mesgul={mesgul}
             ozelMesaj={ozelMesaj} setOzelMesaj={setOzelMesaj} ozelTaslak={ozelTaslak} setOzelTaslak={setOzelTaslak}
             ozelGonder={ozelMesajGonder} banaAta={banaAta} kullanici={kullanici} okunduIsaretle={okunduIsaretle}
             hizliYanitlar={hizliYanitlar} hizliKaydet={hizliKaydet} />
+        )}
+        {/* Yorum görünümünde hedef, "Mesaj gönder" ile seçilen yorumdur (ozelMesaj). */}
+        {seciliKonu && seciliKonu.kind !== 'dm' && seciliKonu.kind !== 'soru' && hizliPanel && seciliKonu.platform !== 'youtube' && (
+          <HizliUrunler kullanici={kullanici} onGonderildi={() => { setOzelMesaj(null); mesajlariTazele(); listeYukle() }}
+            hedef={ozelMesaj ? { tur: 'yorum', id: ozelMesaj } : null} />
         )}
       </div>
     </div>
