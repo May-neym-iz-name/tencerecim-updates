@@ -125,6 +125,13 @@ function _adaylar(db, konuId = null) {
 //   bağları sessizce yok etmesine yol açar. Boş dizi ise gerçekten temizlenir.
 function otomasyonKaydet({ konu_id, platform, aktif, acik_yanit_metni, sablon_idler,
   ozel_aciklama, whatsapp, urunler, numaralar }, db) {
+  // Otomasyon yorum sahibine ÖZEL MESAJ gönderir. YouTube'un özel mesaj API'si YOKTUR
+  // (bkz. electron/meta/yurutucu.js — istek Meta Graph'a gider). Kayıt açılabilseydi
+  // _adaylar() YouTube yorumlarını da toplar, her tur başarısız olur ve ozel_mesaj_deneme
+  // boşuna dolardı. Arayüz paneli zaten gizler; burası ikinci kapı — tek katmana güvenilmez.
+  if (platform === 'youtube') {
+    throw new Error('YouTube gönderisinde otomasyon açılamaz: YouTube özel mesaj göndermeye izin vermiyor.')
+  }
   if (ozel_aciklama && ozel_aciklama.length > 1000) {
     throw new Error('Gönderi açıklaması 1000 karakteri aşamaz.')
   }

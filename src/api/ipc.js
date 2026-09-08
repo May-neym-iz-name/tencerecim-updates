@@ -252,6 +252,8 @@ export const youtubeApi = {
   yorumCek: (params) => invoke('youtube:yorumCek', params),
   // Bir yoruma yanıt (50 birim kota). harici_id = YouTube yorum kimliği.
   yorumYanitla: (veri) => invoke('youtube:yorumYanitla', veri),
+  // Video izlenme/begeni/yorum sayisi (6 saat onbellekli).
+  videoIstatistik: (params) => invoke('youtube:videoIstatistik', params),
 }
 
 // Yapay zeka (Gemini) — yorum yanıtı önerisi.

@@ -6,6 +6,7 @@ import { adSadelestir, adBasHarfi } from '../utils/ad'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { useAuth } from '../auth/AuthContext'
 import OtomasyonPaneli from '../components/OtomasyonPaneli'
+import YoutubeIstatistik from '../components/YoutubeIstatistik'
 import SablonKutuphanesi from '../components/SablonKutuphanesi'
 import SosyalGorsel from '../components/SosyalGorsel'
 import { useGorunurAralik } from '../hooks/useGorunurAralik'
@@ -1060,7 +1061,14 @@ function YorumGorunum({ konu, yorumlar, taslak, setTaslak, cevapla, mesgul, ozel
           {konu.konu_link && <a href={konu.konu_link} target="_blank" rel="noopener noreferrer"
             className="inline-block mt-2 text-xs text-blue-600 hover:underline">Gönderiyi görüntüle ↗</a>}
         </div>
-        <OtomasyonPaneli konu={konu} />
+        {/* OtomasyonPaneli yoruma OZEL MESAJ (DM) gonderir; YouTube'da ozel mesaj API'si
+            YOKTUR. Panel orada da cizilirse acilabilir hale gelir ve yurutucu her turda
+            YouTube yorum kimlikleriyle Meta Graph'a istek atip basarisiz olur.
+            Ayni aile: v1.2.196'da gizlenen "Mesaj gonder" dugmesi. Backend de ayrica
+            reddeder (sosyal-otomasyon.js) — arayuze tek basina guvenilmez. */}
+        {konu.platform === 'youtube'
+          ? <YoutubeIstatistik konu={konu} />
+          : <OtomasyonPaneli konu={konu} />}
       </div>
     </>
   )

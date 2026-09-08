@@ -6,6 +6,7 @@ const client = require('./client')
 const kota = require('./kota')
 const yukle = require('./yukle')
 const yorumlar = require('./yorumlar')
+const istatistik = require('./istatistik')
 const { _baglantiSil } = require('../db/youtube-ayarlar')
 
 module.exports = {
@@ -42,4 +43,9 @@ module.exports = {
 
   // Bir yoruma yanit yazar (50 birim).
   'youtube:yorumYanitla': (p) => yorumlar.yorumYanitla(p || {}),
+
+  // Bir videonun izlenme/begeni/yorum sayisi. 6 saatten yeni kayit varsa AGA CIKMAZ
+  // (0 birim); bayatsa 1 birim harcar. Sosyal Medya sag paneli her konusma acilisinda
+  // cagirir, bu yuzden tazelik kapisi kotayi korumak icin sart.
+  'youtube:videoIstatistik': (p) => istatistik.istatistikGetir(p && p.konu_id),
 }

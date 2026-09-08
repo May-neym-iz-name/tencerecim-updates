@@ -261,3 +261,24 @@ describe('WhatsApp sipariş hatları (çoklu numara)', () => {
     expect(coz(id)[0].numara).toBe(null)
   })
 })
+
+// YouTube kapısı (2026-09-08). Otomasyon yorum sahibine ÖZEL MESAJ gönderir; YouTube'un
+// özel mesaj API'si yoktur. Arayüz paneli YouTube'da hiç çizmez — bu test ikinci kapıyı,
+// yani arayüz atlansa (eski sürüm 2. PC, doğrudan IPC) bile verinin oluşmadığını sınar.
+describe('otomasyonKaydet — YouTube kapısı', () => {
+  test('YouTube gönderisinde otomasyon açılamaz', () => {
+    expect(() => kaydet({ konu_id: 'YT1', platform: 'youtube', aktif: 1 }))
+      .toThrow(/YouTube/)
+  })
+
+  test('reddedilen çağrı KAYIT BIRAKMAZ (yarım satır kalmasın)', () => {
+    try { kaydet({ konu_id: 'YT1', platform: 'youtube', aktif: 1 }) } catch { /* beklenen */ }
+    const n = db.prepare('SELECT COUNT(*) n FROM sosyal_otomasyonlar').get().n
+    expect(n).toBe(0)
+  })
+
+  test('Meta platformları etkilenmez', () => {
+    expect(() => kaydet({ konu_id: 'K9', platform: 'instagram', aktif: 1 })).not.toThrow()
+    expect(() => kaydet({ konu_id: 'K8', platform: 'facebook', aktif: 1 })).not.toThrow()
+  })
+})

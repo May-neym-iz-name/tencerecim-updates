@@ -778,6 +778,15 @@ function migrate() {
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_link TEXT") } catch {}
   // Gönderi Meta'da silinmişse işaretlenir (listeden gizlenir) — bkz. _silinenGonderileriIsaretle.
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN silindi INTEGER DEFAULT 0") } catch {}
+  // YouTube video istatistigi (2026-09-08). Yalniz platform='youtube' satirlarinda dolar;
+  // Meta gonderilerinde NULL kalir (Graph'tan izlenme/begeni ayri uclardan gelir, o ayri is).
+  // istatistik_ts EPOCH MILISANIYE'dir, metin tarih degil: tablonun geri kalani
+  // datetime('now','localtime') kullaniyor ve o metinler saat dilimi tasimadigi icin
+  // ayristirilinca 3 saat kayiyor — tazelik karsilastirmasi bunu kaldirmaz.
+  try { db.exec("ALTER TABLE sosyal_gonderiler ADD COLUMN izlenme INTEGER") } catch {}
+  try { db.exec("ALTER TABLE sosyal_gonderiler ADD COLUMN begeni INTEGER") } catch {}
+  try { db.exec("ALTER TABLE sosyal_gonderiler ADD COLUMN yorum_adet INTEGER") } catch {}
+  try { db.exec("ALTER TABLE sosyal_gonderiler ADD COLUMN istatistik_ts INTEGER") } catch {}
   // ust_id indeksi ŞART: aşağıdaki yorum süpürücüsü ve çekim turu süpürücüsü ust_id ile
   // arama yapar. İndekssiz 66k okunmamış × 90k satır = saatlerce süren tam tarama →
   // v1.2.140 açılışta ASILI KALIYORDU (2026-07-28). Onarımlardan ÖNCE oluşturulmalı.
