@@ -67,7 +67,7 @@ const TABLOLAR = {
   // kip orada okunur. Listeye yazılmazsa panelde "düz metin" seçilse bile yürütücü PC
   // varsayılan 'kart' ile gönderir — yukarıdaki hatanın dördüncü tekrarı olurdu.
   sosyal_otomasyonlar: { kolonlar: ['konu_id', 'platform', 'aktif', 'acik_yanit_metni', 'baslangic_tarihi',
-                                    'ozel_aciklama', 'whatsapp', 'mesaj_tipi'],
+                                    'ozel_aciklama', 'whatsapp', 'mesaj_tipi', 'soru_yaniti_kapali'],
                          fk: {}, dogal: ['konu_id'], sonradanEklendi: true },
   sosyal_otomasyon_sablonlar: { kolonlar: ['sira'],
                                 fk: { otomasyon_id: 'sosyal_otomasyonlar', sablon_id: 'sosyal_sablonlar' },

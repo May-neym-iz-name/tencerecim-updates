@@ -100,6 +100,12 @@ describe('sosyal_otomasyonlar senkronu (v1.2.114)', () => {
     expect(TABLOLAR.sosyal_otomasyonlar.sonradanEklendi).toBe(true)
     expect(TABLOLAR.sosyal_otomasyon_sablonlar.sonradanEklendi).toBe(true)
   })
+
+  // Yeni sütun açan her değişiklikte senk listesi AYNI commit'te güncellenmeli —
+  // ozel_aciklama/whatsapp/mesaj_tipi üç kez unutulmuştu (sessiz veri kaybı).
+  test('soru_yaniti_kapali kolonu senkronlanır (08.09.2026)', () => {
+    expect(TABLOLAR.sosyal_otomasyonlar.kolonlar).toContain('soru_yaniti_kapali')
+  })
 })
 
 describe('urun_barkodlar senkronu', () => {

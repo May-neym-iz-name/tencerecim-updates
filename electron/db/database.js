@@ -780,6 +780,22 @@ function migrate() {
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_baslik TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_gorsel TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ek_link TEXT") } catch {}
+  // Yorum NİYETİ (08.09.2026): 'fiyat'|'soru'|'etiket'|'ovgu'|'emoji'|'gurultu'|NULL.
+  // Çekimde niyet.js yazar; geçmiş tek seferlik toplu işle dolar (Ayarlar → Geçmişi sınıfla).
+  // Otomasyon YALNIZ 'fiyat' ve 'soru' niyetine gönderir (sosyal-otomasyon._adaylar).
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN niyet TEXT") } catch {}
+  try { db.exec("CREATE INDEX IF NOT EXISTS idx_sosyal_niyet ON sosyal_mesajlar(niyet)") } catch {}
+  // Tanınmayan DM eki: mesajEki() null döndürüp metin de boşsa ham JSON buraya yazılır,
+  // bir hafta sonra ölçülüp yeni ek_tur değerleri eklenir. Ürün kartı gönderimlerinde
+  // kart yükünün tamamı (tüm ürünler) da burada durur — balon karuseli buradan çizer.
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ham_ek TEXT") } catch {}
+  // Teşekkür DM'i gidince Meta'nın döndürdüğü recipient_id (IGSID). Temsilci "DM'den yanıtla"
+  // derken konuşma bu kimlikle bulunur (private reply hakkı harcandığı için ikinci DM
+  // conversations?user_id yoluyla gider). 08.09'da ölçüldü: sütun daha önce YOKTU.
+  try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN ozel_mesaj_alici TEXT") } catch {}
+  // Gönderi bazında "fiyat dışı sorulara teşekkür DM'i gönderme" (genel metin Ayarlar'da).
+  // senk-sema.js AYNI commit'te güncellendi.
+  try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN soru_yaniti_kapali INTEGER DEFAULT 0") } catch {}
   // Gönderi Meta'da silinmişse işaretlenir (listeden gizlenir) — bkz. _silinenGonderileriIsaretle.
   try { db.exec("ALTER TABLE sosyal_mesajlar ADD COLUMN silindi INTEGER DEFAULT 0") } catch {}
   // YouTube video istatistigi (2026-09-08). Yalniz platform='youtube' satirlarinda dolar;
