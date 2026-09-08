@@ -202,6 +202,9 @@ export default function SosyalMedya() {
   const [cevapDurumu, setCevapDurumu] = useState('hepsi')
   const [okunma, setOkunma] = useState('hepsi')
   const [atama, setAtama] = useState('hepsi')
+  // Konuşma kaynağı: hikaye yanıtı / gönderi paylaşımı / normal (08.09.2026, seçim 4B —
+  // açılır kutu; "Tümü" seçiliyken DM listesi kaynağa göre başlıklı gruplanır).
+  const [kaynak, setKaynak] = useState('hepsi')
   // Son N gün kısayolu → başlangıç tarihini ayarlar (bitiş boş = bugüne kadar).
   const sonGun = (n) => {
     const d = new Date(); d.setDate(d.getDate() - (n - 1))
@@ -255,6 +258,7 @@ export default function SosyalMedya() {
       const tf = {
         baslangic: tarihBas || undefined, bitis: tarihBit || undefined,
         cevapDurumu, okunma, atama, kullanici,
+        kaynak: kaynak === 'hepsi' ? undefined : kaynak,
       }
       let sonuc = []
       if (sekme.mod === 'sorular') {
@@ -273,7 +277,15 @@ export default function SosyalMedya() {
       }
       setListe(sonuc)
     } catch (e) { toast.error('Liste yüklenemedi: ' + e.message) }
-  }, [sekme, aramaGec, tarihBas, tarihBit, cevapDurumu, okunma, atama, kullanici])
+  }, [sekme, aramaGec, tarihBas, tarihBit, cevapDurumu, okunma, atama, kullanici, kaynak])
+
+  // Sol liste grupları. DM modunda ve kaynak "Tümü" iken hikaye / paylaşım / normal başlıklı
+  // üç grup (seçim 4B); diğer modlarda ya da tek kaynak seçiliyken düz liste (başlıksız).
+  const satirGruplari = (sekme.mod === 'dm' && kaynak === 'hepsi')
+    ? [['hikaye', '📖 HİKAYE YANITLARI'], ['paylasim', '🔁 GÖNDERİ PAYLAŞIMLARI'], ['normal', '💬 NORMAL']]
+        .map(([kod, baslik]) => ({ kod, baslik, satirlar: liste.filter(s => (s.kaynak || 'normal') === kod) }))
+        .filter(g => g.satirlar.length)
+    : [{ kod: 'duz', baslik: null, satirlar: liste }]
 
   useEffect(() => { listeYukle(); sayaclariYukle() }, [listeYukle, sayaclariYukle])
   useEffect(() => { setSeciliKonu(null); setMesajlar([]) }, [sekmeKod])
@@ -575,8 +587,18 @@ export default function SosyalMedya() {
                 ))}
               </div>
             )}
-            {(cevapDurumu !== 'hepsi' || okunma !== 'hepsi' || atama !== 'hepsi') && (
-              <button onClick={() => { setCevapDurumu('hepsi'); setOkunma('hepsi'); setAtama('hepsi') }}
+            {/* Kaynak: hikaye yanıtı / gönderi paylaşımı / normal — yalnız DM ve karma modda. */}
+            {(sekme.mod === 'dm' || sekme.mod === 'karma') && (
+              <select value={kaynak} onChange={e => setKaynak(e.target.value)}
+                className="w-full border border-marka-100 rounded-md px-2 py-1 text-xs text-marka-900 bg-white">
+                <option value="hepsi">Kaynak: Tümü</option>
+                <option value="hikaye">📖 Hikaye yanıtı</option>
+                <option value="paylasim">🔁 Gönderi paylaşımı</option>
+                <option value="normal">💬 Normal</option>
+              </select>
+            )}
+            {(cevapDurumu !== 'hepsi' || okunma !== 'hepsi' || atama !== 'hepsi' || kaynak !== 'hepsi') && (
+              <button onClick={() => { setCevapDurumu('hepsi'); setOkunma('hepsi'); setAtama('hepsi'); setKaynak('hepsi') }}
                 className="text-[11px] text-red-500 hover:underline">✕ Süzgeçleri temizle</button>
             )}
           </div>
@@ -598,7 +620,14 @@ export default function SosyalMedya() {
               <SorularListesi sorular={liste} seciliId={seciliKonu?.kind === 'soru' ? seciliKonu.id : null}
                 onSec={soruSec} onUstlen={soruUstlen} onOkundu={soruOkundu} kullanici={kullanici} />
             )}
-            {sekme.mod !== 'sorular' && liste.map(satir => {
+            {sekme.mod !== 'sorular' && satirGruplari.map(grup => (
+              <div key={grup.kod}>
+                {grup.baslik && (
+                  <div className="px-3 py-1.5 text-[11px] font-bold text-marka-400 bg-marka-50 sticky top-0 z-[1]">
+                    {grup.baslik} ({grup.satirlar.length})
+                  </div>
+                )}
+                {grup.satirlar.map(satir => {
               const secili = seciliKonu?.konu_id === satir.konu_id
               const baslik = satir.kind === 'yorum' ? (satir.konu_baslik || '(gönderi)') : adSadelestir(satir.kisi || 'Müşteri', 28)
               // Yorum satırında ASIL kimlik son yorumcudur; gönderi adı bağlamdır.
@@ -649,7 +678,9 @@ export default function SosyalMedya() {
                   )}
                 </button>
               )
-            })}
+                })}
+              </div>
+            ))}
           </div>
         </div>
 
