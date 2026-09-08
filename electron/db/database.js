@@ -575,6 +575,10 @@ function migrate() {
   // gerekiyordu. kdv_orani NULL = "bileşenlerden hesapla" (eski davranış korunur).
   try { db.exec("ALTER TABLE setler ADD COLUMN kdv_orani REAL") } catch {}
   try { db.exec("ALTER TABLE setler ADD COLUMN aciklama TEXT") } catch {}
+  // Instagram ürün kartının görseli ve canlı site fiyatı bu id ile ikas'tan okunur (v1.2.199).
+  // Setlerin ikas'ta kendi ürün kaydı var (23/23, SKU ile eşleşiyor) ama bağ tutulmuyordu →
+  // set kartı görselsiz gidiyordu.
+  try { db.exec("ALTER TABLE setler ADD COLUMN ikas_urun_id TEXT") } catch {}
   try { db.exec("ALTER TABLE setler ADD COLUMN marka_id INTEGER REFERENCES markalar(id)") } catch {}
   try { db.exec("ALTER TABLE setler ADD COLUMN kategori_id INTEGER REFERENCES kategoriler(id)") } catch {}
   // Faz 2 fatura kesme: ikas'ta satilan bir SET siparis kalemine urun_id ile

@@ -35,9 +35,10 @@ function _gonderiUrunleriCoz(db, otomasyonId) {
     SELECT COALESCE(ou.ozel_ad, u.ad, st.ad) AS ad,
            COALESCE(ou.ozel_fiyat, u.satis_fiyati, st.fiyat) AS fiyat,
            COALESCE(u.web_link, st.web_link) AS web_link,
-           -- Instagram ürün kartının görseli ikas'tan bu id ile çekilir (setlerin ikas ürünü
-           -- olmadığı için NULL kalır → o kart görselsiz gider, mesaj yine ulaşır).
-           u.ikas_urun_id AS ikas_urun_id
+           -- Instagram ürün kartının görseli + canlı site fiyatı ikas'tan bu id ile çekilir.
+           -- Setlerin de ikas'ta kendi ürün kaydı var (v1.2.199'da bağlandı); bağ yoksa
+           -- NULL kalır → o kart görselsiz gider ve yerel fiyata düşülür, mesaj yine ulaşır.
+           COALESCE(u.ikas_urun_id, st.ikas_urun_id) AS ikas_urun_id
     FROM sosyal_otomasyon_urunler ou
     LEFT JOIN urunler u ON u.id = ou.urun_id
     LEFT JOIN setler st ON st.id = ou.set_id
