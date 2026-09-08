@@ -45,7 +45,8 @@ beforeEach(() => {
   db.exec(`
     -- ikas_urun_id: Instagram ürün kartının görseli bu id ile ikas'tan çekilir (v1.2.197).
     CREATE TABLE urunler (id INTEGER PRIMARY KEY, ad TEXT, satis_fiyati REAL, web_link TEXT, sku TEXT, ikas_urun_id TEXT);
-    CREATE TABLE setler (id INTEGER PRIMARY KEY, ad TEXT, fiyat REAL, web_link TEXT);
+    -- ikas_urun_id: set kartının görseli + canlı site fiyatı bu id ile okunur (v1.2.199).
+    CREATE TABLE setler (id INTEGER PRIMARY KEY, ad TEXT, fiyat REAL, web_link TEXT, ikas_urun_id TEXT);
     CREATE TABLE sosyal_sablonlar (id INTEGER PRIMARY KEY, ad TEXT, tur TEXT DEFAULT 'urun', aktif INTEGER DEFAULT 1,
       urun_id INTEGER, set_id INTEGER, urun_adi TEXT, aciklama TEXT, fiyat REAL, link TEXT, whatsapp TEXT, serbest_metin TEXT);
     -- mesaj_tipi: 'kart' (ürün kartı karuseli) | 'metin' (düz metin) — v1.2.197
