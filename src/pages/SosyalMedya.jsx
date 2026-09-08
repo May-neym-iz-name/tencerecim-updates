@@ -10,6 +10,7 @@ import YoutubeIstatistik from '../components/YoutubeIstatistik'
 import SablonKutuphanesi from '../components/SablonKutuphanesi'
 import SosyalGorsel from '../components/SosyalGorsel'
 import SorularListesi from '../components/SorularListesi'
+import UrunKartiBalonu from '../components/UrunKartiBalonu'
 import { useGorunurAralik } from '../hooks/useGorunurAralik'
 
 // Üst sekmeler — Meta Business Suite düzeni. mod: 'karma'|'dm'|'yorum'
@@ -885,18 +886,30 @@ const EK_ETIKET = {
   gorsel: '📷 Görsel',
   video: '🎬 Video',
   dosya: '📎 Dosya',
+  sablon: '🛍️ Ürün kartı',                 // Meta'dan çekilen kendi kartımız (eko benimsenmediyse)
+  bilinmeyen: '📎 İçerik görüntülenemiyor', // ham_ek'te saklı; ölçülüp yeni tip eklenecek
 }
+const HIKAYE_TURLERI = new Set(['hikaye_yanit', 'hikaye_bahsi'])
 function MesajEki({ m, bizden }) {
+  // Hikaye CDN linki hikaye silinince (24 saat) ölür → görsel yerine "hikaye silinmiş" yer
+  // tutucu (08.09.2026). Eskiden img gizleniyor, metin de yoksa balon BOŞ kalıyordu.
+  const [olu, setOlu] = useState(false)
   if (!m.ek_tur) return null
   const etiket = EK_ETIKET[m.ek_tur] || '📎 Ek'
+  const hikaye = HIKAYE_TURLERI.has(m.ek_tur)
   const ic = (
-    <div className={`rounded-xl overflow-hidden mb-1 ${bizden ? 'bg-violet-700/60' : 'bg-white border border-gray-300'}`}>
-      {m.ek_gorsel && (
+    <div className={`rounded-xl overflow-hidden mb-1 ${bizden ? 'bg-marka-700/60' : 'bg-white border border-gray-300'}`}>
+      {m.ek_gorsel && !olu && (
         <img src={m.ek_gorsel} alt="" loading="lazy"
           className="max-h-52 w-full object-cover"
-          onError={e => { e.currentTarget.style.display = 'none' }} />
+          onError={() => setOlu(true)} />
       )}
-      <div className={`px-2.5 py-1.5 text-xs ${bizden ? 'text-violet-100' : 'text-gray-600'}`}>
+      {hikaye && (olu || !m.ek_gorsel) && (
+        <div className="w-[120px] h-[80px] m-2 rounded-md bg-marka-50 flex items-center justify-center text-[12px] text-marka-400">
+          hikaye silinmiş
+        </div>
+      )}
+      <div className={`px-2.5 py-1.5 text-xs ${bizden ? 'text-marka-50' : 'text-gray-600'}`}>
         {etiket}{m.ek_baslik && !etiket.includes(m.ek_baslik) ? ` — ${m.ek_baslik}` : ''}
       </div>
     </div>
@@ -928,6 +941,17 @@ function DmGorunum({ konu, mesajlar, taslak, setTaslak, gonder, mesgul, kaydirma
       <div ref={kaydirmaRef} className="flex-1 overflow-y-auto px-5 py-4 space-y-2 bg-kagit">
         {mesajlar.map(m => {
           const bizden = m.yon === 'giden'
+          // Bizim ürün kartımız: balon yerine Instagram'daki gibi tam kart (seçim 3B).
+          if (m.ek_tur === 'urun_karti') {
+            return (
+              <div key={m.id} className="flex justify-end">
+                <div className="max-w-[85%]">
+                  <UrunKartiBalonu m={m} />
+                  <div className="text-[10px] mt-1 text-right text-gray-400">{zaman(m.mesaj_tarihi)}{m.cevaplayan_kullanici ? ` · ${m.cevaplayan_kullanici}` : ''}</div>
+                </div>
+              </div>
+            )
+          }
           return (
             <div key={m.id} className={`flex ${bizden ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-[14px] leading-relaxed whitespace-pre-wrap
