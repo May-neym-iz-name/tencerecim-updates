@@ -277,3 +277,48 @@ describe('niyet yazımı (08.09.2026)', () => {
     expect(db.prepare("SELECT COUNT(*) n FROM sosyal_mesajlar WHERE niyet IS NOT NULL").get().n).toBe(0)
   })
 })
+
+describe('sorular listesi (08.09.2026)', () => {
+  test('yalnız niyet=soru, gelen, cevapsız yorumlar; gönderi bilgisiyle', () => {
+    // Gönderi bilgisi konu başına TEK satır (son çekim kazanır) → üçü de aynı başlık/görselle.
+    const g = { konu_id: 'K1', konu_baslik: 'Tencere', konu_gorsel: 'g.jpg' }
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'gelen', harici_id: 's1', metin: 'var mı', ...g }))
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'gelen', harici_id: 'f1', metin: 'fiyat?', ...g }))
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'gelen', harici_id: 's2', metin: 'nerede', ...g }))
+    db.prepare("UPDATE sosyal_mesajlar SET durum='cevaplandi' WHERE harici_id='s2'").run()
+    const r = sosyal['sosyal:sorular']({})
+    expect(r.map(x => x.harici_id)).toEqual(['s1'])
+    expect(r[0].gonderi_baslik).toBe('Tencere')
+    expect(r[0].gonderi_gorsel).toBe('g.jpg')
+  })
+  test('sayaclar.sorular yalnız okunmamış soruları sayar; ig_yorum da soru sayar', () => {
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'gelen', harici_id: 's1', metin: 'var mı' }))
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'gelen', harici_id: 'f1', metin: 'fiyat?' }))
+    const s = sosyal['sosyal:sayaclar']({})
+    expect(s.sorular).toBe(1)
+    expect(s.ig_yorum).toBe(1)
+  })
+  test('genel sayaç fiyat yorumlarını saymaz, DM ve soruyu sayar', () => {
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'gelen', harici_id: 'f1', metin: 'fiyat?' }))
+    _upsertMesaj(mesaj({ tur: 'yorum', yon: 'gelen', harici_id: 's1', metin: 'var mı' }))
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', harici_id: 'd1', metin: 'fiyat?', konu_id: 'C1' }))
+    expect(sosyal['sosyal:sayac']()).toBe(2)
+  })
+  test('sayaclar.bana: bana atanmış cevapsız DM konuşmalarını sayar', () => {
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', harici_id: 'd1', metin: 'selam', konu_id: 'C1' }))
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', harici_id: 'd2', metin: 'selam', konu_id: 'C2' }))
+    db.prepare("UPDATE sosyal_mesajlar SET atanan_kullanici='Ufuk' WHERE konu_id='C1'").run()
+    expect(sosyal['sosyal:sayaclar']({ kullanici: 'Ufuk' }).bana).toBe(1)
+    expect(sosyal['sosyal:sayaclar']({}).bana).toBe(0)
+  })
+})
+
+describe('konusmalar kaynak (08.09.2026)', () => {
+  test('hikaye yanıtı olan konuşma kaynak=hikaye, olmayan normal; süzgeç çalışır', () => {
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', harici_id: 'd1', konu_id: 'C1', ek_tur: 'hikaye_yanit', metin: '' }))
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', harici_id: 'd2', konu_id: 'C2', metin: 'selam' }))
+    const r = sosyal['sosyal:konusmalar']({})
+    expect(Object.fromEntries(r.map(x => [x.konu_id, x.kaynak]))).toEqual({ C1: 'hikaye', C2: 'normal' })
+    expect(sosyal['sosyal:konusmalar']({ kaynak: 'hikaye' }).map(x => x.konu_id)).toEqual(['C1'])
+  })
+})

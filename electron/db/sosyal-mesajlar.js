@@ -3,7 +3,7 @@
 // Ağ çağrıları electron/meta/index.js'te; bu dosya yalnızca yerel okuma/yazma yapar.
 const database = require('./database')
 const { niyetBul } = require('./niyet')
-const { listeFiltreleri: _listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC } = require('./sosyal-filtre')
+const { listeFiltreleri: _listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC, SORU_OKUNMAMIS_SAYAC, KAYNAK_IFADESI } = require('./sosyal-filtre')
 const { kelimeler, likeDeseni } = require('./tr-arama')
 
 // Türkçe duyarsız, kelime bazlı arama koşulları — ADLI parametrelerle.
@@ -297,27 +297,66 @@ function notKaydet({ id, ic_not }) {
 }
 
 // Okunmamış (yeni) öğe sayısı — navigasyon rozeti için.
+// Rozetlerde sayılan yorumlar (08.09.2026): Meta (IG/FB) yorumlarında yalnız fiyat DIŞI
+// (niyet='soru') — fiyat yorumlarına otomasyon zaten cevap veriyor, temsilcinin dikkati gerçek
+// sorulara gitsin. YouTube'da otomasyon YOK (özel mesaj API'si yok, bkz. yurutucu.js) → her
+// yorum insan ister, hepsi sayılır.
+const ROZET_YORUM_KOSULU = "(tur = 'dm' OR platform = 'youtube' OR niyet = 'soru')"
+
+// Genel bildirim rozeti.
 function sayac() {
   return getDb().prepare(
-    "SELECT COUNT(*) n FROM sosyal_mesajlar WHERE durum = 'yeni' AND yon = 'gelen' AND COALESCE(silindi,0) = 0",
+    `SELECT COUNT(*) n FROM sosyal_mesajlar WHERE durum = 'yeni' AND yon = 'gelen' AND COALESCE(silindi,0) = 0 AND ${ROZET_YORUM_KOSULU}`,
   ).get().n
 }
 
 // Üst sekme sayaçları (Meta Business Suite tarzı): her sekmedeki okunmamış adet.
-function sayaclar() {
+// IG/FB yorum sekmeleri yalnız niyet='soru' sayar (ROZET_YORUM_KOSULU ile aynı kural). `bana`:
+// kullanıcıya atanmış ve hâlâ cevapsız DM konuşmaları (Tümü / Bana atananlar anahtarı için).
+function sayaclar({ kullanici } = {}) {
   const db = getDb()
   const q = (kosul) => db.prepare(
     `SELECT COUNT(*) n FROM sosyal_mesajlar WHERE durum='yeni' AND yon='gelen'
        AND COALESCE(silindi,0) = 0 AND ${kosul}`
   ).get().n
+  const bana = kullanici ? db.prepare(`
+    SELECT COUNT(*) n FROM (
+      SELECT konu_id FROM sosyal_mesajlar WHERE tur='dm' AND konu_id IS NOT NULL
+      GROUP BY konu_id
+      HAVING MAX(atanan_kullanici) = ? AND ${CEVAPSIZ_SAYAC} > 0)`).get(kullanici).n : 0
   return {
-    hepsi: q('1=1'),
+    hepsi: q(ROZET_YORUM_KOSULU),
     messenger: q("tur='dm' AND platform='facebook'"),
     instagram_dm: q("tur='dm' AND platform='instagram'"),
-    fb_yorum: q("tur='yorum' AND platform='facebook'"),
-    ig_yorum: q("tur='yorum' AND platform='instagram'"),
+    fb_yorum: q("tur='yorum' AND platform='facebook' AND niyet='soru'"),
+    ig_yorum: q("tur='yorum' AND platform='instagram' AND niyet='soru'"),
     yt_yorum: q("tur='yorum' AND platform='youtube'"),
+    sorular: q("tur='yorum' AND niyet='soru'"),
+    bana,
   }
+}
+
+// "Sorular" sekmesi (08.09.2026, seçim 1A): fiyat DIŞI gerçek sorular, temsilci cevaplayana
+// kadar listede kalır. Gönderi bilgisi sosyal_gonderiler'den (tek kopya).
+// tesekkur: 'gitti' | 'gitmedi' | undefined — otomatik teşekkür DM'i (ozel_mesaj_tarihi) durumu.
+function sorular({ arama, atama, kullanici, tesekkur } = {}) {
+  const kosul = ["m.tur='yorum'", "m.yon='gelen'", "m.niyet='soru'", "m.durum IN ('yeni','okundu')", 'COALESCE(m.silindi,0)=0']
+  const p = {}
+  if (arama) kosul.push(...aramaKosullari("COALESCE(m.metin,'') || ' ' || COALESCE(m.gonderen_ad,'')", arama, p))
+  if (atama === 'bana') { kosul.push('m.atanan_kullanici = @kullanici'); p.kullanici = kullanici || '' }
+  else if (atama === 'atanmamis') kosul.push('m.atanan_kullanici IS NULL')
+  if (tesekkur === 'gitti') kosul.push('m.ozel_mesaj_tarihi IS NOT NULL')
+  else if (tesekkur === 'gitmedi') kosul.push('m.ozel_mesaj_tarihi IS NULL')
+  return getDb().prepare(`
+    SELECT m.id, m.konu_id, m.platform, m.harici_id, m.gonderen_id, m.gonderen_ad, m.metin,
+           m.mesaj_tarihi, m.durum, m.atanan_kullanici, m.ozel_mesaj_tarihi, m.ozel_mesaj_alici,
+           g.baslik gonderi_baslik, g.gorsel gonderi_gorsel, g.link gonderi_link
+    FROM sosyal_mesajlar m
+    LEFT JOIN sosyal_gonderiler g ON g.konu_id = m.konu_id
+    WHERE ${kosul.join(' AND ')}
+    ORDER BY COALESCE(m.mesaj_tarihi, m.cekilme_tarihi) DESC
+    LIMIT 300
+  `).all(p)
 }
 
 // Yorum sekmeleri için: yorumların geldiği GÖNDERİLER (konu_id bazlı gruplama).
@@ -371,7 +410,7 @@ function gonderiler({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
 }
 
 // DM sekmeleri için: konuşmalar (konu_id bazlı). Her konuşma: kişi, son mesaj, okunmamış.
-function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, atama, kullanici } = {}) {
+function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, atama, kullanici, kaynak } = {}) {
   const kosul = ["tur='dm'"]
   const p = {}
   if (platform && platform !== 'hepsi') { kosul.push('platform=@platform'); p.platform = platform }
@@ -380,11 +419,13 @@ function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
   const having = []
   if (baslangic) { having.push("substr(MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)),1,10) >= @bas"); p.bas = baslangic }
   if (bitis) { having.push("substr(MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)),1,10) <= @bit"); p.bit = bitis }
-  _listeFiltreleri({ cevapDurumu, okunma, atama, kullanici }, having, p)
+  _listeFiltreleri({ cevapDurumu, okunma, atama, kullanici, kaynak }, having, p)
   return getDb().prepare(`
     SELECT konu_id, platform,
       ${OKUNMAMIS_SAYAC} okunmamis,
       ${CEVAPSIZ_SAYAC} cevapsiz,
+      -- Konuşmanın kaynağı: hikaye yanıtı / gönderi paylaşımı / normal (süzgeç + gruplu liste).
+      ${KAYNAK_IFADESI} kaynak,
       MAX(atanan_kullanici) atanan,
       MAX(COALESCE(mesaj_tarihi, cekilme_tarihi)) son_zaman,
       -- SON GELEN mesajın zamanı — Meta'nın 24 saatlik yanıt penceresi BUNDAN başlar,
@@ -430,7 +471,8 @@ module.exports = {
   'sosyal:ataKonu': (arg) => ataKonu(arg),
   'sosyal:not': (arg) => notKaydet(arg),
   'sosyal:sayac': () => sayac(),
-  'sosyal:sayaclar': () => sayaclar(),
+  'sosyal:sayaclar': (arg) => sayaclar(arg || {}),
+  'sosyal:sorular': (arg) => sorular(arg || {}),
   'sosyal:gonderiler': (arg) => gonderiler(arg),
   'sosyal:konusmalar': (arg) => konusmalar(arg),
   // Geçmiş yorumları bir kez sınıflar (Ayarlar → Sosyal → Geçmişi sınıfla).
