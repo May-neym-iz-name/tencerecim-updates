@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Sosyal Medya İyileştirme — Tasarım Önizleme</title>
+<style>
+  :root{
+    --m50:#f3f6f9;--m100:#e3eaf1;--m400:#4a6b88;--m700:#123a5c;--m900:#052238;
+    --k50:#fdfaef;--k200:#f6eec9;--k400:#ecdf93;--k600:#c9b45c;--kagit:#fcfcfb;
+    --yesil:#16a34a;--kirmizi:#dc2626;--mavi:#2563eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:#eef1f4;color:#111;font-size:14px}
+  header{background:#fff;border-bottom:1px solid var(--m100);padding:18px 32px;position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:20px;color:var(--m900)}
+  header p{margin:6px 0 0;color:var(--m400)}
+  main{max-width:1500px;margin:0 auto;padding:24px 32px 80px}
+  section{margin-bottom:56px}
+  section>h2{font-size:18px;color:var(--m900);margin:0 0 4px}
+  section>p.aciklama{margin:0 0 16px;color:var(--m400)}
+  .varyantlar{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .varyant{background:#fff;border:2px solid var(--m100);border-radius:10px;padding:14px;position:relative}
+  .varyant.secili{border-color:var(--m900);box-shadow:0 0 0 3px var(--k200)}
+  .varyant h3{margin:0 0 4px;font-size:15px;color:var(--m900)}
+  .varyant p.not{margin:0 0 12px;color:var(--m400);font-size:13px}
+  .varyant label.sec{position:absolute;top:12px;right:14px;font-weight:600;color:var(--m900);cursor:pointer;display:flex;gap:6px;align-items:center}
+  .ekran{border:1px solid var(--m100);border-radius:8px;overflow:hidden;background:#fff}
+  /* uygulama parçaları */
+  .sekmeler{display:flex;gap:2px;border-bottom:1px solid var(--m100);padding:0 12px;background:#fff}
+  .sekme{padding:10px 12px;color:var(--m400);font-weight:600;border-bottom:3px solid transparent;display:flex;gap:6px;align-items:center}
+  .sekme.aktif{color:var(--m900);border-bottom-color:var(--k400);background:var(--k50)}
+  .rozet{background:var(--kirmizi);color:#fff;border-radius:999px;font-size:11px;padding:1px 6px;font-weight:700}
+  .rozet.gri{background:var(--m100);color:var(--m400)}
+  .liste{display:flex;flex-direction:column}
+  .satir{display:flex;gap:12px;padding:10px 12px;border-bottom:1px solid var(--m100);align-items:flex-start}
+  .satir.secili{background:var(--m50)}
+  .gorsel{width:56px;height:56px;border-radius:6px;background:linear-gradient(135deg,#d9c8a0,#8c7a4a);flex:none}
+  .gorsel.kucuk{width:36px;height:36px}
+  .ad{font-weight:700;color:var(--m900);font-size:15px;line-height:1.2}
+  .ikincil{color:var(--m400);font-size:12px;margin-top:2px}
+  .metin{margin-top:4px;color:#222}
+  .zaman{color:var(--m400);font-size:12px;white-space:nowrap}
+  .etiket{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--m100);border-radius:6px;padding:2px 7px;font-size:11px;color:var(--m400);background:#fff}
+  .etiket.bot{background:var(--k50);border-color:var(--k200);color:var(--k600)}
+  .dugme{border:1px solid var(--m100);background:#fff;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;color:var(--m900)}
+  .dugme.birincil{background:var(--m900);color:#fff;border-color:var(--m900)}
+  .dugme.kucuk{padding:3px 8px;font-size:11px}
+  .eylemler{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .kart{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;padding:12px;background:var(--kagit)}
+  .kartk{background:#fff;border:1px solid var(--m100);border-radius:8px;overflow:hidden}
+  .kartk .ust{height:110px;background:linear-gradient(135deg,#d9c8a0,#8c7a4a)}
+  .kartk .ic{padding:10px}
+  .segment{display:inline-flex;border:1px solid var(--m100);border-radius:8px;overflow:hidden;margin:10px 12px}
+  .segment span{padding:6px 14px;font-weight:600;color:var(--m400);display:flex;gap:6px;align-items:center}
+  .segment span.aktif{background:var(--m900);color:#fff}
+  .ikiPanel{display:grid;grid-template-columns:300px 1fr;min-height:260px}
+  .sol{border-right:1px solid var(--m100)}
+  .sohbet{background:var(--kagit);padding:14px;display:flex;flex-direction:column;gap:10px}
+  .balon{max-width:78%;padding:9px 12px;border-radius:12px;background:#fff;border:1px solid var(--m100);color:#222}
+  .balon.biz{align-self:flex-end;background:var(--m900);color:#fff;border-color:var(--m900)}
+  .balon .ekBaslik{font-size:12px;opacity:.8;margin-bottom:6px;display:flex;gap:6px;align-items:center}
+  .miniKart{display:flex;gap:10px;background:#fff;color:#111;border-radius:8px;padding:8px;border:1px solid var(--m100)}
+  .miniKart .g{width:64px;height:64px;border-radius:6px;background:linear-gradient(135deg,#d9c8a0,#8c7a4a);flex:none}
+  .miniKart b{display:block;color:var(--m900)}
+  .miniKart small{color:var(--m400)}
+  .buyukKart{background:#fff;color:#111;border-radius:10px;overflow:hidden;border:1px solid var(--m100);width:240px}
+  .buyukKart .g{height:120px;background:linear-gradient(135deg,#d9c8a0,#8c7a4a)}
+  .buyukKart .ic{padding:8px 10px}
+  .buyukKart .btn{border-top:1px solid var(--m100);text-align:center;padding:7px;color:var(--mavi);font-weight:600;font-size:13px}
+  .cipler{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--m100);flex-wrap:wrap;align-items:center}
+  .cip{border:1px solid var(--m100);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--m400);background:#fff}
+  .cip.aktif{background:var(--k200);border-color:var(--k400);color:var(--m900);font-weight:600}
+  select.acilir{border:1px solid var(--m100);border-radius:6px;padding:4px 8px;font-size:12px;color:var(--m900);background:#fff}
+  .yazKutu{display:flex;gap:8px;padding:10px;border-top:1px solid var(--m100);background:#fff;align-items:center}
+  .yazKutu input{flex:1;border:1px solid var(--m100);border-radius:8px;padding:8px 10px;font-size:13px}
+  .arac{width:32px;height:32px;border:1px solid var(--m100);border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fff;font-size:15px}
+  .ozet{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--m100);padding:12px 32px;display:flex;gap:16px;align-items:center;z-index:5}
+  .ozet code{background:var(--m50);padding:6px 10px;border-radius:6px;font-size:13px;flex:1}
+  .kaynakRozet{font-size:11px;border-radius:4px;padding:1px 5px;background:var(--m50);color:var(--m400)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Sosyal Medya İyileştirme — tasarım önizleme</h1>
+  <p>Her bölümde iki seçenek var. Beğendiğinizin sağ üstündeki kutucuğu işaretleyin; alttaki özet satırını bana yazmanız yeter. Palet: beyaz zemin, lacivert mürekkep, krem yalnız vurgu.</p>
+</header>
+<main>
+
+<!-- ============ 1. SORULAR SEKMESİ ============ -->
+<section id="b1">
+  <h2>1 · "Sorular" sekmesi (fiyat dışı yorumlar)</h2>
+  <p class="aciklama">Hangi gönderide ne sorulduğu, kimin sorduğu ve teşekkür DM'inin gidip gitmediği bir bakışta görünmeli. Cevaplanınca listeden düşer.</p>
+  <div class="varyantlar">
+    <div class="varyant" data-b="1" data-v="A">
+      <label class="sec"><input type="radio" name="b1" value="A"> Seçenek A</label>
+      <h3>A · Liste görünümü</h3>
+      <p class="not">Gelen kutusuyla aynı satır dili. Çok soru gelince hızlı taranır, klavyeyle gezilir.</p>
+      <div class="ekran">
+        <div class="sekmeler">
+          <div class="sekme">Mesajlar <span class="rozet gri">12</span></div>
+          <div class="sekme aktif">Sorular <span class="rozet">7</span></div>
+          <div class="sekme">Yorumlar</div>
+          <div class="sekme">Otomasyon</div>
+        </div>
+        <div class="cipler"><span class="cip aktif">Cevapsız</span><span class="cip">Bana atanan</span><span class="cip">Teşekkür gitti</span><span class="cip">Bugün</span></div>
+        <div class="liste">
+          <div class="satir secili">
+            <div class="gorsel"></div>
+            <div style="flex:1">
+              <div class="ad">Sevgi Ticaret 34</div>
+              <div class="ikincil">Sofram Soft 12 Parça Basık Tencere Seti · Reels</div>
+              <div class="metin">İndüksiyona uygun mu bu set? Gölcük mağazasında var mı?</div>
+              <div class="eylemler"><span class="etiket bot">🤖 Teşekkür gitti</span><button class="dugme birincil kucuk">DM'den yanıtla</button><button class="dugme kucuk">Yoruma yanıt</button><button class="dugme kucuk">Üstlen</button></div>
+            </div>
+            <div class="zaman">14 dk</div>
+          </div>
+          <div class="satir">
+            <div class="gorsel"></div>
+            <div style="flex:1">
+              <div class="ad">Ayşe Nur Kaya</div>
+              <div class="ikincil">Maxx Doria Thor Döküm Tava 28 cm</div>
+              <div class="metin">Kapağı ayrı satılıyor mu?</div>
+              <div class="eylemler"><span class="etiket bot">🤖 Teşekkür gitti</span><span class="etiket">👤 Ufuk</span></div>
+            </div>
+            <div class="zaman">1 sa</div>
+          </div>
+          <div class="satir">
+            <div class="gorsel"></div>
+            <div style="flex:1">
+              <div class="ad">mehmet.k_41</div>
+              <div class="ikincil">Lava Trendy Basık 24 cm</div>
+              <div class="metin">Pendik'e kargo kaç günde gelir</div>
+              <div class="eylemler"><span class="etiket">⏳ teşekkür sırada</span></div>
+            </div>
+            <div class="zaman">3 sa</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="varyant" data-b="1" data-v="B">
+      <label class="sec"><input type="radio" name="b1" value="B"> Seçenek B</label>
+      <h3>B · Kart görünümü</h3>
+      <p class="not">Gönderi görseli büyük; "hangi gönderi" sorusu görselden çözülür. Az soru gelen günlerde rahat, çok gelince kaydırma artar.</p>
+      <div class="ekran">
+        <div class="sekmeler">
+          <div class="sekme">Mesajlar <span class="rozet gri">12</span></div>
+          <div class="sekme aktif">Sorular <span class="rozet">7</span></div>
+          <div class="sekme">Yorumlar</div>
+          <div class="sekme">Otomasyon</div>
+        </div>
+        <div class="kart">
+          <div class="kartk"><div class="ust"></div><div class="ic">
+            <div class="ikincil">Sofram Soft 12 Parça Basık Set</div>
+            <div class="ad" style="font-size:14px;margin-top:4px">Sevgi Ticaret 34 <span class="zaman">· 14 dk</span></div>
+            <div class="metin">İndüksiyona uygun mu bu set? Gölcük mağazasında var mı?</div>
+            <div class="eylemler"><span class="etiket bot">🤖</span><button class="dugme birincil kucuk">DM'den yanıtla</button><button class="dugme kucuk">Yorum</button></div>
+          </div></div>
+          <div class="kartk"><div class="ust"></div><div class="ic">
+            <div class="ikincil">Maxx Doria Thor Döküm Tava 28 cm</div>
+            <div class="ad" style="font-size:14px;margin-top:4px">Ayşe Nur Kaya <span class="zaman">· 1 sa</span></div>
+            <div class="metin">Kapağı ayrı satılıyor mu?</div>
+            <div class="eylemler"><span class="etiket bot">🤖</span><span class="etiket">👤 Ufuk</span><button class="dugme kucuk">Yanıtla</button></div>
+          </div></div>
+          <div class="kartk"><div class="ust"></div><div class="ic">
+            <div class="ikincil">Lava Trendy Basık 24 cm</div>
+            <div class="ad" style="font-size:14px;margin-top:4px">mehmet.k_41 <span class="zaman">· 3 sa</span></div>
+            <div class="metin">Pendik'e kargo kaç günde gelir</div>
+            <div class="eylemler"><span class="etiket">⏳</span><button class="dugme kucuk">Yanıtla</button></div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2. BANA ATANANLAR ============ -->
+<section id="b2">
+  <h2>2 · Gelen mesajlar: "Bana atananlar"</h2>
+  <p class="aciklama">Temsilci kendi üstlendiği konuşmaları ayrı görmeli; üstlenmek tek tık olmalı.</p>
+  <div class="varyantlar">
+    <div class="varyant" data-b="2" data-v="A">
+      <label class="sec"><input type="radio" name="b2" value="A"> Seçenek A</label>
+      <h3>A · Liste üstünde bölümlü anahtar</h3>
+      <p class="not">Konuşma listesinin en üstünde "Tümü / Bana atananlar" anahtarı, kendi sayacıyla. Satırın sağında hover'da beliren "Üstlen".</p>
+      <div class="ekran">
+        <div class="ikiPanel">
+          <div class="sol">
+            <div class="segment"><span>Tümü <span class="rozet gri">12</span></span><span class="aktif">Bana atananlar <span class="rozet">3</span></span></div>
+            <div class="liste">
+              <div class="satir secili"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Zeynep Aydın</div><div class="ikincil">👤 Siz · Instagram</div><div class="metin" style="font-size:13px">Teşekkürler, siparişi verdim 😊</div></div><div class="zaman">9 dk</div></div>
+              <div class="satir"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Hasan Demir</div><div class="ikincil">👤 Siz · ⏰ 5 sa kaldı</div><div class="metin" style="font-size:13px">Fatura kesebilir misiniz</div></div><div class="zaman">2 sa</div></div>
+              <div class="satir"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Elif Şahin</div><div class="ikincil">👤 Siz · Messenger</div><div class="metin" style="font-size:13px">Kırmızı rengi var mı</div></div><div class="zaman">Dün</div></div>
+            </div>
+          </div>
+          <div class="sohbet">
+            <div class="balon"><div class="ad" style="font-size:13px">Zeynep Aydın</div>Kargo ne zaman çıkar?</div>
+            <div class="balon biz">Bugün 17:00'ye kadar verilen siparişler aynı gün kargoda 🚚</div>
+            <div class="balon"><div class="ad" style="font-size:13px">Zeynep Aydın</div>Teşekkürler, siparişi verdim 😊</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="varyant" data-b="2" data-v="B">
+      <label class="sec"><input type="radio" name="b2" value="B"> Seçenek B</label>
+      <h3>B · Üst sekme olarak "Benim"</h3>
+      <p class="not">Sayfa sekmelerine "Benim" eklenir; diğer sekmelerle aynı ağırlıkta. Satırda her zaman görünen "Üstlen" düğmesi.</p>
+      <div class="ekran">
+        <div class="sekmeler">
+          <div class="sekme">Mesajlar <span class="rozet gri">12</span></div>
+          <div class="sekme aktif">Benim <span class="rozet">3</span></div>
+          <div class="sekme">Sorular <span class="rozet">7</span></div>
+          <div class="sekme">Yorumlar</div>
+        </div>
+        <div class="ikiPanel">
+          <div class="sol">
+            <div class="liste">
+              <div class="satir secili"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Zeynep Aydın</div><div class="ikincil">Instagram</div><div class="metin" style="font-size:13px">Teşekkürler, siparişi verdim 😊</div></div><div style="text-align:right"><div class="zaman">9 dk</div><button class="dugme kucuk" style="margin-top:6px">Bırak</button></div></div>
+              <div class="satir"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Hasan Demir</div><div class="ikincil">⏰ 5 sa kaldı</div><div class="metin" style="font-size:13px">Fatura kesebilir misiniz</div></div><div style="text-align:right"><div class="zaman">2 sa</div><button class="dugme kucuk" style="margin-top:6px">Bırak</button></div></div>
+              <div class="satir" style="opacity:.55"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Kerem Yıldız</div><div class="ikincil">atanmamış</div><div class="metin" style="font-size:13px">Set fiyatı?</div></div><div style="text-align:right"><div class="zaman">4 sa</div><button class="dugme birincil kucuk" style="margin-top:6px">Üstlen</button></div></div>
+            </div>
+          </div>
+          <div class="sohbet">
+            <div class="balon"><div class="ad" style="font-size:13px">Zeynep Aydın</div>Kargo ne zaman çıkar?</div>
+            <div class="balon biz">Bugün 17:00'ye kadar verilen siparişler aynı gün kargoda 🚚</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3. BALONLAR ============ -->
+<section id="b3">
+  <h2>3 · Boş balonlar: ürün kartı ve ölü hikaye</h2>
+  <p class="aciklama">Bizim gönderdiğimiz ürün kartı ile süresi dolmuş hikaye yanıtı artık boş kutu olmayacak.</p>
+  <div class="varyantlar">
+    <div class="varyant" data-b="3" data-v="A">
+      <label class="sec"><input type="radio" name="b3" value="A"> Seçenek A</label>
+      <h3>A · Kompakt satır kartı</h3>
+      <p class="not">Küçük görsel + ad + fiyat tek satırda; sohbeti uzatmaz. Birden fazla ürün "ve 2 ürün daha" diye katlanır.</p>
+      <div class="ekran"><div class="sohbet">
+        <div class="balon"><div class="ekBaslik">📖 Hikayeye yanıt · <i>hikaye artık yayında değil</i></div>Bu tencere kaç litre?</div>
+        <div class="balon biz"><div class="ekBaslik">🛍️ Ürün kartı · otomasyon</div>
+          <div class="miniKart"><div class="g"></div><div><b>Sofram Soft 12 Parça Basık Set</b><small>3.490 TL · Ücretsiz kargo</small><br><small style="color:var(--mavi)">tencerecim.store/sofram-soft-12</small></div></div>
+          <div style="font-size:12px;opacity:.8;margin-top:6px">ve 2 ürün daha</div>
+        </div>
+        <div class="balon"><div class="ad" style="font-size:13px">Sevgi Ticaret 34</div>İndüksiyona uygun mu?</div>
+        <div class="balon biz"><div class="ekBaslik">🛍️ Ürün kartı · Ufuk gönderdi</div>
+          <div class="miniKart"><div class="g"></div><div><b>Maxx Doria Thor Döküm Tava 28 cm</b><small>1.290 TL</small></div></div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="varyant" data-b="3" data-v="B">
+      <label class="sec"><input type="radio" name="b3" value="B"> Seçenek B</label>
+      <h3>B · Instagram'daki gibi tam kart</h3>
+      <p class="not">Müşterinin gördüğünün birebir aynısı: büyük görsel, ad, fiyat, "Siteden Al" düğmesi. Sohbeti uzatır ama ne gittiği tartışmasız.</p>
+      <div class="ekran"><div class="sohbet">
+        <div class="balon"><div class="ekBaslik">📖 Hikayeye yanıt</div><div style="width:120px;height:80px;border-radius:6px;background:var(--m50);display:flex;align-items:center;justify-content:center;color:var(--m400);font-size:12px;margin-bottom:6px">hikaye silinmiş</div>Bu tencere kaç litre?</div>
+        <div class="balon biz" style="background:transparent;border:none;padding:0">
+          <div class="ekBaslik" style="color:var(--m400);justify-content:flex-end">🛍️ Ürün kartı · otomasyon</div>
+          <div style="display:flex;gap:8px">
+            <div class="buyukKart"><div class="g"></div><div class="ic"><b style="color:var(--m900)">Sofram Soft 12 Parça</b><div class="ikincil">3.490 TL · Ücretsiz kargo</div></div><div class="btn">Siteden Al</div></div>
+            <div class="buyukKart" style="width:80px;opacity:.6"><div class="g"></div><div class="ic"><b style="color:var(--m900);font-size:12px">+2</b></div></div>
+          </div>
+        </div>
+        <div class="balon"><div class="ad" style="font-size:13px">Sevgi Ticaret 34</div>İndüksiyona uygun mu?</div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 4. KAYNAK SÜZGECİ ============ -->
+<section id="b4">
+  <h2>4 · Kaynak süzgeci: hikaye yanıtı / gönderi paylaşımı / normal</h2>
+  <p class="aciklama">Veri zaten var; soru yalnız nerede ve nasıl gösterileceği.</p>
+  <div class="varyantlar">
+    <div class="varyant" data-b="4" data-v="A">
+      <label class="sec"><input type="radio" name="b4" value="A"> Seçenek A</label>
+      <h3>A · Çip süzgeci + satır rozeti</h3>
+      <p class="not">Mevcut süzgeç çubuğuna üç çip; satırda kaynak ikonu. Tek tıkla süzülür, ne süzüldüğü hep görünür.</p>
+      <div class="ekran">
+        <div class="cipler"><span class="cip aktif">Cevapsız</span><span class="cip">Okunmamış</span><span class="cip">Bana atanan</span><span style="width:1px;height:18px;background:var(--m100)"></span><span class="cip aktif">📖 Hikaye</span><span class="cip">🔁 Paylaşım</span><span class="cip">💬 Normal</span></div>
+        <div class="liste">
+          <div class="satir"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Zeynep Aydın <span class="kaynakRozet">📖 hikaye</span></div><div class="metin" style="font-size:13px">Bu tencere kaç litre?</div></div><div class="zaman">9 dk</div></div>
+          <div class="satir"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Hasan Demir <span class="kaynakRozet">📖 hikaye</span></div><div class="metin" style="font-size:13px">😍😍</div></div><div class="zaman">2 sa</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="varyant" data-b="4" data-v="B">
+      <label class="sec"><input type="radio" name="b4" value="B"> Seçenek B</label>
+      <h3>B · Açılır kutu + gruplu liste</h3>
+      <p class="not">"Kaynak: Tümü ▾" açılır kutusu; liste kaynağa göre başlıklarla gruplanır. Çubuk sade kalır, ama gruplama uzun listede kaydırmayı artırır.</p>
+      <div class="ekran">
+        <div class="cipler"><span class="cip aktif">Cevapsız</span><span class="cip">Okunmamış</span><span style="flex:1"></span><select class="acilir"><option>Kaynak: Tümü</option><option>Hikaye yanıtı</option><option>Gönderi paylaşımı</option><option>Normal</option></select></div>
+        <div class="liste">
+          <div style="padding:6px 12px;font-size:11px;font-weight:700;color:var(--m400);background:var(--m50)">📖 HİKAYE YANITLARI (2)</div>
+          <div class="satir"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Zeynep Aydın</div><div class="metin" style="font-size:13px">Bu tencere kaç litre?</div></div><div class="zaman">9 dk</div></div>
+          <div style="padding:6px 12px;font-size:11px;font-weight:700;color:var(--m400);background:var(--m50)">🔁 GÖNDERİ PAYLAŞIMLARI (1)</div>
+          <div class="satir"><div class="gorsel kucuk" style="border-radius:50%"></div><div style="flex:1"><div class="ad">Elif Şahin</div><div class="metin" style="font-size:13px">Bunun fiyatı?</div></div><div class="zaman">1 sa</div></div>
+          <div style="padding:6px 12px;font-size:11px;font-weight:700;color:var(--m400);background:var(--m50)">💬 NORMAL (9)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 5. ELLE ÜRÜN KARTI ============ -->
+<section id="b5">
+  <h2>5 · Temsilci elle ürün kartı gönderir</h2>
+  <p class="aciklama">Otomasyonun attığı kartın aynısını temsilci de DM'den ya da yoruma atabilmeli.</p>
+  <div class="varyantlar">
+    <div class="varyant" data-b="5" data-v="A">
+      <label class="sec"><input type="radio" name="b5" value="A"> Seçenek A</label>
+      <h3>A · Yazma kutusunda 🛍️ düğmesi → açılır ürün seçici</h3>
+      <p class="not">Emoji/ek düğmelerinin yanında. Tıklayınca mevcut aranabilir ürün seçici açılır, seçilenler kart olarak gider; ek metin varsa ikinci mesaj olur.</p>
+      <div class="ekran">
+        <div class="sohbet" style="min-height:120px"><div class="balon"><div class="ad" style="font-size:13px">Sevgi Ticaret 34</div>Hangi setleri önerirsiniz?</div></div>
+        <div style="margin:0 10px;border:1px solid var(--m100);border-radius:8px;background:#fff;padding:8px">
+          <input placeholder="Ürün / set ara… (SKU, ad)" style="width:100%;border:1px solid var(--m100);border-radius:6px;padding:6px 8px;font-size:13px">
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <span class="etiket" style="background:var(--k50);border-color:var(--k400)">✓ Sofram Soft 12 Parça · 3.490 TL</span>
+            <span class="etiket">Sofram Nova 8 Parça · 2.190 TL</span>
+            <span class="etiket">Lava Trendy 24 cm · 890 TL</span>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px"><button class="dugme kucuk">Vazgeç</button><button class="dugme birincil kucuk">Kartı gönder (1)</button></div>
+        </div>
+        <div class="yazKutu"><div class="arac">📎</div><div class="arac" style="border-color:var(--k400);background:var(--k50)">🛍️</div><div class="arac">📋</div><input placeholder="Mesaj yaz…"><button class="dugme birincil">Gönder</button></div>
+      </div>
+    </div>
+    <div class="varyant" data-b="5" data-v="B">
+      <label class="sec"><input type="radio" name="b5" value="B"> Seçenek B</label>
+      <h3>B · Sağda kalıcı "Hızlı ürünler" paneli</h3>
+      <p class="not">Sohbetin sağında her zaman açık dar panel: son gönderilen 5 ürün + arama. Tek tıkla kart gider. Ekranı daraltır, ama arama adımı yoktur.</p>
+      <div class="ekran">
+        <div style="display:grid;grid-template-columns:1fr 200px">
+          <div>
+            <div class="sohbet" style="min-height:160px"><div class="balon"><div class="ad" style="font-size:13px">Sevgi Ticaret 34</div>Hangi setleri önerirsiniz?</div></div>
+            <div class="yazKutu"><div class="arac">📎</div><div class="arac">📋</div><input placeholder="Mesaj yaz…"><button class="dugme birincil">Gönder</button></div>
+          </div>
+          <div style="border-left:1px solid var(--m100);padding:10px;background:#fff">
+            <div style="font-weight:700;color:var(--m900);font-size:12px;margin-bottom:6px">🛍️ HIZLI ÜRÜNLER</div>
+            <input placeholder="Ara…" style="width:100%;border:1px solid var(--m100);border-radius:6px;padding:5px 8px;font-size:12px;margin-bottom:8px">
+            <div class="miniKart" style="padding:6px;margin-bottom:6px"><div class="g" style="width:36px;height:36px"></div><div style="font-size:12px"><b>Sofram Soft 12</b><small>3.490 TL</small></div></div>
+            <div class="miniKart" style="padding:6px;margin-bottom:6px"><div class="g" style="width:36px;height:36px"></div><div style="font-size:12px"><b>Thor Tava 28</b><small>1.290 TL</small></div></div>
+            <div class="miniKart" style="padding:6px"><div class="g" style="width:36px;height:36px"></div><div style="font-size:12px"><b>Lava Trendy 24</b><small>890 TL</small></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6. OTOMASYON PANELİ SORU YANITI ============ -->
+<section id="b6">
+  <h2>6 · Otomasyon paneli: "soru yanıtı" metni</h2>
+  <p class="aciklama">Gönderi bazlı otomasyon panelinde fiyat kartının yanına, fiyat dışı sorulara gidecek teşekkür metni. Yayında kapalı başlar.</p>
+  <div class="varyantlar">
+    <div class="varyant" data-b="6" data-v="A">
+      <label class="sec"><input type="radio" name="b6" value="A"> Seçenek A</label>
+      <h3>A · Aynı panelde ikinci blok</h3>
+      <p class="not">Ürün kartı ayarlarının altında "Fiyat dışı sorulara" başlıklı ikinci blok, kendi aç/kapat anahtarıyla.</p>
+      <div class="ekran" style="padding:12px">
+        <div style="font-weight:700;color:var(--m900)">💰 Fiyat soranlara</div>
+        <div class="ikincil" style="margin-bottom:8px">Ürün kartı · 3 ürün · Ücretsiz kargo notu</div>
+        <div style="border-top:1px dashed var(--m100);margin:10px 0"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700;color:var(--m900)">❓ Fiyat dışı sorulara</div><span class="etiket" style="background:var(--k50);border-color:var(--k400)">Açık</span></div>
+        <textarea style="width:100%;margin-top:8px;border:1px solid var(--m100);border-radius:6px;padding:8px;font-size:13px;height:56px">Merhaba, sorunuzu aldık 🙏 Temsilcimiz en kısa sürede size dönecek.</textarea>
+        <div class="ikincil">Yorum "Sorular" sekmesinde temsilci cevaplayana kadar bekler.</div>
+      </div>
+    </div>
+    <div class="varyant" data-b="6" data-v="B">
+      <label class="sec"><input type="radio" name="b6" value="B"> Seçenek B</label>
+      <h3>B · Genel tek metin (Ayarlar'da)</h3>
+      <p class="not">Tüm gönderiler için tek teşekkür metni Ayarlar → Sosyal'de; gönderi panelinde yalnız "bu gönderide kapalı" kutusu. Daha az iş, daha az esneklik.</p>
+      <div class="ekran" style="padding:12px">
+        <div style="font-weight:700;color:var(--m900)">Ayarlar › Sosyal › Fiyat dışı sorulara otomatik yanıt</div>
+        <textarea style="width:100%;margin-top:8px;border:1px solid var(--m100);border-radius:6px;padding:8px;font-size:13px;height:56px">Merhaba, sorunuzu aldık 🙏 Temsilcimiz en kısa sürede size dönecek.</textarea>
+        <div style="border-top:1px dashed var(--m100);margin:10px 0"></div>
+        <div class="ikincil">Gönderi panelinde:</div>
+        <label style="display:flex;gap:6px;align-items:center;margin-top:6px"><input type="checkbox"> Bu gönderide fiyat dışı sorulara yanıt gönderme</label>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+<div class="ozet">
+  <b style="color:var(--m900)">Seçimleriniz:</b>
+  <code id="ozet">henüz seçim yok</code>
+</div>
+<script>
+  const ozet=document.getElementById('ozet');
+  document.querySelectorAll('input[type=radio]').forEach(r=>r.addEventListener('change',()=>{
+    document.querySelectorAll('.varyant').forEach(v=>v.classList.toggle('secili',v.querySelector('input').checked));
+    const s=[1,2,3,4,5,6].map(b=>{const c=document.querySelector(`input[name=b${b}]:checked`);return b+(c?c.value:'?')}).join(' ');
+    ozet.textContent=s;
+  }));
+</script>
+</body>
+</html>
