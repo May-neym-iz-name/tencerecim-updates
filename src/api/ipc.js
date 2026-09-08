@@ -232,6 +232,8 @@ export const metaApi = {
   yorumCevapla: (veri) => invoke('meta:yorumCevapla', veri),
   mesajCevapla: (veri) => invoke('meta:mesajCevapla', veri),
   yorumdanMesaj: (veri) => invoke('meta:yorumdanMesaj', veri),
+  // Temsilci elle ürün kartı gönderir: { hedef:{tur:'dm'|'yorum', id}, urunler:[...], kullanici }
+  kartGonder: (veri) => invoke('meta:kartGonder', veri),
   // Görseller artık IPC'den DEĞİL `sosyal-gorsel://` protokolüyle gelir (bkz.
   // components/SosyalGorsel.jsx) — base64 taşımak listeyi donduruyordu.
   gorselOnbellek: () => invoke('meta:gorselOnbellek'),

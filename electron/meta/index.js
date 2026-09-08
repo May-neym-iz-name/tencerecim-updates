@@ -477,6 +477,70 @@ async function _konusmaCoz(platform, aliciId) {
   }
 }
 
+// Temsilci ELLE ürün kartı gönderir (08.09.2026, seçim 5B "Hızlı ürünler" paneli).
+//   hedef.tur='dm'    → DM'deki mesaj id'si; alıcı satırın gonderen_id'si; RESPONSE →
+//                        kod 10'da HUMAN_AGENT → ikisi de düşerse _pencereHatasi (mesajCevapla yolu).
+//   hedef.tur='yorum' → yorum id'si; recipient.comment_id (yorum başına TEK hak, yorumdanMesaj yolu).
+// Kart yükü YALNIZ kartMesajiOlustur ile kurulur (otomasyonla aynı şekil; test: kart-mesaj.test.js).
+// Fiyat/görsel siteden (ikas), okunamazsa yerel fiyat. WhatsApp hatları: aktif mağazaların
+// telefonları (gönderi bağlamı yok, otomasyondaki gönderi-özel hatlar burada geçersiz).
+async function kartGonder({ hedef, urunler, kullanici }) {
+  if (!hedef || !hedef.id || !Array.isArray(urunler) || !urunler.length) {
+    throw new Error('Hedef ve en az bir ürün gerekli.')
+  }
+  const row = getDb().prepare('SELECT * FROM sosyal_mesajlar WHERE id = ?').get(hedef.id)
+  if (!row) throw new Error('Mesaj bulunamadı.')
+  const sayfaId = client._sayfaId()
+  if (!sayfaId) throw new Error('Sayfa bağlı değil (Ayarlar > Sosyal Medya).')
+
+  let ikasVeri = new Map()
+  try { ikasVeri = await require('../ikas')._urunKartVerisi(urunler.map(u => u.ikas_urun_id)) } catch { /* yerel veriyle devam */ }
+  const hatlar = getDb().prepare("SELECT ad, telefon FROM lokasyonlar WHERE aktif = 1 AND COALESCE(telefon,'') != '' ORDER BY id")
+    .all().map(l => ({ baslik: l.ad, numara: l.telefon, lokasyon_ad: l.ad }))
+  const { kartMesajiOlustur } = require('./kart-mesaj')
+  const { yuk, kartSayisi } = kartMesajiOlustur({
+    urunler: urunler.map(u => {
+      const i = ikasVeri.get(u.ikas_urun_id)
+      return { ...u, gorsel: (i && i.gorsel) || null, fiyat: (i && i.fiyat != null) ? i.fiyat : u.fiyat }
+    }),
+    numaralar: hatlar,
+    kargoNotu: '',
+  })
+  if (!yuk) throw new Error('Kart kurulamadı (ürün adı boş).')
+  const mesaj = { message: JSON.stringify(yuk) }
+
+  let yanit
+  if (hedef.tur === 'yorum') {
+    if (row.tur !== 'yorum') throw new Error('Hedef bir yorum değil.')
+    try {
+      yanit = await client.post(`${sayfaId}/messages`, { recipient: JSON.stringify({ comment_id: row.harici_id }), ...mesaj })
+    } catch (e) {
+      throw new Error('Kart gönderilemedi. Sık sebepler: bu yoruma zaten bir kez mesaj gönderilmiş ' +
+        '(yorum başına tek hak), yorum 7 günden eski. Meta\'nın hatası: ' + e.message)
+    }
+    getDb().prepare("UPDATE sosyal_mesajlar SET ozel_mesaj_tarihi = datetime('now','localtime'), cevaplayan_kullanici = ?, ozel_mesaj_alici = COALESCE(ozel_mesaj_alici, ?) WHERE id = ?")
+      .run(kullanici || null, (yanit && yanit.recipient_id) || null, hedef.id)
+  } else {
+    if (!row.gonderen_id) throw new Error('Alıcı kimliği yok (DM gönderilemez).')
+    const govde = { recipient: JSON.stringify({ id: row.gonderen_id }), ...mesaj }
+    try {
+      yanit = await client.post(`${sayfaId}/messages`, { ...govde, messaging_type: 'RESPONSE' })
+    } catch (e) {
+      if (!/kod 10\b/.test(e.message)) throw e
+      try {
+        yanit = await client.post(`${sayfaId}/messages`, { ...govde, messaging_type: 'MESSAGE_TAG', tag: 'HUMAN_AGENT' })
+      } catch (e2) { throw _pencereHatasi(e, e2, row) }
+    }
+    getDb().prepare("UPDATE sosyal_mesajlar SET durum = 'cevaplandi' WHERE konu_id = ? AND yon = 'gelen' AND durum = 'yeni'").run(row.konu_id)
+  }
+
+  // Yerel kayıt: DM'de konuşma bilinir; yorumdan gönderimde recipient_id ile çözülür.
+  const aliciId = row.tur === 'dm' ? row.gonderen_id : ((yanit && yanit.recipient_id) || null)
+  const konuId = hedef.tur === 'dm' ? row.konu_id : await _konusmaCoz(row.platform, aliciId)
+  _kartEkoYaz({ platform: row.platform, konu_id: konuId, gonderen_id: aliciId, kullanici, yuk })
+  return { ok: true, kartSayisi, konusmaId: konuId }
+}
+
 // DM cevabı: {page_id}/messages ile alıcıya (gonderen_id) mesaj gönderir.
 async function mesajCevapla({ id, metin, kullanici }) {
   const row = getDb().prepare('SELECT * FROM sosyal_mesajlar WHERE id = ?').get(id)
@@ -678,6 +742,7 @@ module.exports = {
   'meta:yorumCevapla': (arg) => yorumCevapla(arg),
   'meta:mesajCevapla': (arg) => mesajCevapla(arg),
   'meta:yorumdanMesaj': (arg) => yorumdanMesaj(arg),
+  'meta:kartGonder': (arg) => kartGonder(arg),
   // Otomasyon (meta/otomasyon.js) kart gönderimi sonrası yerel kaydı bununla yazar.
   _kartEkoYaz,
   _konusmaCoz,

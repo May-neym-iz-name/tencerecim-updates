@@ -135,3 +135,15 @@ describe('kartMesajiOlustur', () => {
     expect('text' in yuk).toBe(false)
   })
 })
+
+// Elle gönderim (meta:kartGonder, 08.09.2026) TEK kurucu kuralı: kart yükü yalnız
+// kartMesajiOlustur ile üretilir, otomasyonla birebir aynı şekil. Bu test kuralı belgeler.
+describe('elle gönderim yükü', () => {
+  it('temsilcinin gönderdiği kart otomasyonun kartıyla aynı kurucu üzerinden geçer', () => {
+    const u = [{ ad: 'A', fiyat: 10, web_link: 'https://tencerecim.store/a', gorsel: 'g' }]
+    const oto = kartMesajiOlustur({ urunler: u, numaralar: [], kargoNotu: '' }).yuk
+    const elle = kartMesajiOlustur({ urunler: u, numaralar: [], kargoNotu: '' }).yuk
+    expect(elle).toEqual(oto)
+    expect(oto.attachment.payload.elements[0].default_action.url).toBe('https://tencerecim.store/a')
+  })
+})
