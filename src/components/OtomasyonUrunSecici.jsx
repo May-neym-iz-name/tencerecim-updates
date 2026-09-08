@@ -26,18 +26,24 @@ export default function OtomasyonUrunSecici({ onSec, kapat }) {
     return () => clearTimeout(t)
   }, [arama, sekme])
 
+  // Setler de SUNUCUDA aranır — ürün sekmesiyle aynı davranış.
+  // Eskiden tüm setler çekilip istemcide YALNIZ `ad` üzerinde, BİTİŞİK metin olarak
+  // süzülüyordu; bu yüzden "TNC.SET.00006" (SKU) hiç bulunamıyor, "sofram soft 20" gibi
+  // kelime araması da tutmuyordu (ad "Sofram Soft *Serisi* 20 …"). setler:listele zaten
+  // ad + içerik + sku + barkod üzerinde kelime bazlı ve Türkçe duyarsız arıyor.
   useEffect(() => {
     if (sekme !== 'set') return
     setYukleniyor(true)
-    setApi.listele()
-      .then(r => setListe(r || []))
-      .catch(e => toast.error(e.message))
-      .finally(() => setYukleniyor(false))
-  }, [sekme])
+    const t = setTimeout(() => {
+      setApi.listele({ arama: arama.trim() })
+        .then(r => setListe(r || []))
+        .catch(e => toast.error(e.message))
+        .finally(() => setYukleniyor(false))
+    }, 250)
+    return () => clearTimeout(t)
+  }, [arama, sekme])
 
-  const gorunen = sekme === 'set' && arama.trim()
-    ? liste.filter(s => (s.ad || '').toLocaleLowerCase('tr').includes(arama.trim().toLocaleLowerCase('tr')))
-    : liste
+  const gorunen = liste
 
   return (
     <div>
