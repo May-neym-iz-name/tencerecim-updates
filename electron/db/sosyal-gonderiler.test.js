@@ -349,3 +349,20 @@ describe('ürün kartı kaydı (08.09.2026)', () => {
     expect(db.prepare("SELECT ham_ek FROM sosyal_mesajlar WHERE harici_id='d1'").get().ham_ek).toBe('{"a":1}')
   })
 })
+
+describe('sonUrunler (Hızlı ürünler paneli, 08.09.2026)', () => {
+  test('son kartlardaki ürünleri tekil ve yeni-önce döner, 5 ile sınırlı', () => {
+    for (let i = 1; i <= 7; i++) {
+      _upsertMesaj(mesaj({ tur: 'dm', yon: 'giden', harici_id: 'k' + i, konu_id: 'C', ek_tur: 'urun_karti',
+        mesaj_tarihi: `2026-09-0${i}T00:00:00Z`,
+        ham_ek: JSON.stringify({ elements: [{ title: 'U' + (i % 6), url: 'x' }] }) }))
+    }
+    const r = sosyal['sosyal:sonUrunler']()
+    expect(r).toHaveLength(5)
+    expect(r[0].title).toBe('U1')   // i=7 → U1 en yeni
+    expect(new Set(r.map(x => x.title)).size).toBe(5)
+  })
+  test('kart yoksa boş dizi', () => {
+    expect(sosyal['sosyal:sonUrunler']()).toEqual([])
+  })
+})

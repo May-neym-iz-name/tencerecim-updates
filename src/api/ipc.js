@@ -278,6 +278,7 @@ export const sosyalApi = {
   sayac: () => invoke('sosyal:sayac'),
   sayaclar: (params) => invoke('sosyal:sayaclar', params),
   sorular: (params) => invoke('sosyal:sorular', params),
+  sonUrunler: () => invoke('sosyal:sonUrunler'),
   gonderiler: (params) => invoke('sosyal:gonderiler', params),
   konusmalar: (params) => invoke('sosyal:konusmalar', params),
   niyetToplu: () => invoke('sosyal:niyetToplu'),

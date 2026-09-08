@@ -345,6 +345,25 @@ function sayaclar({ kullanici } = {}) {
   }
 }
 
+// "Hızlı ürünler" paneli (08.09.2026, seçim 5B): son gönderilen kartlardaki ürünler, tekil,
+// yeni önce, 5 adet. Kart yükü ürün id'si taşımaz → panel bunlarla arama kutusunu doldurur.
+function sonUrunler() {
+  const satirlar = getDb().prepare(
+    "SELECT ham_ek FROM sosyal_mesajlar WHERE ek_tur='urun_karti' AND ham_ek IS NOT NULL ORDER BY COALESCE(mesaj_tarihi, cekilme_tarihi) DESC LIMIT 40"
+  ).all()
+  const gorulen = new Set(), sonuc = []
+  for (const s of satirlar) {
+    let el = []
+    try { el = JSON.parse(s.ham_ek).elements || [] } catch { /* bozuk kayıt atlanır */ }
+    for (const e of el) {
+      if (!e || !e.title || gorulen.has(e.title)) continue
+      gorulen.add(e.title); sonuc.push(e)
+      if (sonuc.length === 5) return sonuc
+    }
+  }
+  return sonuc
+}
+
 // "Sorular" sekmesi (08.09.2026, seçim 1A): fiyat DIŞI gerçek sorular, temsilci cevaplayana
 // kadar listede kalır. Gönderi bilgisi sosyal_gonderiler'den (tek kopya).
 // tesekkur: 'gitti' | 'gitmedi' | undefined — otomatik teşekkür DM'i (ozel_mesaj_tarihi) durumu.
@@ -485,6 +504,7 @@ module.exports = {
   'sosyal:sayac': () => sayac(),
   'sosyal:sayaclar': (arg) => sayaclar(arg || {}),
   'sosyal:sorular': (arg) => sorular(arg || {}),
+  'sosyal:sonUrunler': () => sonUrunler(),
   'sosyal:gonderiler': (arg) => gonderiler(arg),
   'sosyal:konusmalar': (arg) => konusmalar(arg),
   // Geçmiş yorumları bir kez sınıflar (Ayarlar → Sosyal → Geçmişi sınıfla).
