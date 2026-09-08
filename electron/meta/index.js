@@ -188,6 +188,11 @@ function mesajEki(m) {
       ek_gorsel: hikaye, ek_link: hikaye,
     }
   }
+  // BİZİM ürün kartımızın Meta'dan çekilen kopyası: generic template eki. Şekli 08.09.2026'da
+  // ÖLÇÜLMEDİ (varsayım: attachments.data[].mime_type 'template' ya da template alanı) —
+  // tutmazsa aşağıdaki "bilinmeyen" yakalar ve ham_ek'ten okunup düzeltilir.
+  const sablon = m.attachments?.data?.find(a => a && (a.mime_type === 'template' || a.template || a.type === 'template'))
+  if (sablon) return { ek_tur: 'sablon', ek_baslik: 'Ürün kartı', ek_gorsel: null, ek_link: null }
   const p = m.shares?.data?.[0]
   if (p && (p.link || p.name || p.description)) {
     return {
@@ -255,13 +260,21 @@ async function cekMesajlar(platform) {
     }
     for (const m of mesajlar.data || []) {
       const bizden = bizIdler.has(m.from?.id)
+      const ek = mesajEki(m)
+      // Tanınmayan ek + boş metin = eskiden BOŞ BALON. Ham JSON saklanır (bir hafta sonra
+      // ölçülüp yeni ek_tur değerleri eklenir), balonda "İçerik görüntülenemiyor" görünür.
+      const hamVar = !ek && !m.message && (m.attachments || m.shares || m.story)
       _upsertMesaj({
         platform: igMi ? 'instagram' : 'facebook', tur: 'dm',
         harici_id: m.id, konu_id: konusmaId,
         gonderen_id: bizden ? musteri.id : (m.from?.id || musteri.id),
         gonderen_ad: bizden ? (musteri.name || musteri.username || 'Müşteri') : (m.from?.name || m.from?.username || musteri.name || 'Müşteri'),
         metin: m.message, yon: bizden ? 'giden' : 'gelen', mesaj_tarihi: m.created_time,
-        ...(mesajEki(m) || {}),
+        ...(ek || {}),
+        ...(hamVar ? {
+          ek_tur: 'bilinmeyen', ek_baslik: 'İçerik görüntülenemiyor',
+          ham_ek: JSON.stringify({ attachments: m.attachments, shares: m.shares, story: m.story }),
+        } : {}),
       })
       n++
     }
@@ -430,6 +443,38 @@ function _pencereHatasi(ilkHata, etiketHatasi, row) {
   hata.pencereDisi = true      // UI bu bayrakla "Instagram'da Aç" düğmesi gösterir
   hata.kullaniciAdi = row.platform === 'instagram' ? row.gonderen_ad || null : null
   return hata
+}
+
+// Gönderilen ÜRÜN KARTINI gelen kutusuna yazar (08.09.2026) — yoksa sohbette boş balon.
+// konu_id çözülemezse (yorumdan gönderim, konuşma sorgusu düştü) null ile YİNE yazılır:
+// kayıt kaybolmasın; çekim turu aynı konuşmadaki şablon kopyasını ±2 dk kuralıyla benimser
+// (bkz. sosyal-mesajlar._upsertMesaj). `yuk` = kartMesajiOlustur().yuk.
+function _kartEkoYaz({ platform, konu_id, gonderen_id, kullanici, yuk }) {
+  const k = require('./kart-kayit').kartKaydi(yuk, { kim: kullanici || 'otomasyon' })
+  if (!k) return null
+  return _upsertMesaj({
+    platform, tur: 'dm',
+    harici_id: `giden_kart_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    konu_id: konu_id || null, gonderen_id: gonderen_id || null,
+    gonderen_ad: `${kullanici || 'Otomasyon'} (kart)`,
+    yon: 'giden', mesaj_tarihi: new Date().toISOString(), ...k,
+  })
+}
+
+// Yoruma özel yanıt sonrası konuşma kimliğini recipient_id ile çözer (yorumdanMesaj yolu;
+// filtreli tek konuşma sorgusu Advanced Access istemez, ~1.6 sn). Hata → null (mesaj GİTTİ).
+async function _konusmaCoz(platform, aliciId) {
+  if (!aliciId) return null
+  try {
+    const sayfaId = client._sayfaId()
+    const k = await client.get(`${sayfaId}/conversations`, {
+      fields: 'id', user_id: aliciId, ...(platform === 'instagram' ? { platform: 'instagram' } : {}),
+    }, { timeout: 30000, deneme: 1 })
+    return k?.data?.[0]?.id || null
+  } catch (e) {
+    console.warn('[meta] kart kaydı için konuşma çözülemedi: ' + e.message)
+    return null
+  }
 }
 
 // DM cevabı: {page_id}/messages ile alıcıya (gonderen_id) mesaj gönderir.
@@ -633,6 +678,9 @@ module.exports = {
   'meta:yorumCevapla': (arg) => yorumCevapla(arg),
   'meta:mesajCevapla': (arg) => mesajCevapla(arg),
   'meta:yorumdanMesaj': (arg) => yorumdanMesaj(arg),
+  // Otomasyon (meta/otomasyon.js) kart gönderimi sonrası yerel kaydı bununla yazar.
+  _kartEkoYaz,
+  _konusmaCoz,
 
   // Görseller artık IPC ile DEĞİL, `sosyal-gorsel://` protokolüyle servis edilir
   // (bkz. main.js). Buradaki çözücü yalnız protokol işleyicisinin çağırdığı iç yoldur:

@@ -322,3 +322,30 @@ describe('konusmalar kaynak (08.09.2026)', () => {
     expect(sosyal['sosyal:konusmalar']({ kaynak: 'hikaye' }).map(x => x.konu_id)).toEqual(['C1'])
   })
 })
+
+describe('ürün kartı kaydı (08.09.2026)', () => {
+  test('giden kart satırı ek_tur=urun_karti ve ham_ek ile yazılır', () => {
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'giden', harici_id: 'giden_kart_1', konu_id: 'C1', metin: 'Fiyat: 10 TL',
+      ek_tur: 'urun_karti', ek_baslik: 'A', ek_gorsel: 'g', ek_link: 'l', ham_ek: '{"elements":[]}' }))
+    const r = db.prepare("SELECT ek_tur, ham_ek FROM sosyal_mesajlar WHERE harici_id='giden_kart_1'").get()
+    expect(r.ek_tur).toBe('urun_karti'); expect(r.ham_ek).toBe('{"elements":[]}')
+  })
+  test('Meta\'dan çekilen boş metinli şablon kopyası, ±2 dk içindeki yerel kart ekosunu benimser', () => {
+    const t = new Date().toISOString()
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'giden', harici_id: 'giden_kart_1', konu_id: 'C1', metin: 'Fiyat: 10 TL', ek_tur: 'urun_karti', mesaj_tarihi: t }))
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'giden', harici_id: 'm_gercek', konu_id: 'C1', metin: '', ek_tur: 'sablon', mesaj_tarihi: t }))
+    const satirlar = db.prepare("SELECT harici_id, ek_tur FROM sosyal_mesajlar WHERE konu_id='C1'").all()
+    expect(satirlar).toEqual([{ harici_id: 'm_gercek', ek_tur: 'urun_karti' }])
+  })
+  test('şablon kopyası 2 dk dışındaysa AYRI satır kalır (yanlış benimseme yok)', () => {
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'giden', harici_id: 'giden_kart_1', konu_id: 'C1', metin: 'x', ek_tur: 'urun_karti', mesaj_tarihi: '2026-09-08T10:00:00.000Z' }))
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'giden', harici_id: 'm_gercek', konu_id: 'C1', metin: '', ek_tur: 'sablon', mesaj_tarihi: '2026-09-08T10:10:00.000Z' }))
+    expect(db.prepare("SELECT COUNT(*) n FROM sosyal_mesajlar WHERE konu_id='C1'").get().n).toBe(2)
+  })
+  test('mevcut satıra ham_ek sonradan doldurulur, doluysa ezilmez', () => {
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', harici_id: 'd1', konu_id: 'C1', metin: '' }))
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', harici_id: 'd1', konu_id: 'C1', metin: '', ek_tur: 'bilinmeyen', ham_ek: '{"a":1}' }))
+    _upsertMesaj(mesaj({ tur: 'dm', yon: 'gelen', harici_id: 'd1', konu_id: 'C1', metin: '', ek_tur: 'bilinmeyen', ham_ek: '{"a":2}' }))
+    expect(db.prepare("SELECT ham_ek FROM sosyal_mesajlar WHERE harici_id='d1'").get().ham_ek).toBe('{"a":1}')
+  })
+})

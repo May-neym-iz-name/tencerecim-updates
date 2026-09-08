@@ -95,11 +95,13 @@ function _upsertMesaj(m) {
         ek_tur      = COALESCE(ek_tur, @ek_tur),
         ek_baslik   = COALESCE(ek_baslik, @ek_baslik),
         ek_gorsel   = COALESCE(ek_gorsel, @ek_gorsel),
-        ek_link     = COALESCE(ek_link, @ek_link)
+        ek_link     = COALESCE(ek_link, @ek_link),
+        ham_ek      = COALESCE(ham_ek, @ham_ek)
         WHERE id = @id`).run({
         id: mevcut.id,
         ek_tur: m.ek_tur || null, ek_baslik: m.ek_baslik || null,
         ek_gorsel: m.ek_gorsel || null, ek_link: m.ek_link || null,
+        ham_ek: m.ham_ek || null,
       })
     }
     return mevcut.id
@@ -108,12 +110,18 @@ function _upsertMesaj(m) {
   // olarak yazılır; sonra Meta'dan GERÇEK kimliğiyle geri çekilir (Send API kimliği çekim
   // kimliğiyle eşleşmez). Yeni satır açmak yerine aynı konuşmadaki aynı metinli ekoyu
   // benimseriz: eko gerçek kimliği alır, "kim yanıtladı" bilgisi korunur, kopya oluşmaz.
+  // ÜRÜN KARTI (08.09.2026): Meta'dan çekilen kopyada `message` BOŞ gelir, metin eşleşmesi
+  // tutmaz. Kart kopyası (ek_tur='sablon') aynı konuşmadaki ±2 dk içindeki yerel kart
+  // ekosunu (ek_tur='urun_karti') benimser; eko ek_tur'u KORUR (kart balonu oradan çizilir).
   if (m.tur === 'dm' && m.yon === 'giden' && m.konu_id) {
     const eko = db.prepare(`
       SELECT id FROM sosyal_mesajlar
-      WHERE konu_id = ? AND tur = 'dm' AND yon = 'giden' AND metin = ?
+      WHERE konu_id = ? AND tur = 'dm' AND yon = 'giden'
         AND harici_id LIKE 'giden\\_%' ESCAPE '\\'
-      ORDER BY id ASC LIMIT 1`).get(m.konu_id, m.metin || '')
+        AND ( metin = ?
+              OR (ek_tur = 'urun_karti' AND ? = 'sablon'
+                  AND ABS(strftime('%s', mesaj_tarihi) - strftime('%s', ?)) <= 120) )
+      ORDER BY id ASC LIMIT 1`).get(m.konu_id, m.metin || '', m.ek_tur || '', m.mesaj_tarihi || '')
     if (eko) {
       db.prepare('UPDATE sosyal_mesajlar SET harici_id = ?, mesaj_tarihi = COALESCE(?, mesaj_tarihi) WHERE id = ?')
         .run(m.harici_id, m.mesaj_tarihi || null, eko.id)
@@ -124,8 +132,8 @@ function _upsertMesaj(m) {
     INSERT INTO sosyal_mesajlar
       -- konu_baslik/konu_gorsel/konu_link BİLEREK YOK: gönderi meta verisi
       -- sosyal_gonderiler tablosunda tek kopya durur (_gonderiKaydet).
-      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, ek_tur, ek_baslik, ek_gorsel, ek_link, niyet)
-    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link, @niyet)
+      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, ek_tur, ek_baslik, ek_gorsel, ek_link, niyet, ham_ek)
+    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link, @niyet, @ham_ek)
   `).run({
     platform: m.platform,
     tur: m.tur,
@@ -144,6 +152,7 @@ function _upsertMesaj(m) {
     ek_link: m.ek_link || null,
     // Niyet yalnız GELEN YORUMA yazılır (DM ve kendi yanıtlarımız sınıflanmaz) — bkz. niyet.js.
     niyet: (m.tur === 'yorum' && (m.yon || 'gelen') === 'gelen') ? niyetBul(m.metin) : null,
+    ham_ek: m.ham_ek || null,
   })
   return bilgi.lastInsertRowid
 }

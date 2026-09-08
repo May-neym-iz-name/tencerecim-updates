@@ -196,9 +196,10 @@ async function otomasyonCalistir() {
       // Ürün varsa KART, yoksa düz metin. Kart reddedilirse düz metne DÜŞ — Meta yorum başına
       // tek hak veriyor, o hakkı boş mesajla harcamayalım. (Gönderim patladıysa hak
       // harcanmamıştır; ikinci deneme aynı yoruma yapılabilir.)
+      let kartYaniti = null   // kart gerçekten gittiyse Meta yanıtı ({ recipient_id, message_id })
       if (icerik.kart) {
         try {
-          await _ozelMesaj(sayfaId, a.harici_id, icerik.kart)
+          kartYaniti = await _ozelMesaj(sayfaId, a.harici_id, icerik.kart)
         } catch (kartHata) {
           if (!icerik.metin) throw kartHata
           await _ozelMesaj(sayfaId, a.harici_id, { text: icerik.metin })
@@ -209,6 +210,17 @@ async function otomasyonCalistir() {
         await _ozelMesaj(sayfaId, a.harici_id, { text: icerik.metin })
       }
       _gonderimZamanlari.push(Date.now())
+      // Gönderilen kartı gelen kutusuna yaz (08.09.2026) — yoksa sohbette boş balon.
+      // Konuşma kimliği recipient_id ile çözülür; çözülemezse null ile yazılır. Hata yutulur:
+      // kart GİTTİ, yalnız yerel kayıt eksik kalır (log'a düşer). `require` içeride: döngü.
+      if (kartYaniti) {
+        try {
+          const meta = require('./index')
+          const aliciId = kartYaniti.recipient_id || null
+          const konuId = await meta._konusmaCoz(a.platform, aliciId)
+          meta._kartEkoYaz({ platform: a.platform, konu_id: konuId, gonderen_id: aliciId, kullanici: null, yuk: icerik.kart })
+        } catch (e) { sonuc.hatalar.push(`Kart kaydı (${a.gonderen_ad}): ${e.message}`) }
+      }
       sonuc.dm++
       // Damgayı DM'den HEMEN sonra yaz: açık yanıt patlarsa bile aynı yoruma ikinci DM gitmesin
       // (Meta zaten yorum başına tek hak veriyor, ikinci deneme hataya düşerdi).
