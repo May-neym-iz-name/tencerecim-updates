@@ -485,7 +485,11 @@ listCustomer(
 Source: https://ikas.dev/docs/api/admin-api/price-lists
 
 - **Price Lists:** read-only via `listPriceList` (id, name, currency, rule lists). Per-variant prices are written through `saveVariantPrices` (section 6) with a `priceListId`.
-- **Discounts / Campaigns / Gift Cards:** **not exposed** as documented create/manage operations in the v1 Admin API. Campaign/coupon data appears on orders as read-only adjustments. Do not assume programmatic create/manage; manage these in the dashboard.
+- **Discounts / Campaigns / Coupons:** Admin API'de VAR — `listCampaign`, `saveCampaign`,
+  `deleteCampaignList`, `listCoupon`, `campaignAddCoupons`, `deleteCouponList`. Eski not
+  ("not exposed") YANLIŞTI (09.09.2026 canlıda doğrulandı). Kullanım ve canlı sapmalar:
+  `docs/ikas/01-OPERASYON-KATALOGU.md` (Kampanya bölümü + kalıcı kurallar) ve
+  `electron/ikas/kampanya.js`. Gift card hâlâ yok.
 
 ---
 

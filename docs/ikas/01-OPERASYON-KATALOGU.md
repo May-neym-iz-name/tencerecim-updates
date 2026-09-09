@@ -209,3 +209,14 @@ Kullanım işaretleri, `electron/` ve `src/` içinde operasyon adının geçtiğ
 3. **`saveProduct` alan siler.** Toplu işte `bulkUpdateProducts` veya alan-özel mutasyonu tercih et.
 4. **Yeni bir uç kullanmadan önce** `sema/inputs/<input-adı>.md` dosyasını aç — alan alan yazılıdır.
 5. Enum'ların Türkçe karşılıkları kodda: `src/pages/OnlineSiparisler.jsx` (satır 24-52).
+6. **Kampanya sapmaları (09.09.2026 canlıda ölçüldü):**
+   - `fixedDiscount.filters[].type` canlıda **`PRODUCT_AND_VARIANT`** döner, `idList` öğeleri
+     **`p:<productId>`** biçimindedir. Belgeli `CampaignFilterTypeEnum` (CATEGORY, PRODUCT,
+     PRODUCT_BRAND, PRODUCT_TAG, VARIANT) bunu içermez. Yazarken de aynı biçim kullanılır
+     (`electron/ikas/kampanya-donustur.js`).
+   - Yüzde indirim: `type: RATIO` + `fixedDiscount.amount = 15` (%15). Ayrı oran alanı yok.
+   - `dateRange.start/end` milisaniye epoch; `start` null olabilir.
+   - Panelde var, API'de YOK: katlı indirim, dönem bazlı kullanım limiti, müşteri grubu listesi
+     (grup id'si yalnız panelden alınır; `saveCampaign` gönderilmeyen alanı sildiği için
+     `kampanya.js` mevcut `applicableCustomerGroupIds`/`applicableCustomerIds`/`currencyCodes`'u
+     kaydetmeden önce okuyup aynen geri yazar).
