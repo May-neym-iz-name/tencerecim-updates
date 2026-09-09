@@ -79,6 +79,7 @@ const KANAL_YETKI = Object.freeze({
   'kampanya:kuponSil': 'kampanya_yonet',
   'kampanya:sozlukler': 'kampanya_yonet',
   'kampanya:dagitimlar': 'kampanya_yonet',
+  'kampanya:urunAdlari': 'kampanya_yonet',
   'meta:kuponGonder': 'sosyal_medya_yonet',
   'sosyal:kuponSablonlari': 'sosyal_medya_yonet',
   'sosyal:kuponHavuz': 'sosyal_medya_yonet',

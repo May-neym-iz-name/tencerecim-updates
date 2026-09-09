@@ -404,4 +404,5 @@ export const kampanyaApi = {
   kuponSil: (idList) => invoke('kampanya:kuponSil', idList),
   sozlukler: () => invoke('kampanya:sozlukler'),
   dagitimlar: (id) => invoke('kampanya:dagitimlar', id),
+  urunAdlari: (idler) => invoke('kampanya:urunAdlari', idler),
 }

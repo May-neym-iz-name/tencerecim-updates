@@ -113,6 +113,18 @@ module.exports = {
   'kampanya:kuponEkle': (kf) => { yetkiKontrol('kampanya_yonet'); return kuponEkle(kf) },
   'kampanya:kuponSil': (idList) => { yetkiKontrol('kampanya_yonet'); return kuponSil(idList) },
   'kampanya:sozlukler': () => { yetkiKontrol('kampanya_yonet'); return sozlukler() },
+  // Süzgeç çiplerinde ham ikas id yerine ad: yerel urunler/setler tablosundan (ikas_urun_id) çözülür.
+  // Yerelde olmayan id (panelden seçilmiş, uygulamaya girilmemiş ürün) kısaltılmış id olarak kalır.
+  'kampanya:urunAdlari': (idler) => {
+    yetkiKontrol('kampanya_yonet')
+    const db = require('../db/database').getDb()
+    const out = {}
+    for (const id of (idler || []).slice(0, 500)) {
+      const r = db.prepare('SELECT ad FROM urunler WHERE ikas_urun_id = ? UNION ALL SELECT ad FROM setler WHERE ikas_urun_id = ? LIMIT 1').get(id, id)
+      if (r) out[id] = r.ad
+    }
+    return out
+  },
   // Kupon dağıtım kaydı (kim, kime, ne zaman) — db/kupon-havuz.js; Kampanyalar sayfası kupon panelinde gösterir.
   'kampanya:dagitimlar': (kampanyaId) => {
     yetkiKontrol('kampanya_yonet')
