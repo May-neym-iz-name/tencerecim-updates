@@ -2,6 +2,7 @@
 // client.js Graph çağrılarını yapar; sosyal-mesajlar.js yerel önbelleğe yazar.
 // Polling main.js'ten çağrılır (ikas sipariş polling deseni; public webhook gerekmez).
 const client = require('./client')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const { getDb } = require('../db/database')
 const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat, _kartEkolariniBirlestir } = require('../db/sosyal-mesajlar')
 const { gorselDosyasi, onbellekDurum } = require('./gorsel-onbellek')
@@ -737,14 +738,14 @@ module.exports = {
   // Polling için (main.js) — private, main.js '_' öneki ile IPC'ye kaydetmez.
   _tumunuCek: tumunuCek,
 
-  'meta:kurulum': () => client.kurulumTamamla(),
+  'meta:kurulum': () => { yetkiKontrol('ayarlar_duzenle'); return client.kurulumTamamla() },
   'meta:durum': () => client.durum(),
   'meta:sonDurum': () => _sonDurumGetir(),
-  'meta:cek': () => tumunuCek(),
-  'meta:yorumCevapla': (arg) => yorumCevapla(arg),
-  'meta:mesajCevapla': (arg) => mesajCevapla(arg),
-  'meta:yorumdanMesaj': (arg) => yorumdanMesaj(arg),
-  'meta:kartGonder': (arg) => kartGonder(arg),
+  'meta:cek': () => { yetkiKontrol('sosyal_medya_yonet'); return tumunuCek() },
+  'meta:yorumCevapla': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return yorumCevapla(arg) },
+  'meta:mesajCevapla': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return mesajCevapla(arg) },
+  'meta:yorumdanMesaj': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return yorumdanMesaj(arg) },
+  'meta:kartGonder': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return kartGonder(arg) },
   // Otomasyon (meta/otomasyon.js) kart gönderimi sonrası yerel kaydı bununla yazar.
   _kartEkoYaz,
   _konusmaCoz,

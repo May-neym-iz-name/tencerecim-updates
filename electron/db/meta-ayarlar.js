@@ -1,6 +1,7 @@
 // Meta (Facebook/Instagram) entegrasyon ayarları (anahtar-değer). ikas-ayarlar.js modeliyle aynı.
 // app_secret ve sayfa_token hassas → renderer'a maskeli döner; gerçek değer DB'de kalır.
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 const HASSAS = new Set(['app_secret', 'sayfa_token'])
 
@@ -59,5 +60,13 @@ module.exports = {
   _ayarKaydetTek: ayarKaydetTek,
 
   'meta-ayar:getir': () => ayarlariGetirGuvenli(),
-  'meta-ayar:kaydet': (veri) => ayarlariKaydet(veri),
+  // Yalnız arayüz tercihleri (hazır yanıtlar, hızlı ürün paneli) sosyal medya personelinde
+  // serbest; token/app_secret/otomatik senkron gibi her şey ayarlar_duzenle ister (09.09.2026).
+  'meta-ayar:kaydet': (veri) => {
+    const SERBEST = new Set(['hizli_yanitlar', 'hizli_urun_paneli'])
+    const anahtarlar = Object.keys(veri || {})
+    if (anahtarlar.length && anahtarlar.every(k => SERBEST.has(k))) yetkiKontrol('sosyal_medya_yonet')
+    else yetkiKontrol('ayarlar_duzenle')
+    return ayarlariKaydet(veri)
+  },
 }

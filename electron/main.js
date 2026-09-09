@@ -518,11 +518,17 @@ const handlerModules = [
   require('./db/disa-aktarim-canli'),
 ]
 
+// Kanal → asgari yetki (okuma kanalları dahil). Modül içi yetkiKontrol'ler de durur;
+// bu katman oturumsuz/yetkisiz renderer'ın veri OKUMASINI da keser (bkz. kanal-yetki.js).
+const { KANAL_YETKI } = require('./kanal-yetki')
+const { _yetkiKontrol: kanalYetkiKontrol } = require('./yetki')
+
 for (const mod of handlerModules) {
   for (const [channel, handler] of Object.entries(mod)) {
     if (channel.startsWith('_')) continue // private helpers
     ipcMain.handle(channel, async (event, ...args) => {
       try {
+        if (KANAL_YETKI[channel]) kanalYetkiKontrol(KANAL_YETKI[channel])
         return { ok: true, data: await handler(...args) }
       } catch (err) {
         console.error(`[IPC Error] ${channel}:`, err.message)

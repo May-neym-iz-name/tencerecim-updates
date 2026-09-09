@@ -1,5 +1,6 @@
 // ikas entegrasyonu ayarları (anahtar-değer). UPS ayar modeliyle aynı yapı.
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 // client_secret hassas olduğu için renderer'a maskeli döner; gerçek değer DB'de kalır.
 const HASSAS = new Set(['client_secret'])
@@ -48,5 +49,5 @@ module.exports = {
   _ayarlariGetir: ayarlariGetir,
 
   'ikas-ayar:getir': () => ayarlariGetirGuvenli(),
-  'ikas-ayar:kaydet': (veri) => ayarlariKaydet(veri),
+  'ikas-ayar:kaydet': (veri) => { yetkiKontrol('ayarlar_duzenle'); return ayarlariKaydet(veri) },
 }

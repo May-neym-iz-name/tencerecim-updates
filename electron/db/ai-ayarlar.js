@@ -5,6 +5,7 @@
 // Anahtar Google AI Studio'dan alınır (aistudio.google.com → Get API key).
 // SENKRONLANMAZ: şifreli değer başka PC'de çözülemez, her PC kendi anahtarını tutar.
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 const HASSAS = new Set(['gemini_anahtar'])
 
@@ -48,5 +49,5 @@ module.exports = {
   _ayarlariGetir: ayarlariGetir,
   _hazirMi: hazirMi,
   'ai-ayar:getir': () => ({ ...ayarlariGetirGuvenli(), hazir: hazirMi() }),
-  'ai-ayar:kaydet': (veri) => ayarlariKaydet(veri),
+  'ai-ayar:kaydet': (veri) => { yetkiKontrol('ayarlar_duzenle'); return ayarlariKaydet(veri) },
 }

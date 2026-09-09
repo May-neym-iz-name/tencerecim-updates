@@ -1,4 +1,5 @@
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 module.exports = {
   'markalar:listele': () => getDb().prepare(
@@ -6,6 +7,7 @@ module.exports = {
      FROM markalar m WHERE m.aktif = 1 ORDER BY m.ad`
   ).all(),
   'markalar:olustur': ({ ad }) => {
+    yetkiKontrol('urun_duzenle')
     const db = getDb()
     const yeni = String(ad || '').trim()
     if (!yeni) throw new Error('Marka adı boş olamaz')
@@ -23,6 +25,7 @@ module.exports = {
   // düz UPDATE UNIQUE ile çökerdi → o markayla BİRLEŞTİR: ürünleri hedefe taşı, bu
   // kaydı pasifle. Böylece çift/yazım-farklı markalar tek çatı altında toplanır.
   'markalar:guncelle': ({ id, ad }) => {
+    yetkiKontrol('urun_duzenle')
     const db = getDb()
     const yeni = String(ad || '').trim()
     if (!yeni) throw new Error('Marka adı boş olamaz')
@@ -45,6 +48,7 @@ module.exports = {
     return db.prepare('SELECT * FROM markalar WHERE id=?').get(id)
   },
   'markalar:sil': (id) => {
+    yetkiKontrol('urun_duzenle')
     getDb().prepare('UPDATE markalar SET aktif=0 WHERE id=?').run(id)
     return { mesaj: 'Marka silindi' }
   },

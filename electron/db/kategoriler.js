@@ -1,4 +1,5 @@
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 function getOrCreate(ad, ust_id) {
   const db = getDb()
@@ -19,12 +20,14 @@ module.exports = {
   ).all(),
 
   'kategoriler:olustur': ({ ad, ust_kategori_id }) => {
+    yetkiKontrol('urun_duzenle')
     return getOrCreate(ad.trim(), ust_kategori_id || null)
   },
 
   // Kategori adını değiştirir; kendi tam_yol'unu ve TÜM alt kategorilerin
   // tam_yol önekini günceller (hiyerarşi tutarlı kalsın).
   'kategoriler:guncelle': ({ id, ad }) => {
+    yetkiKontrol('urun_duzenle')
     const db = getDb()
     const kat = db.prepare('SELECT * FROM kategoriler WHERE id=?').get(id)
     if (!kat) throw new Error('Kategori bulunamadı')
@@ -48,6 +51,7 @@ module.exports = {
   },
 
   'kategoriler:sil': (id) => {
+    yetkiKontrol('urun_duzenle')
     getDb().prepare('UPDATE kategoriler SET aktif=0 WHERE id=?').run(id)
     return { mesaj: 'Kategori silindi' }
   },

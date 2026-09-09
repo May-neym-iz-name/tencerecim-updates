@@ -2,6 +2,7 @@
 // Meta'dan çekilen yorum/DM'ler buraya idempotent (harici_id UNIQUE) yazılır.
 // Ağ çağrıları electron/meta/index.js'te; bu dosya yalnızca yerel okuma/yazma yapar.
 const database = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const { niyetBul } = require('./niyet')
 const { listeFiltreleri: _listeFiltreleri, CEVAPSIZ_SAYAC, OKUNMAMIS_SAYAC, SORU_OKUNMAMIS_SAYAC, KAYNAK_IFADESI } = require('./sosyal-filtre')
 const { kelimeler, likeDeseni } = require('./tr-arama')
@@ -555,10 +556,10 @@ module.exports = {
   _yanitlananlariKapat,
   'sosyal:liste': (arg) => liste(arg),
   'sosyal:konu': (konu_id) => konu(konu_id),
-  'sosyal:durumGuncelle': (arg) => durumGuncelle(arg),
-  'sosyal:ata': (arg) => ata(arg),
-  'sosyal:ataKonu': (arg) => ataKonu(arg),
-  'sosyal:not': (arg) => notKaydet(arg),
+  'sosyal:durumGuncelle': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return durumGuncelle(arg) },
+  'sosyal:ata': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return ata(arg) },
+  'sosyal:ataKonu': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return ataKonu(arg) },
+  'sosyal:not': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return notKaydet(arg) },
   'sosyal:sayac': () => sayac(),
   'sosyal:sayaclar': (arg) => sayaclar(arg || {}),
   'sosyal:sorular': (arg) => sorular(arg || {}),
@@ -566,5 +567,5 @@ module.exports = {
   'sosyal:gonderiler': (arg) => gonderiler(arg),
   'sosyal:konusmalar': (arg) => konusmalar(arg),
   // Geçmiş yorumları bir kez sınıflar (Ayarlar → Sosyal → Geçmişi sınıfla).
-  'sosyal:niyetToplu': () => require('./niyet').niyetToplu(getDb()),
+  'sosyal:niyetToplu': () => { yetkiKontrol('ayarlar_duzenle'); return require('./niyet').niyetToplu(getDb()) },
 }

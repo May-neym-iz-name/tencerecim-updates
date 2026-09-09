@@ -255,3 +255,35 @@ deseni yok. **Bugüne kadar sızıntı olmamıştır.**
 
 (2026-08-15'te `UPS KARGO ENTEGRASYONU/` `git filter-repo` ile geçmişten
 temizlenmişti — o temizlik hâlâ geçerli.)
+
+---
+
+## 5. 09.09.2026 taraması — IPC yetki katmanı ve sızıntı denemesi
+
+**Yöntem:** Uygulama seyirci kipinde (`TNC_SEYIRCI=1`, bkz. hafıza) açıldı, CDP üzerinden
+renderer'dan doğrudan `window.api.invoke` çağrıları yapıldı: (1) gizli alanların maskesi,
+(2) SQL enjeksiyon denemesi (`arama: "x' OR 1=1 --"`), (3) `auth:profil-ayarla`'ya sahte
+jeton verip oturumu düşürdükten sonra yazma ve okuma kanalları.
+
+**Bulgular ve düzeltmeler (v1.2.202):**
+
+| # | Bulgu | Seviye | Düzeltme |
+|---|-------|--------|----------|
+| 1 | `ups-ayar:getir` UPS şifresini **çözülmüş** haliyle her role döndürüyordu | YÜKSEK | `HASSAS={sifre}` maskesi + maskeli değer geri gelirse korunur (ikas/meta deseniyle aynı) |
+| 2 | `ikas/meta/ups/youtube/ai-ayar:kaydet` yetkisizdi — her giriş yapan kullanıcı entegrasyon kimliklerini/token'ı değiştirebilirdi | YÜKSEK | `yetkiKontrol('ayarlar_duzenle')`; `meta-ayar:kaydet` yalnız arayüz tercihleri (`hizli_yanitlar`, `hizli_urun_paneli`) için `sosyal_medya_yonet` |
+| 3 | `meta:*` / `youtube:*` / `sosyal:*` yazma kanalları (DM/yorum gönderme, kart, atama, video yükleme) yetkisizdi | ORTA | `sosyal_medya_yonet`; kurulum/bağlantı kesme `ayarlar_duzenle` |
+| 4 | `kategoriler/markalar/tedarikciler` yazma yetkisizdi | DÜŞÜK | `urun_duzenle` |
+| 5 | **Okuma** kanalları (müşteri listesi, DM/yorum, bildirim, ayar getir) oturumsuz renderer'a veri döndürüyordu | YÜKSEK | `electron/kanal-yetki.js` kanal→yetki haritası, `main.js` IPC sarmalayıcısında handler'dan ÖNCE denetlenir (+4 test). Giriş akışı kanalları bilerek haritada yok. |
+| 6 | SQL enjeyonu | — | Denendi, parametreli sorgular; `arama` sonuç 0, hata yok |
+| 7 | Supabase linter: `alis_faturasi_kaydet` search_path değişkendi | UYARI | `ALTER FUNCTION … SET search_path = public` (migration uygulandı) |
+
+**Doğrulama (sahte jetonla):** `musteriler:listele`, `sosyal:konusmalar`, `bildirim:liste`,
+`ups-ayar:getir`, `ups-ayar:kaydet`, `meta:kartGonder`, `kategoriler:olustur`, `ayar-senk:topla`
+→ hepsi `Bu işlem için yetkiniz yok`. `lokasyonlar:listele` (giriş akışı) → açık, doğru.
+
+**Kullanıcı eylemi bekleyen (panelden):** Supabase Auth → *Leaked password protection*
+kapalı; açılması önerilir (HaveIBeenPwned kontrolü). `aktif_personel_mi()` / `super_admin_mi()`
+SECURITY DEFINER fonksiyonları yalnız boolean döndürür, RLS politikalarında kullanılır — bilerek açık.
+
+**Yeni kanal eklerken:** okuma kanalıysa `kanal-yetki.js`'e sayfa kapısıyla AYNI yetki kodunu
+ekle; yazma kanalıysa modül içinde `yetkiKontrol`. Giriş akışında çağrılan kanalı haritaya koyma.

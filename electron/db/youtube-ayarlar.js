@@ -6,6 +6,7 @@
 // Kurulum notu: client_id ve client_secret Google Cloud konsolundan alınır
 // (API'ler ve Hizmetler → Kimlik Bilgileri → Masaüstü uygulaması istemcisi).
 const { getDb } = require('./database')
+const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
 const HASSAS = new Set(['client_secret', 'refresh_token', 'access_token'])
 
@@ -75,5 +76,5 @@ module.exports = {
   _baglantiSil: baglantiSil,
 
   'youtube-ayar:getir': () => ayarlariGetirGuvenli(),
-  'youtube-ayar:kaydet': (veri) => ayarlariKaydet(veri),
+  'youtube-ayar:kaydet': (veri) => { yetkiKontrol('ayarlar_duzenle'); return ayarlariKaydet(veri) },
 }
