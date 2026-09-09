@@ -389,3 +389,16 @@ export const authApi = {
   profilAyarla: (accessToken) => invoke('auth:profil-ayarla', { access_token: accessToken }),
   profilTemizle: () => invoke('auth:profil-temizle'),
 }
+
+// Kampanya & kupon (ikas). Yerel tablo yok; her çağrı ikas'a gider.
+export const kampanyaApi = {
+  liste: () => invoke('kampanya:liste'),
+  getir: (id) => invoke('kampanya:getir', id),
+  kaydet: (form) => invoke('kampanya:kaydet', form),
+  sil: (id) => invoke('kampanya:sil', id),
+  kuponlar: (campaignId) => invoke('kampanya:kuponlar', campaignId),
+  kuponEkle: (kf) => invoke('kampanya:kuponEkle', kf),
+  kuponSil: (idList) => invoke('kampanya:kuponSil', idList),
+  sozlukler: () => invoke('kampanya:sozlukler'),
+  dagitimlar: (id) => invoke('kampanya:dagitimlar', id),
+}

@@ -500,6 +500,7 @@ const handlerModules = [
   require('./sistem'),
   require('./ikas'),
   require('./ikas/ekstra'),
+  require('./ikas/kampanya'),
   require('./db/setler'),
   require('./db/meta-ayarlar'),
   require('./db/sosyal-mesajlar'),
