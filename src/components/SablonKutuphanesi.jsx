@@ -89,8 +89,7 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
               <div className="text-xs text-gray-500 truncate">
                 {s.tur === 'kupon' ? (
                   <><span className="text-amber-600">🎁 Kupon</span>
-                    <span className="text-gray-400"> · {(s.serbest_metin || '').split('
-')[0].slice(0, 60)}</span></>
+                    <span className="text-gray-400"> · {(s.serbest_metin || '').split('\n')[0].slice(0, 60)}</span></>
                 ) : s.tur === 'genel' ? (
                   <><span className="text-violet-600">📝 Genel</span>
                     <span className="text-gray-400"> · {(s.serbest_metin || '').split('\n')[0].slice(0, 60)}</span></>
