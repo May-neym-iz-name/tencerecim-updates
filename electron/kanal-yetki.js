@@ -68,6 +68,21 @@ const KANAL_YETKI = Object.freeze({
   'ai:hazir': 'sosyal_medya_yonet',
   'ai:yorumYanitOner': 'sosyal_medya_yonet',
 
+  // Kampanya & kupon (sayfa kapısı: kampanya_yonet). Kupon GÖNDERME temsilcinindir:
+  // kampanya düzenleyemez ama havuzdan kupon verebilir → sosyal_medya_yonet.
+  'kampanya:liste': 'kampanya_yonet',
+  'kampanya:getir': 'kampanya_yonet',
+  'kampanya:kaydet': 'kampanya_yonet',
+  'kampanya:sil': 'kampanya_yonet',
+  'kampanya:kuponlar': 'kampanya_yonet',
+  'kampanya:kuponEkle': 'kampanya_yonet',
+  'kampanya:kuponSil': 'kampanya_yonet',
+  'kampanya:sozlukler': 'kampanya_yonet',
+  'kampanya:dagitimlar': 'kampanya_yonet',
+  'meta:kuponGonder': 'sosyal_medya_yonet',
+  'sosyal:kuponSablonlari': 'sosyal_medya_yonet',
+  'sosyal:kuponHavuz': 'sosyal_medya_yonet',
+
   // Entegrasyon ayarları (maskeli de olsa yalnız ilgili yetkiye)
   'ikas-ayar:getir': 'ayarlar_duzenle',
   'ai-ayar:getir': 'ayarlar_duzenle',

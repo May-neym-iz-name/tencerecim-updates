@@ -42,3 +42,15 @@ describe('KANAL_YETKI', () => {
     yetki._profilYazTestIcin(null)
   })
 })
+
+describe('kampanya kanalları', () => {
+  test('kampanya:* kampanya_yonet ister; kupon gönderme ve havuz sosyal_medya_yonet ister', () => {
+    for (const k of ['kampanya:liste', 'kampanya:getir', 'kampanya:kaydet', 'kampanya:sil',
+      'kampanya:kuponlar', 'kampanya:kuponEkle', 'kampanya:kuponSil', 'kampanya:sozlukler', 'kampanya:dagitimlar']) {
+      expect(KANAL_YETKI[k], k).toBe('kampanya_yonet')
+    }
+    for (const k of ['meta:kuponGonder', 'sosyal:kuponSablonlari', 'sosyal:kuponHavuz']) {
+      expect(KANAL_YETKI[k], k).toBe('sosyal_medya_yonet')
+    }
+  })
+})

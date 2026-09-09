@@ -21,6 +21,8 @@ const PERSONEL_VARSAYILAN = new Set([
   'sosyal_medya_yonet',
   // 'on_siparis_yap' BİLEREK yok — bkz. electron/yetki.js'teki aynı not.
   'fatura_stok_goruntule',
+  // 'kampanya_yonet' BİLEREK yok: ikas'ta kampanya kaydetmek tüm müşterilere etki eder;
+  // kime açılacağına yönetici karar verir. Kupon GÖNDERME sosyal_medya_yonet ile açık.
   // 'fatura_kes' BİLEREK yok — e-fatura/e-arşiv'e geri alınamaz fatura kesiyor;
   // sağlayıcı API'sinde fatura silme uç noktası yok. Yönetici onayı zorunlu.
   // 'fatura_stok_duzenle' BİLEREK yok — muhasebesel stok bakiyesini değiştirir,

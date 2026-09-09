@@ -42,6 +42,7 @@ const TUM_KODLAR = [
   'ayarlar_duzenle', 'excel_ice_aktar', 'ikas_yonet', 'kullanici_yonetimi',
   'sosyal_medya_yonet', 'sosyal_otomasyon_yonet',
   'fatura_stok_goruntule', 'fatura_stok_duzenle', 'fatura_kes',
+  'kampanya_yonet',
 ]
 
 const ROLLER = ['super_admin', 'yonetici', 'personel', 'ozel']
@@ -65,6 +66,17 @@ describe('yetki paritesi (frontend izinler.js ↔ backend yetki.js)', () => {
     const profil = { rol: 'super_admin', aktif: false, izinler: {} }
     expect(yetkiVar(profil, 'satis_yap')).toBe(false)
     expect(backendYetkiVar(profil, 'satis_yap')).toBe(false)
+  })
+})
+
+describe('kampanya yetkisi', () => {
+  test('kampanya_yonet: personelde kapalı, yöneticide açık, iki taraf aynı', () => {
+    const personel = { rol: 'personel', aktif: true }
+    const yonetici = { rol: 'yonetici', aktif: true }
+    expect(yetkiVar(personel, 'kampanya_yonet')).toBe(false)
+    expect(backendYetkiVar(personel, 'kampanya_yonet')).toBe(false)
+    expect(yetkiVar(yonetici, 'kampanya_yonet')).toBe(true)
+    expect(backendYetkiVar(yonetici, 'kampanya_yonet')).toBe(true)
   })
 })
 
