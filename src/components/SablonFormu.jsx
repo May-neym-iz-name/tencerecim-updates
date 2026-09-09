@@ -36,7 +36,8 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
     urun_id: null, set_id: null, urun_adi: '', aciklama: '', fiyat: '', link: '', whatsapp: '',
     ...(sablon || {}),
   })
-  const genelMi = v.tur === 'genel'
+  const genelMi = v.tur === 'genel' || v.tur === 'kupon' // serbest metin dalı
+  const kuponMu = v.tur === 'kupon'
   const [urunler, setUrunler] = useState([])
   const [setler, setSetler] = useState([])
   // Kaynak (ürün/set) YOKKEN "üründen al" anlamsız — false başlar, yoksa fiyat kutusu kilitli
@@ -88,7 +89,7 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
   const asildi = metin.length > MAKS_KARAKTER
 
   const kaydet = () => genelMi
-    ? onKaydet({ id: v.id, ad: v.ad, tur: 'genel', serbest_metin: v.serbest_metin })
+    ? onKaydet({ id: v.id, ad: v.ad, tur: v.tur, serbest_metin: v.serbest_metin })
     : onKaydet({ ...v, tur: 'urun', fiyat: urundenAlEtkin ? null : (v.fiyat || null) })
 
   return (
@@ -96,7 +97,7 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
       <div className="bg-white rounded-2xl p-5 w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-auto"
         onClick={e => e.stopPropagation()}>
         <h3 className="font-bold text-lg mb-4">
-          {sablon?.id ? 'Şablonu Düzenle' : (genelMi ? 'Yeni Genel Şablon' : 'Yeni Ürün Şablonu')}
+          {sablon?.id ? 'Şablonu Düzenle' : (kuponMu ? 'Yeni Kupon Şablonu' : genelMi ? 'Yeni Genel Şablon' : 'Yeni Ürün Şablonu')}
         </h3>
         {genelMi ? (
           <div className="grid grid-cols-2 gap-5">
@@ -105,7 +106,7 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
                 <input value={v.ad} onChange={e => setV(o => ({ ...o, ad: e.target.value }))}
                   placeholder="Tarif çağrısı" className="w-full border rounded-lg px-3 py-2 text-sm" />
               </Alan>
-              <Alan etiket="Mesaj metni" not="müşteriye AYNEN bu gider">
+              <Alan etiket="Mesaj metni" not={kuponMu ? 'yer tutucular: {kod} {indirim} {bitis} {min_tutar} {site} — boş kalan satır atılır' : 'müşteriye AYNEN bu gider'}>
                 <textarea value={v.serbest_metin || ''} onChange={e => setV(o => ({ ...o, serbest_metin: e.target.value }))}
                   rows={10} placeholder={"Bu tarifin malzeme listesi için\nDM'den 'TARİF' yazın 👇"}
                   className="w-full border rounded-lg px-3 py-2 text-sm" />
@@ -188,7 +189,7 @@ export default function SablonFormu({ sablon, onKapat, onKaydet }) {
           <button onClick={onKapat} className="px-4 py-2 text-sm text-gray-600">İptal</button>
           <button onClick={kaydet}
             disabled={genelMi
-              ? (!v.ad?.trim() || !(v.serbest_metin || '').trim() || (v.serbest_metin || '').length > MAKS_KARAKTER)
+              ? (!v.ad?.trim() || !(v.serbest_metin || '').trim() || (v.serbest_metin || '').length > MAKS_KARAKTER || (kuponMu && !(v.serbest_metin || '').includes('{kod}')))
               : (!v.ad?.trim() || !v.urun_adi?.trim() || asildi)}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-40">Kaydet</button>
         </div>

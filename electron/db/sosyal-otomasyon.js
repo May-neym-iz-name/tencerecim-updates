@@ -271,18 +271,23 @@ module.exports = {
 
   // Şablonlar YALNIZ otomasyon için var → otomasyon yetkisi ister ('sosyal_medya_yonet' DEĞİL).
   // Sosyal medyayı kullanan personel yorumları elle cevaplar; toplu DM'in içeriğini değiştiremez.
+  // Kupon şablonları (tur='kupon'). Yetki: temsilci kupon gönderirken okur (kanal-yetki: sosyal_medya_yonet).
+  'sosyal:kuponSablonlari': () => getDb().prepare(
+    "SELECT id, ad, serbest_metin FROM sosyal_sablonlar WHERE aktif = 1 AND tur = 'kupon' ORDER BY ad").all(),
+
   'sosyal:sablonKaydet': ({ id, ad, tur, serbest_metin, urun_id, set_id, urun_adi, aciklama, fiyat, link, whatsapp }) => {
     yetkiKontrol('sosyal_otomasyon_yonet')
     if (!ad || !ad.trim()) throw new Error('Şablon adı gerekli.')
-    const t = tur === 'genel' ? 'genel' : 'urun'
+    const t = tur === 'genel' || tur === 'kupon' ? tur : 'urun'
     const db = getDb()
     let p
-    if (t === 'genel') {
+    if (t === 'genel' || t === 'kupon') {
       const sm = (serbest_metin || '').trim()
-      if (!sm) throw new Error('Genel şablonda mesaj metni gerekli.')
+      if (!sm) throw new Error(t === 'kupon' ? 'Kupon şablonunda mesaj metni gerekli.' : 'Genel şablonda mesaj metni gerekli.')
+      if (t === 'kupon' && !sm.includes('{kod}')) throw new Error('Kupon şablonu {kod} yer tutucusunu içermeli.')
       if (sm.length > 1000) throw new Error('Mesaj metni 1000 karakteri aşamaz.')
       // Genel türde ürün alanları anlamsız → boşaltılır. urun_adi NOT NULL olduğu için ''.
-      p = [ad.trim(), null, null, '', null, null, null, null, 'genel', sm]
+      p = [ad.trim(), null, null, '', null, null, null, null, t, sm]
     } else {
       if (!urun_adi || !urun_adi.trim()) throw new Error('Ürün adı gerekli.')
       if (urun_id && set_id) throw new Error('Şablon ya ürüne ya sete bağlanabilir, ikisine birden değil.')

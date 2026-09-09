@@ -66,6 +66,8 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
                   className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">💰 Ürün şablonu</button>
                 <button onClick={() => { setFormda({ tur: 'genel' }); setMenuAcik(false) }}
                   className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">📝 Genel şablon</button>
+                <button onClick={() => { setFormda({ tur: 'kupon' }); setMenuAcik(false) }}
+                  className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">🎁 Kupon şablonu</button>
               </div>
             )}
           </div>
@@ -85,7 +87,11 @@ export default function SablonKutuphanesi({ onSec = null, kapat = null }) {
             <div className="min-w-0 flex-1">
               <div className="font-semibold text-sm truncate">{s.ad}</div>
               <div className="text-xs text-gray-500 truncate">
-                {s.tur === 'genel' ? (
+                {s.tur === 'kupon' ? (
+                  <><span className="text-amber-600">🎁 Kupon</span>
+                    <span className="text-gray-400"> · {(s.serbest_metin || '').split('
+')[0].slice(0, 60)}</span></>
+                ) : s.tur === 'genel' ? (
                   <><span className="text-violet-600">📝 Genel</span>
                     <span className="text-gray-400"> · {(s.serbest_metin || '').split('\n')[0].slice(0, 60)}</span></>
                 ) : (<>

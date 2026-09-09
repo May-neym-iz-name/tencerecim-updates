@@ -1009,6 +1009,13 @@ function migrate() {
 
   // Hediye kuponu dağıtım kaydı (v1.2.204) — şema metni db/kupon-havuz.js'te (test de onu kullanır).
   db.exec(require('./kupon-havuz')._SEMA)
+  // Varsayılan "nasıl kullanılır" kupon şablonu — bir kez, ad ile dedup (senkronda dogal=['ad']).
+  {
+    const { VARSAYILAN_SABLON } = require('../meta/kupon-mesaj')
+    db.prepare(`INSERT INTO sosyal_sablonlar (ad, urun_adi, tur, serbest_metin)
+      SELECT 'Hediye kuponu — nasıl kullanılır', '', 'kupon', ?
+      WHERE NOT EXISTS (SELECT 1 FROM sosyal_sablonlar WHERE tur = 'kupon')`).run(VARSAYILAN_SABLON)
+  }
 
   // Tek numaradan çoklu hatta TAŞIMA — tek seferlik, yerel.
   // sosyal_otomasyonlar.whatsapp SİLİNMEZ: taşıma yanlış eşleşirse geri dönülecek kaynak odur
