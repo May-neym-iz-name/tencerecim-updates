@@ -91,6 +91,11 @@ const TABLOLAR = {
                                 zorunluFk: ['otomasyon_id'],
                                 dogalCift: ['otomasyon_id', 'sira'], sonradanEklendi: true },
 
+  // Hediye kuponu dağıtımı (v1.2.204). SENKRONLANMALI: iki PC aynı havuzdan kupon verir;
+  // kayıt yayılmazsa aynı kod iki müşteriye gider. Doğal anahtar kupon_kodu (ikas'ta da tekil).
+  kupon_dagitim: { kolonlar: ['kupon_id', 'kupon_kodu', 'kampanya_id', 'platform', 'konu_id', 'alici_id', 'gonderen_kullanici', 'tarih'],
+                   fk: {}, dogal: ['kupon_kodu'], sonradanEklendi: true },
+
   // Gönderiye bağlı ürün/set satırları (v1.2.197'de senkrona eklendi).
   // SENKRONLANMALI: mesajı üreten yürütücü BAŞKA bir PC olabilir; bu satırlar yayılmazsa
   // o PC ürünsüz mesaj üretir ve gonderiMesajiOlustur BOŞ metin döndürür → müşteriye
@@ -157,6 +162,7 @@ const SIRA = [
   'sosyal_otomasyonlar', 'sosyal_otomasyon_sablonlar', 'sosyal_otomasyon_numaralar',
   // urunler/setler listenin başında → FK'ları bu satıra gelindiğinde çözülmüş olur.
   'sosyal_otomasyon_urunler',
+  'kupon_dagitim',
   'satislar', 'satis_kalemleri', 'satis_odemeler',
   'kasa_oturumlar', 'giderler', 'sabit_giderler', 'mal_kabuller', 'mal_kabul_kalemleri',
   'kargolar',

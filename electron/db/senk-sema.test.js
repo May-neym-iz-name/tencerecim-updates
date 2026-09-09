@@ -49,6 +49,16 @@ describe('senk şeması invariantları', () => {
   })
 })
 
+describe('kupon_dagitim senkronu', () => {
+  test('listede, doğal anahtar kupon_kodu, FK yok', () => {
+    expect(TABLOLAR.kupon_dagitim).toBeDefined()
+    expect(SIRA).toContain('kupon_dagitim')
+    expect(TABLOLAR.kupon_dagitim.dogal).toEqual(['kupon_kodu'])
+    expect(TABLOLAR.kupon_dagitim.fk).toEqual({})
+    expect(TABLOLAR.kupon_dagitim.sonradanEklendi).toBe(true)
+  })
+})
+
 describe('sosyal_sablonlar senkronu', () => {
   test('şablonlar senkron listesinde', () => {
     expect(TABLOLAR.sosyal_sablonlar).toBeDefined()

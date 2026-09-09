@@ -1007,6 +1007,9 @@ function migrate() {
   );`)
   db.exec("CREATE INDEX IF NOT EXISTS idx_sosyal_oto_numara ON sosyal_otomasyon_numaralar(otomasyon_id)")
 
+  // Hediye kuponu dağıtım kaydı (v1.2.204) — şema metni db/kupon-havuz.js'te (test de onu kullanır).
+  db.exec(require('./kupon-havuz')._SEMA)
+
   // Tek numaradan çoklu hatta TAŞIMA — tek seferlik, yerel.
   // sosyal_otomasyonlar.whatsapp SİLİNMEZ: taşıma yanlış eşleşirse geri dönülecek kaynak odur
   // ve güncellenmemiş 2. PC hâlâ o kolonu okuyor ([[sil-yeniden-yaz-tuzagi]]).
