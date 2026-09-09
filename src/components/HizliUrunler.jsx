@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { urunlerApi, setApi, sosyalApi, metaApi } from '../api/ipc'
 import toast from 'react-hot-toast'
+import KuponGonder from './KuponGonder'
 
 const ARAMA_GECIKME_MS = 250
 const GERI_BILDIRIM_MS = 1200
@@ -117,6 +118,7 @@ export default function HizliUrunler({ hedef, kullanici, onGonderildi, hedefYok,
           ))}
         </>
       )}
+      <KuponGonder hedef={hedef} kullanici={kullanici} onGonderildi={onGonderildi} />
     </div>
   )
 }
