@@ -234,6 +234,7 @@ export const metaApi = {
   yorumdanMesaj: (veri) => invoke('meta:yorumdanMesaj', veri),
   // Temsilci elle ürün kartı gönderir: { hedef:{tur:'dm'|'yorum', id}, urunler:[...], kullanici }
   kartGonder: (veri) => invoke('meta:kartGonder', veri),
+  kuponGonder: (veri) => invoke('meta:kuponGonder', veri),
   // Görseller artık IPC'den DEĞİL `sosyal-gorsel://` protokolüyle gelir (bkz.
   // components/SosyalGorsel.jsx) — base64 taşımak listeyi donduruyordu.
   gorselOnbellek: () => invoke('meta:gorselOnbellek'),
@@ -286,6 +287,7 @@ export const sosyalApi = {
   sablonlar: () => invoke('sosyal:sablonlar'),
   sablonMetin: (id) => invoke('sosyal:sablonMetin', id),
   kuponSablonlari: () => invoke('sosyal:kuponSablonlari'),
+  kuponHavuz: () => invoke('sosyal:kuponHavuz'),
   sablonKaydet: (v) => invoke('sosyal:sablonKaydet', v),
   sablonSil: (id) => invoke('sosyal:sablonSil', id),
   // Otomasyonu hangi PC yürütüyor (çift DM kilidi — bkz. electron/meta/yurutucu.js)

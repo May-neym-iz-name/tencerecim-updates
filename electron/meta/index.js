@@ -675,6 +675,63 @@ async function yorumdanMesaj({ id, metin, kullanici }) {
   return { ok: true, konusmaId, aliciId }
 }
 
+// --- Hediye kuponu (v1.2.204) ---
+// Havuz görünümü: kuponlu kampanyalar + kaç kod boşta. ikas'tan canlı okur (yerel kupon tablosu yok).
+async function kuponHavuz() {
+  const kampanya = require('../ikas/kampanya')
+  const havuz = require('../db/kupon-havuz')
+  const { indirimMetni } = require('./kupon-mesaj')
+  const db = getDb()
+  const liste = (await kampanya._kampanyalariListele()).filter(k => k.hasCoupon)
+  const out = []
+  for (const k of liste) {
+    const kuponlar = await kampanya._kuponlariListele(k.id)
+    out.push({ id: k.id, title: k.title.trim(), indirim: indirimMetni(k),
+      bitis: k.dateRange && k.dateRange.end || null,
+      havuz: havuz.havuzDurumu(kuponlar, havuz.verilmisKodlar(db, k.id)) })
+  }
+  return out
+}
+
+// Sıra: ÖNCE dağıtım kaydı (yarışı kaybeden PC UNIQUE'e takılır, mesaj gitmez) → SONRA gönderim →
+// gönderim düşerse kayıt silinir (kod havuza döner). kartGonder ile aynı hedef sözleşmesi.
+async function kuponGonder({ hedef, kampanyaId, sablonId, kullanici }) {
+  if (!hedef || !hedef.id) throw new Error('Hedef gerekli (bir konuşma ya da yorum seçin).')
+  if (!kampanyaId) throw new Error('Kampanya seçilmedi.')
+  const db = getDb()
+  const row = db.prepare('SELECT * FROM sosyal_mesajlar WHERE id = ?').get(hedef.id)
+  if (!row) throw new Error('Mesaj bulunamadı.')
+
+  const sablon = sablonId
+    ? db.prepare("SELECT serbest_metin FROM sosyal_sablonlar WHERE id = ? AND tur = 'kupon' AND aktif = 1").get(sablonId)
+    : db.prepare("SELECT serbest_metin FROM sosyal_sablonlar WHERE tur = 'kupon' AND aktif = 1 ORDER BY id LIMIT 1").get()
+  if (!sablon) throw new Error('Kupon şablonu yok. Şablon Kütüphanesi > Yeni > Kupon şablonu.')
+
+  const kampanya = require('../ikas/kampanya')
+  const havuz = require('../db/kupon-havuz')
+  const k = (await kampanya._kampanyalariListele()).find(x => x.id === kampanyaId)
+  if (!k) throw new Error('Kampanya ikas\'ta bulunamadı.')
+  const kupon = havuz.havuzdanSec(await kampanya._kuponlariListele(kampanyaId), havuz.verilmisKodlar(db, kampanyaId))
+  if (!kupon) throw new Error('Havuz boş — Kampanya sekmesinden yeni kupon üretin.')
+
+  const { kuponMesaji } = require('./kupon-mesaj')
+  const { metin, asildi } = kuponMesaji({ sablonMetni: sablon.serbest_metin, kampanya: k, kupon, site: String(require('../ikas')._WEB_SITESI || '').replace(/^https?:\/\//, '') })
+  if (asildi) throw new Error('Kupon mesajı 1000 karakteri aşıyor; şablonu kısaltın.')
+
+  const dagitimId = havuz.dagitimYaz(db, {
+    kupon_id: kupon.id, kupon_kodu: kupon.code, kampanya_id: kampanyaId, platform: row.platform,
+    konu_id: row.konu_id, alici_id: row.gonderen_id || null, gonderen_kullanici: kullanici || null,
+  })
+  try {
+    if (hedef.tur === 'yorum') await yorumdanMesaj({ id: hedef.id, metin, kullanici })
+    else await mesajCevapla({ id: hedef.id, metin, kullanici })
+  } catch (e) {
+    havuz.dagitimSil(db, dagitimId) // kod havuza döner
+    throw e
+  }
+  return { ok: true, kod: kupon.code }
+}
+
 // --- Görseller ---------------------------------------------------------------
 // Meta'nın görsel adresleri imzalı ve süreli (eski kayıtlar 403 döner), bu yüzden
 // görsel bir kez diske indirilip oradan servis edilir. Bkz. gorsel-onbellek.js.
@@ -751,6 +808,8 @@ module.exports = {
   'meta:mesajCevapla': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return mesajCevapla(arg) },
   'meta:yorumdanMesaj': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return yorumdanMesaj(arg) },
   'meta:kartGonder': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return kartGonder(arg) },
+  'meta:kuponGonder': (arg) => { yetkiKontrol('sosyal_medya_yonet'); return kuponGonder(arg) },
+  'sosyal:kuponHavuz': () => { yetkiKontrol('sosyal_medya_yonet'); return kuponHavuz() },
   // Otomasyon (meta/otomasyon.js) kart gönderimi sonrası yerel kaydı bununla yazar.
   _kartEkoYaz,
   _konusmaCoz,
