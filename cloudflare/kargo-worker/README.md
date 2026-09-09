@@ -37,6 +37,10 @@ uygulama ──GET /kargo/durumlar?since=…──► yerel yazım + ikas bildir
 | `POST /kargo/yokla` | Bearer | bir turu elle tetikler (test için) |
 | `POST /ikas/webhook/<gizli-yol>` | **yok** | ikas webhook alıcısı — olay kuyruğuna yazar |
 | `GET /ikas/olaylar?since=ISO` | Bearer | son okumadan beri gelen ikas olayları |
+| `POST /meta/veri-silme` | **yok** (HMAC) | Meta Data Deletion Callback — `signed_request` doğrulanır, kuyruğa yazılır |
+| `GET /meta/veri-silme/durum?kod=` | **yok** | kullanıcıya gösterilen durum sayfası (Meta şartı) |
+| `GET /meta/veri-silme/bekleyenler?since=ISO` | Bearer | imleçten sonraki talepler (durum filtresi YOK — çok-PC) |
+| `POST /meta/veri-silme/tamam` | Bearer | `{"sonuclar":[{"onay_kodu":"…","silinen":0}]}` |
 
 ### ikas webhook ucu neden kimliksiz?
 
@@ -133,3 +137,53 @@ Aynı değer uygulamada da saklanır (UPS ayarları gibi, `ups_ayarlar` tablosun
 Worker'ı kapatmak veri kaybettirmez: uygulamadaki 10 dakikalık yerel tur
 (`electron/main.js:172`) kaldırılmaz, yalnız seyreltilir. Sorun çıkarsa aralığı
 eski değerine döndürmek yeterlidir — Worker'a hiç dokunmadan sistem eski haline döner.
+
+
+## Meta veri silme geri çağrısı (Data Deletion Callback)
+
+**Neden:** Callback URL tanımlı değilse Meta her silme talebini App Dashboard'a
+**Urgent uyarı** olarak düşürür ve listeyi elle indirip yerel DB'de aramak gerekir
+(09.09.2026'da iki kez oldu: 25.08 ve 07.09 — 33 kimlik, hiçbiri DB'de yoktu).
+
+**İş bölümü kargo/ikas ile aynı:** kişisel veri yalnız mağaza PC'sinin yerel
+SQLite'ındadır, bulutta kopyası yoktur. Worker imzayı doğrular ve kuyruk tutar;
+silmeyi uygulama yapar.
+
+```
+Meta ──POST /meta/veri-silme──► D1.veri_silme_talepleri (bekliyor)
+uygulama ──GET  /meta/veri-silme/bekleyenler──► yerel sosyal_mesajlar silme
+uygulama ──POST /meta/veri-silme/tamam───────► D1 (silindi)
+kullanıcı ──GET /meta/veri-silme/durum?kod=──► durum sayfası
+```
+
+### Kurulum
+
+```bash
+# 1) Yeni tabloyu uygula (dosya idempotent, mevcut tablolara dokunmaz)
+npx wrangler d1 execute tencerecim-kargo --remote --file=schema.sql
+
+# 2) Uygulama gizli anahtarı — App Dashboard > App settings > Temel > "App secret"
+#    DEĞERİ KOMUT SATIRINA YAZMA, wrangler soracak:
+npx wrangler secret put META_APP_SECRET
+
+# 3) Yayına al
+npx wrangler deploy
+
+# 4) Doğrula: imzasız istek 400 dönmeli (503 dönerse secret girilmemiş demektir)
+curl -X POST https://tencerecim-kargo.<subdomain>.workers.dev/meta/veri-silme   -d 'signed_request=sahte.imza'
+```
+
+Sonra App Dashboard > App settings > **Temel** > **User data deletion** açılır kutusunu
+"Data deletion callback URL" yap, alana şunu yaz ve kaydet (⚠ Gelişmiş sayfasındaki
+metin bu alanı anıyor ama alan orada DEĞİL, Temel'de — 09.09.2026 ölçüldü):
+
+```
+https://tencerecim-kargo.<subdomain>.workers.dev/meta/veri-silme
+```
+
+### Uygulama tarafı — `electron/meta/veri-silme.js`
+Saatte bir tur (`main.js metaVeriSilmeBaslat`): imleçten sonraki talepleri çeker,
+`sosyal_mesajlar` (`gonderen_id`/`konu_id`/`ozel_mesaj_alici`) + `kupon_dagitim.alici_id`
+siler, `tamam` der, imleci ilerletir. İmleç PC'ye özel (`yerel_ayarlar.meta_veri_silme_imlec`)
+çünkü sosyal_mesajlar senkronlanmıyor — her PC kendi kopyasını kendisi siler.
+`ust_id` BİLEREK silme ölçütü değil (yorum kimliği, kişi değil) — testte sabit.

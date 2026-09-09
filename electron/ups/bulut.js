@@ -116,6 +116,10 @@ async function saglik() {
 module.exports = {
   // '_' önekliler IPC kanalı sayılmaz (main.js:304) — takip.js bunları doğrudan çağırır.
   _ayar: ayar,
+  // Ham HTTPS yardımcısı. meta/veri-silme.js aynı Worker'ın başka uçlarını çağırıyor;
+  // ikinci bir istemci yazmak yerine bunu paylaşıyor (aynı bearer, aynı zaman aşımı,
+  // aynı timeout→destroy davranışı). Kargoya özel bir şey içermez.
+  _istek: istek,
   _itListe: itListe,
   _durumlariCek: durumlariCek,
   _saglik: saglik,

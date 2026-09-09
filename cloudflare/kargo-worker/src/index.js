@@ -57,6 +57,51 @@ function json(veri, durum = 200) {
   })
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Meta "signed_request" doğrulaması (Data Deletion Callback).
+//
+// Meta gövdede `signed_request` diye tek bir alan gönderir: "<imza>.<yük>", ikisi de
+// base64url. Yük çözülünce { user_id, algorithm, issued_at } JSON'u çıkar.
+//
+// İMZA DOĞRULANMADAN HİÇBİR ŞEY YAPILMAZ. Bu uç kimliksiz olmak ZORUNDA (Meta bizim
+// bearer'ımızı göndermez), dolayısıyla tek koruma imzadır: uygulama gizli anahtarını
+// bilmeyen biri geçerli imza üretemez. ikas webhook'undaki "gizli yol" hilesine burada
+// gerek yok — Meta imzayı BELGELİYOR, ikas belgelemiyordu.
+function b64urlCoz(dizge) {
+  const b64 = String(dizge || '').replace(/-/g, '+').replace(/_/g, '/')
+  const ikili = atob(b64 + '='.repeat((4 - b64.length % 4) % 4))
+  const bayt = new Uint8Array(ikili.length)
+  for (let i = 0; i < ikili.length; i++) bayt[i] = ikili.charCodeAt(i)
+  return bayt
+}
+
+// crypto.subtle.verify sabit sürelidir; elle karşılaştırma yapılmaz.
+async function imzaGecerliMi(yukMetni, imzaB64, gizliAnahtar) {
+  const kod = new TextEncoder()
+  const anahtar = await crypto.subtle.importKey(
+    'raw', kod.encode(gizliAnahtar), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify'])
+  try {
+    return await crypto.subtle.verify('HMAC', anahtar, b64urlCoz(imzaB64), kod.encode(yukMetni))
+  } catch { return false }
+}
+
+// signed_request'i çöz ve DOĞRULA. Başarısızsa null döner — çağıran ayrım yapmaz,
+// her başarısızlık aynı cevabı alır (hangi adımda düştüğünü sızdırmanın anlamı yok).
+async function signedRequestCoz(signed, gizliAnahtar) {
+  const parca = String(signed || '').split('.')
+  if (parca.length !== 2) return null
+  const [imza, yuk] = parca
+  if (!await imzaGecerliMi(yuk, imza, gizliAnahtar)) return null
+  let veri = null
+  try { veri = JSON.parse(new TextDecoder().decode(b64urlCoz(yuk))) } catch { return null }
+  // Meta ileride algoritmayı değiştirirse SESSİZCE kabul etmeyelim: doğruladığımız
+  // şey HMAC-SHA256'dır, yük başka bir şey iddia ediyorsa doğrulama anlamsızdır.
+  if (String(veri?.algorithm || '').toUpperCase() !== 'HMAC-SHA256') return null
+  const kimlik = String(veri?.user_id || '').trim()
+  if (!/^[0-9]{5,32}$/.test(kimlik)) return null
+  return { kimlik, issued_at: veri.issued_at }
+}
+
 // ikas sipariş id'si UUID benzeri bir dizgedir. Açık uçtan gelen gövdeye
 // güvenmiyoruz; yalnız biçimi tutan bir id kabul edilir ve o bile yetkili
 // veri sayılmaz — kaydı uygulama ikas'tan kendi çeker.
@@ -216,6 +261,69 @@ export default {
       return json({ ok: true })
     }
 
+    // ── Meta Data Deletion Callback ───────────────────────────────────────────
+    // App Dashboard > App settings > Gelişmiş > "Data Deletion Callback URL".
+    // Tanımlı olmadığı sürece Meta her silme talebini **Urgent uyarı** olarak düşürür
+    // ve listeyi elle indirip yerel DB'de aramak gerekir (09.09.2026: 25.08 + 07.09).
+    //
+    // KİMLİKSİZ ama korumasız DEĞİL: gövdedeki signed_request uygulama gizli
+    // anahtarıyla HMAC-SHA256 imzalıdır, imza tutmazsa istek 400 ile düşer.
+    //
+    // Meta'nın beklediği cevap KESİN bir şekildir: { url, confirmation_code }.
+    // `url` kullanıcının talebinin durumunu görebileceği SAYFA olmalıdır (aşağıdaki
+    // GET ucu) — Meta bu adresi kullanıcıya gösterir, erişilemezse başvuru reddedilir.
+    if (istek.method === 'POST' && url.pathname === '/meta/veri-silme') {
+      if (!env.META_APP_SECRET) return json({ hata: 'yapilandirilmadi' }, 503)
+
+      // Meta form-encoded gönderir; JSON gönderen istemcilere de açık olsun diye
+      // ikisi de denenir. Ham gövde bir kez okunur (Request gövdesi tek kullanımlık).
+      const ham = await istek.text()
+      let signed = null
+      try { signed = new URLSearchParams(ham).get('signed_request') } catch {}
+      if (!signed) { try { signed = JSON.parse(ham)?.signed_request } catch {} }
+
+      const cozum = await signedRequestCoz(signed, env.META_APP_SECRET)
+      // İmza tutmadıysa 400. ikas'taki "her durumda 200 dön" kuralı BURAYA UYGULANMAZ:
+      // orada 200 dışında cevap teslimatı tamamen düşürüyordu; Meta ise imzasız isteği
+      // zaten kendi göndermez, 200 dönmek sahte isteği onaylamak olurdu.
+      if (!cozum) return json({ hata: 'imza gecersiz' }, 400)
+
+      const onayKodu = crypto.randomUUID().replace(/-/g, '')
+      await env.DB.prepare(`
+        INSERT INTO veri_silme_talepleri (onay_kodu, kimlik, gelis_zaman, durum)
+        VALUES (?1, ?2, ?3, 'bekliyor')`
+      ).bind(onayKodu, cozum.kimlik, simdi()).run()
+
+      // url.origin: Meta'nın bize ulaştığı konak. Sabit yazılsaydı özel alan adına
+      // geçildiğinde sessizce eski adrese işaret ederdi.
+      return json({
+        url: `${url.origin}/meta/veri-silme/durum?kod=${onayKodu}`,
+        confirmation_code: onayKodu,
+      })
+    }
+
+    // Durum sayfası — KİMLİKSİZ olmak zorunda: bunu açan kişi bizim kullanıcımız
+    // değil, verisini sildiren kişidir; elinde yalnız onay kodu vardır.
+    // Kod dışında hiçbir şey sızdırmaz: kimliğin kendisi GÖSTERİLMEZ.
+    if (istek.method === 'GET' && url.pathname === '/meta/veri-silme/durum') {
+      const kod = String(url.searchParams.get('kod') || '').trim()
+      const kayit = /^[a-f0-9]{32}$/.test(kod)
+        ? await env.DB.prepare(
+            'SELECT durum, gelis_zaman, islem_zaman FROM veri_silme_talepleri WHERE onay_kodu = ?1'
+          ).bind(kod).first()
+        : null
+      const govde = !kayit
+        ? '<h1>Kayıt bulunamadı</h1><p>Onay kodunu kontrol edin.</p>'
+        : kayit.durum === 'silindi'
+          ? `<h1>Veriniz silindi</h1><p>Talep: ${kayit.gelis_zaman}<br>Tamamlanma: ${kayit.islem_zaman}</p>`
+          : `<h1>Talebiniz alındı</h1><p>Talep: ${kayit.gelis_zaman}<br>Durum: işleniyor.</p>`
+      return new Response(
+        `<!doctype html><meta charset="utf-8"><title>Veri silme durumu</title>` +
+        `<body style="font-family:system-ui;max-width:36rem;margin:3rem auto;padding:0 1rem">` +
+        `${govde}<p style="color:#666">Onay kodu: ${kod || '—'}</p><p>Tencerecim</p></body>`,
+        { status: kayit ? 200 : 404, headers: { 'content-type': 'text/html; charset=utf-8' } })
+    }
+
     // Sağlık ucu: token'sız yalnız "ayaktayım" der. Ayrıntı (kaç kayıt, son tur)
     // yetki ister — açık uçtan iş hacmi sızdırmanın anlamı yok.
     if (url.pathname === '/saglik') {
@@ -294,6 +402,52 @@ export default {
     }
 
     // Elle tetikleme — canlı doğrulama ve "şimdi bak" düğmesi için.
+    // Uygulama → "imleçten sonraki silme taleplerini ver".
+    // Silmeyi Worker YAPAMAZ: kişisel veri (sosyal_mesajlar) yalnız mağaza PC'sinin
+    // yerel SQLite'ındadır, bulutta kopyası yoktur. Worker sadece kuyruk tutar.
+    //
+    // ⚠ NEDEN durum FİLTRESİ YOK — ÇOK-PC KURALI: sosyal_mesajlar senkronlanmıyor
+    // (bkz. schema.sql'deki not ve db/senk-sema.js SIRA), yani AYNI kişinin verisi
+    // her PC'de AYRI duruyor. "durum='bekliyor'" filtresi olsaydı ilk işleyen PC
+    // satırı kapatır, ikinci PC o talebi HİÇ GÖRMEZDİ ve o PC'de veri kalırdı.
+    // Bu yüzden kargo/ikas ile aynı desen: her PC kendi imlecini tutar, satır ortak
+    // kalır. `durum` yalnız kullanıcıya gösterilen durum sayfası içindir.
+    if (url.pathname === '/meta/veri-silme/bekleyenler' && istek.method === 'GET') {
+      const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z'
+      const { results } = await env.DB.prepare(`
+        SELECT onay_kodu, kimlik, gelis_zaman FROM veri_silme_talepleri
+        WHERE gelis_zaman > ?1 ORDER BY gelis_zaman LIMIT 500`).bind(since).all()
+      const kayitlar = results || []
+      return json({
+        talepler: kayitlar,
+        // İmleç SON SATIRIN damgası; boş turda çağıranın gönderdiği imleç aynen döner.
+        imlec: kayitlar.length ? kayitlar[kayitlar.length - 1].gelis_zaman : since,
+      })
+    }
+
+    // Uygulama → "bunları yerelde işledim".
+    // silinen = 0 MEŞRUDUR ve 'silindi' sayılır: 09.09 ölçümünde Meta'nın verdiği
+    // 33 kimliğin hiçbiri yerel DB'de yoktu. "Kayıt yoktu" da tamamlanmış bir
+    // silmedir; ayrı bir durum açmak kuyruğu sonsuza kadar dolu tutardı.
+    if (url.pathname === '/meta/veri-silme/tamam' && istek.method === 'POST') {
+      let govde
+      try { govde = await istek.json() } catch { return json({ hata: 'gecersiz json' }, 400) }
+      const kayitlar = (govde?.sonuclar || [])
+        .filter(k => /^[a-f0-9]{32}$/.test(String(k?.onay_kodu || '')))
+        .slice(0, 500)
+      if (!kayitlar.length) return json({ guncellenen: 0 })
+      const zaman = simdi()
+      // Yalnız 'bekliyor' satırı güncellenir → İLK bildiren PC damgayı koyar, ikinci
+      // PC'nin bildirimi sessizce geçer. Durum sayfası "işlendi mi" der, "kaç PC'de
+      // işlendi" demez; kullanıcıya gösterilecek doğru bilgi budur.
+      const guncelle = env.DB.prepare(`
+        UPDATE veri_silme_talepleri SET durum = 'silindi', islem_zaman = ?2, silinen = ?3
+        WHERE onay_kodu = ?1 AND durum = 'bekliyor'`)
+      await env.DB.batch(kayitlar.map(k =>
+        guncelle.bind(k.onay_kodu, zaman, Number(k.silinen) || 0)))
+      return json({ guncellenen: kayitlar.length })
+    }
+
     if (url.pathname === '/kargo/yokla' && istek.method === 'POST') {
       return json(await yoklamaTuru(env))
     }

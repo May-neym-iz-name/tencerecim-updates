@@ -394,6 +394,40 @@ function metaSosyalSenkBaslat() {
   setInterval(calistir, META_SENK_ARALIGI_MS)
 }
 
+// Meta veri silme talepleri — Worker kuyruğunu tüketip yerel kişisel veriyi siler.
+//
+// NEDEN AYRI VE SEYREK: bu bir yükümlülük turudur, bir özellik değil. Meta silme
+// talebini "makul süre" içinde işlememizi ister, dakikalar içinde değil. Saatte bir
+// fazlasıyla yeterli; sık çağırmak Worker'ın ücretsiz plan bütçesini boşa yer.
+//
+// META SENKRONUNDAN AYRI TUTULDU: orası sayfa token'ı ve otomatik_senk ayarına bağlı,
+// burası değil. Token süresi dolmuş ya da otomatik senkron kapalıyken bile silme
+// yükümlülüğü sürer — yoklamayı o koşullara bağlamak sessizce uyumsuz kalmak olurdu.
+//
+// ÇOK-PC: yürütücü kilidi YOK ve olmamalı. sosyal_mesajlar senkronlanmadığı için
+// her PC kendi kopyasını kendisi silmek zorunda (bkz. meta/veri-silme.js baş notu).
+const VERI_SILME_ARALIGI_MS = 60 * 60 * 1000 * YOKLAMA_CARPANI
+function metaVeriSilmeBaslat() {
+  const { _tur } = require('./meta/veri-silme')
+  let calisiyor = false
+  const calistir = async () => {
+    if (calisiyor) return
+    calisiyor = true
+    try {
+      const s = await _tur()
+      if (s.talep) console.log(`[meta-veri-silme] ${s.talep} talep, ${s.silinen} satır silindi`)
+    } catch (err) {
+      // Yutulmaz ama tur da düşürülmez: imleç ilerlemediği için bir sonraki tur
+      // aynı talepleri yeniden dener (DELETE idempotent).
+      console.error('[meta-veri-silme] tur hatası:', err.message)
+    } finally {
+      calisiyor = false
+    }
+  }
+  setTimeout(calistir, 90 * 1000) // açılış yükünün dışında kalsın
+  setInterval(calistir, VERI_SILME_ARALIGI_MS)
+}
+
 // Kilit alınamadıysa (zaten bir örnek açık) HİÇBİR ŞEY başlatma — ne pencere, ne DB, ne polling.
 // app.quit() tek başına yeterli görünse de whenReady ile yarışabilir; açık koruma daha güvenli.
 if (tekOrnekKilidi) {
@@ -436,6 +470,7 @@ if (tekOrnekKilidi) {
     ikasOlayYoklayiciBaslat()
     upsTakipBaslat()
     metaSosyalSenkBaslat()
+    metaVeriSilmeBaslat()
   }
 
   app.whenReady().then(() => {

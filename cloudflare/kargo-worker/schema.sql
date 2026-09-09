@@ -69,3 +69,33 @@ CREATE TABLE IF NOT EXISTS ikas_ham (
   govde        TEXT,
   alinma_zaman TEXT NOT NULL
 );
+
+-- Meta veri silme talepleri (Data Deletion Callback).
+--
+-- NEDEN VAR: Meta, uygulamamızla ilişkili bir kullanıcı verisini sildiğinde bize
+-- haber vermek zorunda. Callback URL tanımlı DEĞİLSE bunu App Dashboard'a **Urgent
+-- uyarı** olarak düşürür ve listeyi elle indirip taramamız beklenir (09.09.2026'da
+-- iki kez oldu: 25.08 ve 07.09). Callback tanımlıysa bu yükümlülük otomatikleşir.
+--
+-- BU TABLO OTORİTE DEĞİLDİR — yalnız "şu kimlik için silme istendi" tetikleyicisidir.
+-- Gerçek kişisel veri her mağaza PC'sinin yerel SQLite'ındaki sosyal_mesajlar
+-- tablosundadır ve bulutta kopyası YOKTUR. Bu yüzden akış kargo/ikas ile aynı şekil:
+--   Meta ──POST /meta/veri-silme──► D1 (bekliyor)
+--   uygulama ──GET /meta/veri-silme/bekleyenler──► yerel silme
+--   uygulama ──POST /meta/veri-silme/tamam──────► D1 (silindi)
+--
+-- durum: 'bekliyor' → 'silindi'. Meta'nın gösterdiği durum sayfası bunu okur;
+-- kullanıcı onay kodunu girip talebinin nerede olduğunu görebilir (Meta şartı).
+CREATE TABLE IF NOT EXISTS veri_silme_talepleri (
+  onay_kodu    TEXT PRIMARY KEY,
+  kimlik       TEXT NOT NULL,
+  gelis_zaman  TEXT NOT NULL,
+  durum        TEXT NOT NULL DEFAULT 'bekliyor',
+  islem_zaman  TEXT,
+  -- Uygulamanın gerçekten kaç satır sildiği. 0 meşru bir cevaptır: 09.09 ölçümünde
+  -- Meta'nın verdiği 33 kimliğin hiçbiri yerel DB'de yoktu. 0'ı "işlenmedi" ile
+  -- karıştırmamak için durum ayrı sütunda tutulur.
+  silinen      INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS veri_silme_durum ON veri_silme_talepleri (durum, gelis_zaman);
