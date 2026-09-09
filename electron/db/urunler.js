@@ -138,7 +138,8 @@ module.exports = {
   // durum: 'aktif' (varsayılan) | 'pasif'. Pasifler YALNIZCA Ürünler sekmesindeki
   // Pasif alanından istenir; satış/stok/set gibi tüm diğer çağrılar varsayılanla
   // (aktif) çalışmaya devam eder — pasif ürün hiçbir yerde görünmez.
-  'urunler:listele': ({ arama, kategori_id, marka_id, sayfa = 1, boyut = 100, durum = 'aktif' } = {}) => {
+  // siteVar: yalnız ikas'a (web sitesine) bağlı ürünler — Hızlı ürünler paneli (09.09.2026).
+  'urunler:listele': ({ arama, kategori_id, marka_id, sayfa = 1, boyut = 100, durum = 'aktif', siteVar = false } = {}) => {
     const db = getDb()
     let where = durum === 'pasif' ? 'WHERE u.aktif = 0' : 'WHERE u.aktif = 1'
     const params = []
@@ -179,6 +180,7 @@ module.exports = {
       }
     }
     if (marka_id) { where += ' AND u.marka_id = ?'; params.push(marka_id) }
+    if (siteVar) where += " AND COALESCE(u.ikas_urun_id, '') != ''"
     // markalar JOIN'i ŞART: WHERE artık m.ad'ı da arıyor (URUN_SELECT'te zaten var,
     // burada eksikti → "no such column: m.ad" verirdi).
     const toplam = db.prepare(

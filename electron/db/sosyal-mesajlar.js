@@ -142,8 +142,8 @@ function _upsertMesaj(m) {
     INSERT INTO sosyal_mesajlar
       -- konu_baslik/konu_gorsel/konu_link BİLEREK YOK: gönderi meta verisi
       -- sosyal_gonderiler tablosunda tek kopya durur (_gonderiKaydet).
-      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, ek_tur, ek_baslik, ek_gorsel, ek_link, niyet, ham_ek)
-    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link, @niyet, @ham_ek)
+      (platform, tur, harici_id, konu_id, ust_id, gonderen_id, gonderen_ad, metin, yon, durum, mesaj_tarihi, ek_tur, ek_baslik, ek_gorsel, ek_link, niyet, ham_ek, cevaplayan_kullanici)
+    VALUES (@platform, @tur, @harici_id, @konu_id, @ust_id, @gonderen_id, @gonderen_ad, @metin, @yon, @durum, @mesaj_tarihi, @ek_tur, @ek_baslik, @ek_gorsel, @ek_link, @niyet, @ham_ek, @cevaplayan_kullanici)
   `).run({
     platform: m.platform,
     tur: m.tur,
@@ -163,6 +163,9 @@ function _upsertMesaj(m) {
     // Niyet yalnız GELEN YORUMA yazılır (DM ve kendi yanıtlarımız sınıflanmaz) — bkz. niyet.js.
     niyet: (m.tur === 'yorum' && (m.yon || 'gelen') === 'gelen') ? niyetBul(m.metin) : null,
     ham_ek: m.ham_ek || null,
+    // Temsilcinin ELLE gönderdiği mesajın imzası: konuşma listesinde "bizim başlattığımız"
+    // konuşmayı otomasyon kartından ayırır (09.09.2026 — temsilci gönderdiği mesajı bulamıyordu).
+    cevaplayan_kullanici: m.cevaplayan_kullanici || null,
   })
   return bilgi.lastInsertRowid
 }
@@ -298,8 +301,31 @@ function durumGuncelle({ id, durum }) {
 
 // "Kim neye bakıyor" — tek mesaj bazlı personel atama.
 function ata({ id, kullanici }) {
-  getDb().prepare('UPDATE sosyal_mesajlar SET atanan_kullanici = ? WHERE id = ?').run(kullanici || null, id)
+  const db = getDb()
+  db.prepare('UPDATE sosyal_mesajlar SET atanan_kullanici = ? WHERE id = ?').run(kullanici || null, id)
+  // Yorum atanınca o müşteriyle açılmış DM konuşması da AYNI kişiye atanır (09.09.2026):
+  // temsilci "Bana atananlar"da hem soruyu hem DM'i görür. Bağ: yoruma özel mesaj gittiyse
+  // Meta'nın döndürdüğü recipient_id (ozel_mesaj_alici) = konuşmanın gonderen_id'si.
+  const y = db.prepare('SELECT platform, ozel_mesaj_alici FROM sosyal_mesajlar WHERE id = ?').get(id)
+  if (y && y.ozel_mesaj_alici) konusmayaAtaKisiden(db, y.platform, y.ozel_mesaj_alici, kullanici)
   return { ok: true }
+}
+
+// Müşteri kimliğinden (IGSID/PSID) konuşmayı bulup atar. kullanici boşsa atamayı kaldırır;
+// doluysa yalnız ATANMAMIŞ konuşmaya yazar (başkasının işini üzerine almasın).
+function konusmayaAtaKisiden(db, platform, gonderenId, kullanici) {
+  const konular = db.prepare(`SELECT DISTINCT konu_id FROM sosyal_mesajlar
+    WHERE tur='dm' AND platform=? AND gonderen_id=? AND konu_id IS NOT NULL`).all(platform, gonderenId)
+  for (const k of konular) {
+    if (kullanici) {
+      db.prepare(`UPDATE sosyal_mesajlar SET atanan_kullanici = ? WHERE konu_id = ?
+        AND NOT EXISTS (SELECT 1 FROM sosyal_mesajlar x WHERE x.konu_id = sosyal_mesajlar.konu_id AND x.atanan_kullanici IS NOT NULL AND x.atanan_kullanici != ?)`)
+        .run(kullanici, k.konu_id, kullanici)
+    } else {
+      db.prepare('UPDATE sosyal_mesajlar SET atanan_kullanici = NULL WHERE konu_id = ?').run(k.konu_id)
+    }
+  }
+  return konular.length
 }
 
 // Konuşma/gönderi bazlı atama: liste gruplaması konu_id bazlı olduğundan atamayı
@@ -517,7 +543,10 @@ function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
     -- Müşterinin HİÇ yazmadığı konuşma listelenmez (09.09.2026): bunlar otomasyonun yorumdan
     -- açtığı tek yönlü kart gönderimleridir (2.130 adet) — yanıt verilemez (gelen mesaj yok),
     -- listeyi boğuyordu. Müşteri yazınca konuşma kendiliğinden görünür.
-    HAVING SUM(CASE WHEN yon='gelen' THEN 1 ELSE 0 END) > 0${having.length ? ' AND ' + having.join(' AND ') : ''}
+    -- İSTİSNA (09.09.2026): temsilcinin yorumdan ELLE başlattığı konuşma (özel mesaj / elle kart,
+    -- cevaplayan_kullanici dolu) listelenir ki gönderdiği mesajı DM'de bulabilsin.
+    HAVING (SUM(CASE WHEN yon='gelen' THEN 1 ELSE 0 END) > 0
+            OR SUM(CASE WHEN yon='giden' AND cevaplayan_kullanici IS NOT NULL THEN 1 ELSE 0 END) > 0)${having.length ? ' AND ' + having.join(' AND ') : ''}
     ORDER BY son_zaman DESC
     LIMIT 200
   `).all(p)
@@ -549,6 +578,7 @@ function _kartEkolariniBirlestir() {
 module.exports = {
   _upsertMesaj,
   _kartEkolariniBirlestir,
+  _konusmayaAtaKisiden: (platform, gonderenId, kullanici) => konusmayaAtaKisiden(getDb(), platform, gonderenId, kullanici),
   _gonderiKaydet,
   _dbAyarla, // YALNIZ TEST — bkz. dosya başındaki test dikişi notu
   _silinenGonderileriIsaretle,

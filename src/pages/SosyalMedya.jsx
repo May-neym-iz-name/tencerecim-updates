@@ -76,6 +76,13 @@ const OKUNMA_SECENEK = [
   { kod: 'okunmamis', ad: 'Okunmamış' },
   { kod: 'okunmus', ad: 'Okunmuş' },
 ]
+// DM kaynağı (seçim 4A: çip + satır rozeti). Rozet metni satırda da kullanılır.
+const KAYNAK_SECENEK = [
+  { kod: 'hikaye', ad: '📖 Hikaye' },
+  { kod: 'paylasim', ad: '🔁 Paylaşım' },
+  { kod: 'normal', ad: '💬 Normal' },
+]
+const KAYNAK_ROZET = { hikaye: '📖 hikaye', paylasim: '🔁 paylaşım' }
 const ATAMA_SECENEK = [
   { kod: 'hepsi', ad: 'Herkes' },
   { kod: 'bana', ad: 'Bana atanan' },
@@ -145,6 +152,7 @@ const CIP_RENK = {
   amber: 'bg-amber-500 border-amber-500',
   blue: 'bg-blue-600 border-blue-600',
   emerald: 'bg-emerald-600 border-emerald-600',
+  violet: 'bg-violet-600 border-violet-600',
 }
 function FiltreCip({ secili, onClick, renk, pasif, children }) {
   return (
@@ -306,14 +314,9 @@ export default function SosyalMedya() {
     } catch (e) { if (istekNo === listeIstekRef.current) toast.error('Liste yüklenemedi: ' + e.message) }
   }, [sekme.mod, sekme.platform, aramaGec, tarihBas, tarihBit, cevapDurumu, okunma, atama, kullanici, kaynak])
 
-  // Sol liste grupları. DM modunda ve kaynak "Tümü" iken iki grup: NORMAL ve DİĞER (hikaye
-  // yanıtı + gönderi paylaşımı — 09.09.2026: üçlü ayrım sadeleştirildi). Tek kaynak seçiliyken düz.
-  const satirGruplari = (sekme.mod === 'dm' && kaynak === 'hepsi')
-    ? [['normal', '💬 MESAJLAR', s => (s.kaynak || 'normal') === 'normal'],
-       ['diger', '📎 DİĞER (hikaye yanıtı · gönderi paylaşımı)', s => (s.kaynak || 'normal') !== 'normal']]
-        .map(([kod, baslik, f]) => ({ kod, baslik, satirlar: liste.filter(f) }))
-        .filter(g => g.satirlar.length)
-    : [{ kod: 'duz', baslik: null, satirlar: liste }]
+  // Sol liste düz (09.09.2026 öğleden sonra: kullanıcı ön izlemedeki seçenek 4A'yı istedi —
+  // kaynak süzgeci ÇİP olarak süzgeç çubuğunda, satırda kaynak ROZETİ; gruplu başlık yok).
+  const satirGruplari = [{ kod: 'duz', baslik: null, satirlar: liste }]
   useEffect(() => { listeYukle(); sayaclariYukle() }, [listeYukle, sayaclariYukle])
   useEffect(() => { setSeciliKonu(null); setMesajlar([]); setListe([]); acikKonuRef.current = null }, [sekmeKod])
 
@@ -657,14 +660,15 @@ export default function SosyalMedya() {
                     ))}
                   </div>
                 )}
-                {/* Kaynak: normal / diğer (hikaye yanıtı + gönderi paylaşımı) — yalnız DM. */}
+                {/* Kaynak çipleri (seçim 4A): hikaye yanıtı / gönderi paylaşımı / normal — yalnız DM.
+                    Seçili çipe tekrar tıklamak süzgeci kaldırır. */}
                 {sekme.mod === 'dm' && (
-                  <select value={kaynak} onChange={e => setKaynak(e.target.value)}
-                    className="w-full border border-marka-100 rounded-md px-2 py-1 text-xs text-marka-900 bg-white">
-                    <option value="hepsi">Kaynak: Tümü</option>
-                    <option value="normal">💬 Mesajlar</option>
-                    <option value="diger">📎 Diğer (hikaye yanıtı · gönderi paylaşımı)</option>
-                  </select>
+                  <div className="flex flex-wrap gap-1">
+                    {KAYNAK_SECENEK.map(o => (
+                      <FiltreCip key={o.kod} secili={kaynak === o.kod}
+                        onClick={() => setKaynak(kaynak === o.kod ? 'hepsi' : o.kod)} renk="violet">{o.ad}</FiltreCip>
+                    ))}
+                  </div>
                 )}
                 {(cevapDurumu !== 'hepsi' || okunma !== 'hepsi' || atama !== 'hepsi' || kaynak !== 'hepsi') && (
                   <button onClick={() => { setCevapDurumu('hepsi'); setOkunma('hepsi'); setAtama('hepsi'); setKaynak('hepsi') }}
@@ -717,6 +721,9 @@ export default function SosyalMedya() {
                         <div className="flex items-baseline gap-2">
                           <span className={`text-[15px] leading-tight truncate flex-1 ${satir.okunmamis ? 'font-bold text-marka-900' : 'font-semibold text-gray-800'}`}>
                             {baslik}
+                            {satir.kind === 'dm' && KAYNAK_ROZET[satir.kaynak] && (
+                              <span className="ml-1.5 align-middle text-[10px] font-medium rounded px-1 py-px bg-marka-50 text-marka-400">{KAYNAK_ROZET[satir.kaynak]}</span>
+                            )}
                           </span>
                           <span className="text-[11px] text-gray-400 flex-shrink-0">{zaman(satir.son_zaman)}</span>
                         </div>
@@ -769,7 +776,8 @@ export default function SosyalMedya() {
             {hizliPanel && seciliKonu.platform !== 'youtube' && (
               <HizliUrunlerAlani kullanici={kullanici} onGonderildi={() => { mesajlariTazele(); listeYukle() }}
                 hedef={(() => { const g = [...mesajlar].reverse().find(m => m.yon === 'gelen'); return g ? { tur: 'dm', id: g.id } : null })()}
-                hedefYok="Bu konuşmada müşteriden gelen mesaj yok; kart ancak müşteri yazınca gönderilebilir." />
+                hedefYok="Bu konuşmada müşteriden gelen mesaj yok; kart ancak müşteri yazınca gönderilebilir."
+                onSablon={t => setTaslak(v => v && v.trim() ? `${v.trim()} ${t}` : t)} />
             )}
           </>
         ) : seciliKonu.kind === 'soru' ? (
@@ -789,7 +797,8 @@ export default function SosyalMedya() {
             {hizliPanel && seciliKonu.platform !== 'youtube' && (
               <HizliUrunlerAlani kullanici={kullanici} onGonderildi={() => { mesajlariTazele(); listeYukle() }}
                 hedef={seciliKonu.ozel_mesaj_tarihi ? null : { tur: 'yorum', id: seciliKonu.id }}
-                hedefYok="Bu yoruma özel mesaj zaten gönderildi (yorum başına tek hak). Devamı DM'den." />
+                hedefYok="Bu yoruma özel mesaj zaten gönderildi (yorum başına tek hak). Devamı DM'den."
+                onSablon={t => (ozelMesaj ? setOzelTaslak : setTaslak)(v => v && v.trim() ? `${v.trim()} ${t}` : t)} />
             )}
           </>
         ) : (
@@ -803,7 +812,8 @@ export default function SosyalMedya() {
             {hizliPanel && seciliKonu.platform !== 'youtube' && (
               <HizliUrunlerAlani kullanici={kullanici} onGonderildi={() => { setOzelMesaj(null); mesajlariTazele(); listeYukle() }}
                 hedef={ozelMesaj ? { tur: 'yorum', id: ozelMesaj } : null}
-                hedefYok="Bir yorumun altındaki “Mesaj gönder”e tıklayın, kart o kişiye gider." />
+                hedefYok="Bir yorumun altındaki “Mesaj gönder”e tıklayın, kart o kişiye gider."
+                onSablon={t => (ozelMesaj ? setOzelTaslak : setTaslak)(v => v && v.trim() ? `${v.trim()} ${t}` : t)} />
             )}
           </>
         )}

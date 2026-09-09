@@ -13,10 +13,24 @@ const ARAMA_GECIKME_MS = 250
 const GERI_BILDIRIM_MS = 1200
 
 // hedefYok: hedef boşken gösterilecek açıklama (ör. konuşmada gelen mesaj yok).
-export default function HizliUrunler({ hedef, kullanici, onGonderildi, hedefYok }) {
+// onSablon(metin): ürünün HAZIR ŞABLON metnini yanıt kutusuna ekler (09.09.2026: yalnız web
+// sitesinde var olan ürünler + hazır şablonları listelenir; sitede olmayan ürün gösterilmez).
+export default function HizliUrunler({ hedef, kullanici, onGonderildi, hedefYok, onSablon }) {
   const [arama, setArama] = useState('')
   const [liste, setListe] = useState([])
   const [son, setSon] = useState([])
+  const [sablonlar, setSablonlar] = useState([]) // ürün/set → hazır şablon eşlemesi
+  useEffect(() => { sosyalApi.sablonlar().then(setSablonlar).catch(() => {}) }, [])
+  const sablonBul = (u) => sablonlar.find(sb => u._tur === 'set' ? sb.set_id === u.id : sb.urun_id === u.id)
+  async function sablonEkle(u) {
+    const sb = sablonBul(u)
+    if (!sb || !onSablon) return
+    try {
+      const r = await sosyalApi.sablonMetin(sb.id)
+      if (r?.metin) onSablon(r.metin)
+      if (r?.asildi) toast('Dikkat: mesaj 1000 karakteri aşıyor, göndermeden kısaltın.', { icon: '⚠️' })
+    } catch (e) { toast.error(e.message) }
+  }
   const [mesgul, setMesgul] = useState(null)   // gönderilmekte olan ürünün anahtarı
   const [gitti, setGitti] = useState(null)     // az önce gönderilen ürünün anahtarı
 
@@ -27,8 +41,8 @@ export default function HizliUrunler({ hedef, kullanici, onGonderildi, hedefYok 
     const t = setTimeout(async () => {
       try {
         const [u, s] = await Promise.all([
-          urunlerApi.listele({ arama: arama.trim(), boyut: 8 }),
-          setApi.listele({ arama: arama.trim() }),
+          urunlerApi.listele({ arama: arama.trim(), boyut: 8, siteVar: true }),
+          setApi.listele({ arama: arama.trim(), siteVar: true }),
         ])
         setListe([
           ...(u?.urunler || []).map(x => ({ ...x, _tur: 'urun' })),
@@ -63,22 +77,33 @@ export default function HizliUrunler({ hedef, kullanici, onGonderildi, hedefYok 
         disabled={!hedef?.id}
         className="w-full border border-marka-100 rounded-md px-2 py-1 text-[12px] focus:outline-none focus:border-marka-400 disabled:bg-gray-50" />
       {!hedef?.id && <div className="text-[11px] text-gray-400">{hedefYok || 'Bir konuşma ya da yorum seçin.'}</div>}
+      {arama.trim() && liste.length === 0 && <div className="text-[11px] text-gray-400">Sitede böyle bir ürün yok.</div>}
       {liste.map(u => {
         const anahtar = `${u._tur}-${u.id}`
+        const sb = sablonBul(u)
         return (
-          <button key={anahtar} type="button" onClick={() => gonder(u)} disabled={!!mesgul}
-            title="Tıklayınca kart hemen gider"
-            className="w-full flex gap-2 items-center p-1.5 rounded-lg border border-marka-100 bg-white hover:bg-marka-50 text-left disabled:opacity-60">
-            <div className="min-w-0 text-[12px] flex-1">
-              <div className="font-bold text-marka-900 truncate">{u.ad}</div>
-              <div className="text-marka-400">
-                {u.satis_fiyati ? `${Number(u.satis_fiyati).toLocaleString('tr-TR')} TL` : ''}
-                {!u.web_link && <span className="text-amber-600"> · linksiz</span>}
+          <div key={anahtar} className="rounded-lg border border-marka-100 bg-white">
+            <button type="button" onClick={() => gonder(u)} disabled={!!mesgul}
+              title="Tıklayınca ürün kartı hemen gider"
+              className="w-full flex gap-2 items-center p-1.5 rounded-t-lg hover:bg-marka-50 text-left disabled:opacity-60">
+              <div className="min-w-0 text-[12px] flex-1">
+                <div className="font-bold text-marka-900 truncate">{u.ad}</div>
+                <div className="text-marka-400">
+                  {u.satis_fiyati ? `${Number(u.satis_fiyati).toLocaleString('tr-TR')} TL` : ''}
+                  {!u.web_link && <span className="text-amber-600"> · linksiz</span>}
+                </div>
               </div>
+              {mesgul === anahtar && <span className="text-[11px] text-gray-400">…</span>}
+              {gitti === anahtar && <span className="text-emerald-600 text-[11px] font-semibold">Gönderildi ✓</span>}
+            </button>
+            <div className="flex items-center gap-1 px-1.5 pb-1.5 text-[10px]">
+              <span className="text-marka-400">🛍️ kart</span>
+              {sb && onSablon
+                ? <button type="button" onClick={() => sablonEkle(u)} title={`Hazır şablon: ${sb.ad} — metni yanıt kutusuna ekler`}
+                    className="ml-auto px-1.5 py-0.5 rounded border border-violet-200 text-violet-700 hover:bg-violet-50">📝 Şablon</button>
+                : <span className="ml-auto text-gray-300">şablon yok</span>}
             </div>
-            {mesgul === anahtar && <span className="text-[11px] text-gray-400">…</span>}
-            {gitti === anahtar && <span className="text-emerald-600 text-[11px] font-semibold">Gönderildi ✓</span>}
-          </button>
+          </div>
         )
       })}
       {!arama.trim() && son.length > 0 && (

@@ -4,7 +4,7 @@
 const client = require('./client')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const { getDb } = require('../db/database')
-const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat, _kartEkolariniBirlestir } = require('../db/sosyal-mesajlar')
+const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat, _kartEkolariniBirlestir, _konusmayaAtaKisiden } = require('../db/sosyal-mesajlar')
 const { gorselDosyasi, onbellekDurum } = require('./gorsel-onbellek')
 
 // Son çekme turunun özeti (arka plan polling + manuel). UI "sessiz hata göstergesi"
@@ -461,6 +461,7 @@ function _kartEkoYaz({ platform, konu_id, gonderen_id, kullanici, yuk }) {
     konu_id: konu_id || null, gonderen_id: gonderen_id || null,
     gonderen_ad: `${kullanici || 'Otomasyon'} (kart)`,
     yon: 'giden', mesaj_tarihi: new Date().toISOString(), ...k,
+    cevaplayan_kullanici: kullanici || null, // otomasyon kartında boş kalır
   })
 }
 
@@ -541,6 +542,7 @@ async function kartGonder({ hedef, urunler, kullanici }) {
   const aliciId = row.tur === 'dm' ? row.gonderen_id : ((yanit && yanit.recipient_id) || null)
   const konuId = hedef.tur === 'dm' ? row.konu_id : await _konusmaCoz(row.platform, aliciId)
   _kartEkoYaz({ platform: row.platform, konu_id: konuId, gonderen_id: aliciId, kullanici, yuk })
+  if (aliciId && kullanici) { try { _konusmayaAtaKisiden(row.platform, aliciId, kullanici) } catch { /* atama ikincil */ } }
   return { ok: true, kartSayisi, konusmaId: konuId }
 }
 
@@ -580,7 +582,7 @@ async function mesajCevapla({ id, metin, kullanici }) {
   _upsertMesaj({
     platform: row.platform, tur: 'dm', harici_id: `giden_${Date.now()}_${id}`, konu_id: row.konu_id,
     gonderen_id: row.gonderen_id, gonderen_ad: `${kullanici || 'Mağaza'} (yanıt)`, metin: metin.trim(),
-    yon: 'giden', mesaj_tarihi: new Date().toISOString(),
+    yon: 'giden', mesaj_tarihi: new Date().toISOString(), cevaplayan_kullanici: kullanici || null,
   })
   return { ok: true }
 }
@@ -665,8 +667,11 @@ async function yorumdanMesaj({ id, metin, kullanici }) {
       gonderen_id: aliciId,
       gonderen_ad: row.gonderen_ad || 'Müşteri',
       metin: metin.trim(), yon: 'giden', mesaj_tarihi: new Date().toISOString(),
+      cevaplayan_kullanici: kullanici || null,
     })
   }
+  // Konuşma, mesajı gönderen temsilciye atanır → DM'de "Bana atananlar"dan bulur (09.09.2026).
+  if (aliciId && kullanici) { try { _konusmayaAtaKisiden(row.platform, aliciId, kullanici) } catch { /* atama ikincil */ } }
   return { ok: true, konusmaId, aliciId }
 }
 

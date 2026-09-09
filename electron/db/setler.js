@@ -36,15 +36,17 @@ const BILESEN_SQL = `
   WHERE su.set_id = ? AND u.aktif = 1
 `
 
-function listele({ arama } = {}, db = getDb()) {
+function listele({ arama, siteVar = false } = {}, db = getDb()) {
   const params = []
   let where = ''
+  // siteVar: yalnız ikas'a bağlı setler (Hızlı ürünler paneli, 09.09.2026).
+  if (siteVar) where = " WHERE COALESCE(ikas_urun_id, '') != ''"
   if (arama) {
     const k = kelimeKosulu(
       "(ad || ' ' || COALESCE(icerik_metni, '') || ' ' || COALESCE(sku, '') || ' ' || COALESCE(barkod, ''))",
       arama,
     )
-    where = ' WHERE 1 = 1' + k.sql
+    where = (where || ' WHERE 1 = 1') + k.sql
     params.push(...k.params)
   }
   const setler = db.prepare(
