@@ -318,7 +318,7 @@ describe('mesaj_tipi', () => {
   })
 })
 
-// NİYET KAPISI (08.09.2026): otomasyon yalnız fiyat ve soru niyetine gönderir. NULL niyet
+// NİYET KAPISI (09.09.2026): otomasyon YALNIZ fiyat niyetine gönderir. NULL niyet
 // (henüz sınıflanmamış eski satır) fiyat sayılır — geniş taraf, toplu iş çalışana kadar
 // bugünkü davranış değişmesin.
 describe('_adaylar niyet kapısı', () => {
@@ -329,14 +329,14 @@ describe('_adaylar niyet kapısı', () => {
        VALUES (?, 'K1', 'yorum', 'gelen', ?, ?, 'instagram', datetime('now'), ?)`).run(id, ad, 'h' + id, niyet)
     ekle(1, 'a', 'fiyat'); ekle(2, 'b', 'soru'); ekle(3, 'c', 'etiket'); ekle(4, 'd', 'ovgu'); ekle(5, 'e', null)
   }
-  test('yalnız fiyat, soru ve NULL(=fiyat) döner; etiket/övgü dönmez', () => {
+  test('yalnız fiyat ve NULL(=fiyat) döner; soru/etiket/övgü dönmez (09.09: soruya otomasyon YOK)', () => {
     kur()
     const a = mod._adaylar(db).map(x => [x.gonderen_ad, x.niyet])
-    expect(a).toEqual([['a', 'fiyat'], ['b', 'soru'], ['e', 'fiyat']])
+    expect(a).toEqual([['a', 'fiyat'], ['e', 'fiyat']])
   })
-  test('soru_yaniti_kapali otomasyonda soru adayı düşer, fiyat kalır', () => {
+  test('soru_yaniti_kapali=0 olsa bile soru adayı DÖNMEZ', () => {
     kur()
-    db.exec('UPDATE sosyal_otomasyonlar SET soru_yaniti_kapali = 1')
+    db.exec('UPDATE sosyal_otomasyonlar SET soru_yaniti_kapali = 0')
     expect(mod._adaylar(db).map(x => x.gonderen_ad)).toEqual(['a', 'e'])
   })
   test('otomasyonKaydet soru_yaniti_kapali yazar; undefined ise DOKUNMAZ', () => {

@@ -791,26 +791,14 @@ export default function Ayarlar() {
             </label>
           </div>
 
-          {/* Fiyat DIŞI sorulara otomatik teşekkür DM'i (08.09.2026, karar 6B: tek genel metin).
-              Otomasyon yorumu niyete göre ayırır: fiyat soran → ürün kartı, soru soran → bu
-              metin + yorum "Sorular" sekmesinde temsilci cevaplayana kadar bekler. Yayında
-              KAPALI başlar; gönderi bazında panelden ayrıca kapatılabilir. */}
+          {/* Yorum niyet sınıflaması: otomasyon YALNIZ fiyat soran yoruma ürün kartı gönderir;
+              fiyat dışı sorular Sosyal Medya → Yorumlar → Bekleyen sorular'da temsilciyi bekler
+              (09.09.2026: otomatik teşekkür DM'i kaldırıldı). */}
           <div className="mb-4 border-t pt-4 space-y-2">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-semibold text-marka-900 text-sm">❓ Fiyat dışı sorulara otomatik yanıt</div>
-                <div className="text-xs text-gray-500">Fiyat sormayan yorumlara bu teşekkür DM'i gider; yorum "Sorular" sekmesinde temsilci cevaplayana kadar bekler.</div>
-              </div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer flex-shrink-0">
-                <input type="checkbox" className="w-4 h-4" checked={String(meta.soru_yaniti_aktif || '0') === '1'}
-                  onChange={e => metaAlan('soru_yaniti_aktif', e.target.checked ? '1' : '0')} />
-                Açık
-              </label>
+            <div>
+              <div className="font-semibold text-marka-900 text-sm">🏷️ Yorum sınıflama</div>
+              <div className="text-xs text-gray-500">Fiyat soran yoruma otomasyon ürün kartı gönderir; diğer sorular "Bekleyen sorular" listesinde temsilciyi bekler.</div>
             </div>
-            <textarea rows={2} value={meta.soru_yaniti_metin || ''}
-              onChange={e => metaAlan('soru_yaniti_metin', e.target.value)}
-              placeholder="Merhaba, sorunuzu aldık 🙏 Temsilcimiz en kısa sürede size dönecek."
-              className="w-full border rounded-lg px-3 py-2 text-sm" />
             <div className="flex items-center gap-3">
               <button type="button" disabled={!!metaMesgul}
                 onClick={async () => {

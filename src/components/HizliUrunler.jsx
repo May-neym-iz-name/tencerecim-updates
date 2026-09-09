@@ -12,7 +12,8 @@ import toast from 'react-hot-toast'
 const ARAMA_GECIKME_MS = 250
 const GERI_BILDIRIM_MS = 1200
 
-export default function HizliUrunler({ hedef, kullanici, onGonderildi }) {
+// hedefYok: hedef boşken gösterilecek açıklama (ör. konuşmada gelen mesaj yok).
+export default function HizliUrunler({ hedef, kullanici, onGonderildi, hedefYok }) {
   const [arama, setArama] = useState('')
   const [liste, setListe] = useState([])
   const [son, setSon] = useState([])
@@ -56,12 +57,12 @@ export default function HizliUrunler({ hedef, kullanici, onGonderildi }) {
   }
 
   return (
-    <div className="w-[200px] flex-shrink-0 border-l bg-white p-2.5 flex flex-col gap-2 overflow-y-auto">
+    <div className="w-[200px] h-full flex-shrink-0 border-l bg-white p-2.5 flex flex-col gap-2 overflow-y-auto">
       <div className="text-[11px] font-bold text-marka-900">🛍️ HIZLI ÜRÜNLER</div>
       <input value={arama} onChange={e => setArama(e.target.value)} placeholder="Ara… (ad, SKU)"
         disabled={!hedef?.id}
         className="w-full border border-marka-100 rounded-md px-2 py-1 text-[12px] focus:outline-none focus:border-marka-400 disabled:bg-gray-50" />
-      {!hedef?.id && <div className="text-[11px] text-gray-400">Bir konuşma ya da yorum seçin.</div>}
+      {!hedef?.id && <div className="text-[11px] text-gray-400">{hedefYok || 'Bir konuşma ya da yorum seçin.'}</div>}
       {liste.map(u => {
         const anahtar = `${u._tur}-${u.id}`
         return (

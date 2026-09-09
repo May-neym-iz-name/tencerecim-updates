@@ -22,6 +22,8 @@ const KAYNAK_IFADESI = `CASE
   ELSE 'normal' END`
 // Beyaz liste: değer SQL'e metin olarak girer (parametre değil), bilinmeyen değer eklenmez.
 const KAYNAKLAR = new Set(['hikaye', 'paylasim', 'normal'])
+// 'diger' = hikaye yanıtı + gönderi paylaşımı birlikte (09.09.2026: DM listesi iki gruba indi —
+// "Normal" ve "Diğer"; personel için hikaye/paylaşım ayrımının değeri yoktu).
 
 // Koşullar gruplanmış sayılara baktığı için WHERE'e değil HAVING'e eklenir.
 // `having` ve `p` (parametre nesnesi) yerinde güncellenir.
@@ -35,7 +37,8 @@ function listeFiltreleri({ cevapDurumu, okunma, atama, kullanici, kaynak } = {},
   if (atama === 'bana') { having.push('MAX(atanan_kullanici) = @kullanici'); p.kullanici = kullanici || '' }
   else if (atama === 'atanmamis') having.push('MAX(atanan_kullanici) IS NULL')
 
-  if (kaynak && KAYNAKLAR.has(kaynak)) having.push(`kaynak = '${kaynak}'`)
+  if (kaynak === 'diger') having.push("kaynak IN ('hikaye','paylasim')")
+  else if (kaynak && KAYNAKLAR.has(kaynak)) having.push(`kaynak = '${kaynak}'`)
 
   return having
 }

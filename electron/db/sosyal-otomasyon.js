@@ -105,12 +105,11 @@ function _adaylar(db, konuId = null) {
     WHERE ${kosul}
       AND m.tur = 'yorum'
       AND m.yon = 'gelen'
-      -- NİYET KAPISI (08.09.2026): yalnız fiyat (ürün kartı) ve soru (teşekkür DM'i, bkz.
-      -- meta/otomasyon.js). Etiket/övgü/emoji/gürültüye hiçbir şey gitmez. NULL = henüz
-      -- sınıflanmamış eski satır → fiyat sayılır (geniş taraf; niyetToplu çalışana kadar
-      -- bugünkü davranış değişmesin).
-      AND (COALESCE(m.niyet, 'fiyat') = 'fiyat'
-           OR (m.niyet = 'soru' AND COALESCE(o.soru_yaniti_kapali, 0) = 0))
+      -- NİYET KAPISI (09.09.2026): otomasyon YALNIZ fiyat soran yoruma gider (ürün kartı).
+      -- Fiyat dışı soru, etiket, övgü, emoji, gürültüye HİÇBİR ŞEY gitmez; soru yorumları
+      -- "Yorumlar" listesinde temsilci cevaplayana kadar bekler (kullanıcı kararı 09.09:
+      -- teşekkür DM'i kaldırıldı). NULL = henüz sınıflanmamış eski satır → fiyat sayılır.
+      AND COALESCE(m.niyet, 'fiyat') = 'fiyat'
       AND m.gonderen_ad != '${SAYFA_ADI}'
       AND m.ozel_mesaj_tarihi IS NULL
       AND COALESCE(m.ozel_mesaj_deneme, 0) < ${MAKS_DENEME}

@@ -3,7 +3,7 @@
 // Polling main.js'ten çağrılır (ikas sipariş polling deseni; public webhook gerekmez).
 const client = require('./client')
 const { getDb } = require('../db/database')
-const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat } = require('../db/sosyal-mesajlar')
+const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat, _kartEkolariniBirlestir } = require('../db/sosyal-mesajlar')
 const { gorselDosyasi, onbellekDurum } = require('./gorsel-onbellek')
 
 // Son çekme turunun özeti (arka plan polling + manuel). UI "sessiz hata göstergesi"
@@ -312,6 +312,8 @@ async function tumunuCek() {
   }
   // Uygulama DIŞINDAN (telefon/Business Suite) yanıtlananların "okunmadı"sını kapat.
   try { _yanitlananlariKapat() } catch (e) { sonuc.hatalar.push(`yanitKapat: ${e.message}`) }
+  // Kart kopyası yerel kayıtla birleşmeden kalmışsa (eski turlar) burada onarılır; idempotent.
+  try { _kartEkolariniBirlestir() } catch (e) { sonuc.hatalar.push(`kartEko: ${e.message}`) }
   // Otomasyon: yorumlar çekildikten SONRA çalışır (yeni yorumlar bu turda yakalansın).
   // Hata turu bozmaz — çekme işi otomasyondan bağımsız sürmeli.
   try {

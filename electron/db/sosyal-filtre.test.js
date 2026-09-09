@@ -63,6 +63,7 @@ describe('niyet ve kaynak (08.09.2026)', () => {
   test('kaynak süzgeci HAVING koşulu ekler, bilinmeyen değer eklemez (beyaz liste)', () => {
     expect(uygula({ kaynak: 'hikaye' }).having).toEqual(["kaynak = 'hikaye'"])
     expect(uygula({ kaynak: 'hepsi' }).having).toEqual([])
+    expect(uygula({ kaynak: 'diger' }).having).toEqual(["kaynak IN ('hikaye','paylasim')"])
     expect(uygula({ kaynak: "x'; DROP" }).having).toEqual([])
   })
 })

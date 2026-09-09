@@ -161,29 +161,7 @@ async function otomasyonCalistir() {
   for (const a of adaylar) {
     if (!_kotaVar()) { sonuc.sinirDoldu = true; break }
 
-    // SORU niyeti (08.09.2026): ürün kartı DEĞİL, Ayarlar'daki genel teşekkür DM'i (6B).
-    // Kapalıysa ya da metin boşsa aday atlanır ama DAMGALANMAZ: açıldığında geriye dönük gitsin.
-    // Bu DM yoruma özel yanıt (private reply) hakkını harcar → recipient_id saklanır ki
-    // temsilci "DM'den yanıtla" derken konuşma o kimlikle bulunsun.
-    if (a.niyet === 'soru') {
-      const ay = require('../db/meta-ayarlar')._ayarlariGetir()
-      const metin = String(ay.soru_yaniti_metin || '').trim()
-      if (String(ay.soru_yaniti_aktif || '0') !== '1' || !metin) continue
-      try {
-        const yanit = await _ozelMesaj(sayfaId, a.harici_id, { text: metin })
-        _gonderimZamanlari.push(Date.now())
-        sonuc.soruDm = (sonuc.soruDm || 0) + 1
-        db.prepare("UPDATE sosyal_mesajlar SET ozel_mesaj_tarihi = datetime('now','localtime'), ozel_mesaj_hata = NULL, ozel_mesaj_alici = ? WHERE id = ?")
-          .run((yanit && yanit.recipient_id) || null, a.id)
-      } catch (e) {
-        sonuc.hatalar.push(`Soru DM (${a.gonderen_ad}): ${e.message}`)
-        hataYaz.run(String(e.message).slice(0, 300), a.id)
-        sonuc.basarisiz = (sonuc.basarisiz || 0) + 1
-      }
-      sonuc.islenen++
-      await bekle(CAGRI_ARASI_MS)
-      continue
-    }
+    // Fiyat dışı soruya otomatik DM YOK (09.09.2026): _adaylar yalnız fiyat döndürür.
 
     if (!metinOnbellek.has(a.otomasyon_id)) {
       metinOnbellek.set(a.otomasyon_id, await _icerikHazirla(db, a.otomasyon_id, sonuc))

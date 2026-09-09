@@ -170,9 +170,9 @@ describe('konusmalar() — yanıt penceresi zamanı', () => {
     expect(sosyal['sosyal:konusmalar']({})[0].son_gelen).toBe('2026-08-02T09:30:00+0000')
   })
 
-  test('yalnız giden mesaj varsa son_gelen boş kalır (geri sayım gösterilmez)', () => {
+  test('yalnız giden mesaj varsa konuşma HİÇ listelenmez (09.09.2026: müşteri yazmadan görünmez)', () => {
     _upsertMesaj(dm({ harici_id: 'd1', yon: 'giden', gonderen_id: 'u1', mesaj_tarihi: '2026-08-01T08:00:00+0000' }))
-    expect(sosyal['sosyal:konusmalar']({})[0].son_gelen).toBeNull()
+    expect(sosyal['sosyal:konusmalar']({})).toHaveLength(0)
   })
 })
 

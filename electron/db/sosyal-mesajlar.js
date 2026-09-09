@@ -70,6 +70,12 @@ function _gonderiKaydet(m) {
 
 // Çekilen bir öğeyi ekler/günceller. harici_id çakışırsa metin/durum korunur (idempotent).
 // Yeni gelen 'gelen' mesajları 'yeni' durumda kalır; giden (bizim gönderdiğimiz) 'giden'.
+// Mesaj zamanını saniyeye çevirir — SQL tarafında. Meta'nın created_time'ı '+0000' ile biter
+// ve SQLite strftime bu eki TANIMAZ (NULL döner; ±2 dk kuralı bu yüzden canlıda hiç
+// eşleşmiyordu, 09.09.2026). Yerel kayıtlar ISO 'Z' ile yazılır; ikisi de burada normalize.
+const ZAMAN_SN = "strftime('%s', REPLACE(REPLACE(mesaj_tarihi, '+0000', 'Z'), '+00:00', 'Z'))"
+function zamanSn(t) { const n = Date.parse(t || ''); return Number.isFinite(n) ? Math.floor(n / 1000) : -1e12 }
+
 function _upsertMesaj(m) {
   const db = getDb()
   // Gönderi bilgisi mesaj satırına DEĞİL, kendi tablosuna yazılır.
@@ -110,18 +116,21 @@ function _upsertMesaj(m) {
   // olarak yazılır; sonra Meta'dan GERÇEK kimliğiyle geri çekilir (Send API kimliği çekim
   // kimliğiyle eşleşmez). Yeni satır açmak yerine aynı konuşmadaki aynı metinli ekoyu
   // benimseriz: eko gerçek kimliği alır, "kim yanıtladı" bilgisi korunur, kopya oluşmaz.
-  // ÜRÜN KARTI (08.09.2026): Meta'dan çekilen kopyada `message` BOŞ gelir, metin eşleşmesi
-  // tutmaz. Kart kopyası (ek_tur='sablon') aynı konuşmadaki ±2 dk içindeki yerel kart
-  // ekosunu (ek_tur='urun_karti') benimser; eko ek_tur'u KORUR (kart balonu oradan çizilir).
+  // ÜRÜN KARTI: Meta'dan çekilen kopyada `message` BOŞ gelir ve — ÖLÇÜLDÜ 09.09.2026 —
+  // attachments/shares/story alanlarının HİÇBİRİ dönmez (yalnız id/from/created_time).
+  // Yani kopya eksiz+metinsiz bir giden mesajdır; metin eşleşmesi tutmaz. Böyle bir kopya
+  // (ya da ek_tur='sablon' tanınmış hali) aynı konuşmadaki ±2 dk içindeki yerel kart ekosunu
+  // (ek_tur='urun_karti') benimser; eko ek_tur'u KORUR (kart balonu oradan çizilir).
   if (m.tur === 'dm' && m.yon === 'giden' && m.konu_id) {
+    const kartKopyasiMi = (m.ek_tur === 'sablon' || (!m.ek_tur && !(m.metin || '').trim())) ? 1 : 0
     const eko = db.prepare(`
       SELECT id FROM sosyal_mesajlar
       WHERE konu_id = ? AND tur = 'dm' AND yon = 'giden'
         AND harici_id LIKE 'giden\\_%' ESCAPE '\\'
-        AND ( metin = ?
-              OR (ek_tur = 'urun_karti' AND ? = 'sablon'
-                  AND ABS(strftime('%s', mesaj_tarihi) - strftime('%s', ?)) <= 120) )
-      ORDER BY id ASC LIMIT 1`).get(m.konu_id, m.metin || '', m.ek_tur || '', m.mesaj_tarihi || '')
+        AND ( (metin = ? AND ? != '')
+              OR (ek_tur = 'urun_karti' AND ? = 1
+                  AND ABS(${ZAMAN_SN} - ?) <= 120) )
+      ORDER BY id ASC LIMIT 1`).get(m.konu_id, m.metin || '', m.metin || '', kartKopyasiMi, zamanSn(m.mesaj_tarihi))
     if (eko) {
       db.prepare('UPDATE sosyal_mesajlar SET harici_id = ?, mesaj_tarihi = COALESCE(?, mesaj_tarihi) WHERE id = ?')
         .run(m.harici_id, m.mesaj_tarihi || null, eko.id)
@@ -328,20 +337,30 @@ function sayaclar({ kullanici } = {}) {
     `SELECT COUNT(*) n FROM sosyal_mesajlar WHERE durum='yeni' AND yon='gelen'
        AND COALESCE(silindi,0) = 0 AND ${kosul}`
   ).get().n
-  const bana = kullanici ? db.prepare(`
+  // Bana atanmış ve hâlâ cevapsız DM konuşmaları — platform başına (09.09.2026: sekmeler
+  // platform bazlı ayrıldı, tek toplam yetmiyor).
+  const banaSorgu = db.prepare(`
     SELECT COUNT(*) n FROM (
-      SELECT konu_id FROM sosyal_mesajlar WHERE tur='dm' AND konu_id IS NOT NULL
+      SELECT konu_id FROM sosyal_mesajlar WHERE tur='dm' AND konu_id IS NOT NULL AND platform = ?
       GROUP BY konu_id
-      HAVING MAX(atanan_kullanici) = ? AND ${CEVAPSIZ_SAYAC} > 0)`).get(kullanici).n : 0
+      HAVING MAX(atanan_kullanici) = ? AND ${CEVAPSIZ_SAYAC} > 0)`)
+  const bana = (pf) => kullanici ? banaSorgu.get(pf, kullanici).n : 0
+  const messenger = q("tur='dm' AND platform='facebook'")
+  const instagram_dm = q("tur='dm' AND platform='instagram'")
+  const fb_yorum = q("tur='yorum' AND platform='facebook' AND niyet='soru'")
+  const ig_yorum = q("tur='yorum' AND platform='instagram' AND niyet='soru'")
+  const yt_yorum = q("tur='yorum' AND platform='youtube'")
   return {
     hepsi: q(ROZET_YORUM_KOSULU),
-    messenger: q("tur='dm' AND platform='facebook'"),
-    instagram_dm: q("tur='dm' AND platform='instagram'"),
-    fb_yorum: q("tur='yorum' AND platform='facebook' AND niyet='soru'"),
-    ig_yorum: q("tur='yorum' AND platform='instagram' AND niyet='soru'"),
-    yt_yorum: q("tur='yorum' AND platform='youtube'"),
-    sorular: q("tur='yorum' AND niyet='soru'"),
-    bana,
+    messenger, instagram_dm, fb_yorum, ig_yorum, yt_yorum,
+    sorular: fb_yorum + ig_yorum,
+    // Platform toplamları (üst sekme rozeti)
+    instagram: instagram_dm + ig_yorum,
+    facebook: messenger + fb_yorum,
+    youtube: yt_yorum,
+    bana: bana('instagram') + bana('facebook'),
+    bana_instagram: bana('instagram'),
+    bana_facebook: bana('facebook'),
   }
 }
 
@@ -367,9 +386,14 @@ function sonUrunler() {
 // "Sorular" sekmesi (08.09.2026, seçim 1A): fiyat DIŞI gerçek sorular, temsilci cevaplayana
 // kadar listede kalır. Gönderi bilgisi sosyal_gonderiler'den (tek kopya).
 // tesekkur: 'gitti' | 'gitmedi' | undefined — otomatik teşekkür DM'i (ozel_mesaj_tarihi) durumu.
-function sorular({ arama, atama, kullanici, tesekkur } = {}) {
-  const kosul = ["m.tur='yorum'", "m.yon='gelen'", "m.niyet='soru'", "m.durum IN ('yeni','okundu')", 'COALESCE(m.silindi,0)=0']
+// niyet: 'soru' (varsayılan, fiyat dışı gerçek sorular) | 'hepsi' (YouTube: otomasyon yok,
+// her bekleyen yorum temsilci işidir; gürültü/emoji yine dışarıda).
+function sorular({ platform, arama, atama, kullanici, tesekkur, niyet = 'soru' } = {}) {
+  const kosul = ["m.tur='yorum'", "m.yon='gelen'", "m.durum IN ('yeni','okundu')", 'COALESCE(m.silindi,0)=0']
+  if (niyet === 'hepsi') kosul.push("COALESCE(m.niyet,'soru') NOT IN ('gurultu','emoji','etiket')")
+  else kosul.push("m.niyet='soru'")
   const p = {}
+  if (platform && platform !== 'hepsi') { kosul.push('m.platform = @platform'); p.platform = platform }
   if (arama) kosul.push(...aramaKosullari("COALESCE(m.metin,'') || ' ' || COALESCE(m.gonderen_ad,'')", arama, p))
   if (atama === 'bana') { kosul.push('m.atanan_kullanici = @kullanici'); p.kullanici = kullanici || '' }
   else if (atama === 'atanmamis') kosul.push('m.atanan_kullanici IS NULL')
@@ -470,26 +494,60 @@ function konusmalar({ platform, arama, baslangic, bitis, cevapDurumu, okunma, at
       COALESCE(
         (SELECT gonderen_ad FROM sosyal_mesajlar s2 WHERE s2.konu_id = s.konu_id AND s2.yon='gelen'
            ORDER BY COALESCE(s2.mesaj_tarihi, s2.cekilme_tarihi) DESC LIMIT 1),
+        -- Yedekte YEREL ekolar ("Otomasyon (kart)", "… (yanıt)") dışlanır: Meta'dan çekilen
+        -- giden kopya müşterinin adını taşır (cekMesajlar: bizden → musteri.name). 09.09.2026'da
+        -- 2.130 kart-only konuşma listede "Otomasyon (kart)" adıyla görünüyordu.
         (SELECT gonderen_ad FROM sosyal_mesajlar s2b WHERE s2b.konu_id = s.konu_id
-           ORDER BY COALESCE(s2b.mesaj_tarihi, s2b.cekilme_tarihi) DESC LIMIT 1)
+           AND s2b.harici_id NOT LIKE 'giden\\_%' ESCAPE '\\'
+           AND COALESCE(s2b.gonderen_ad,'') NOT LIKE '% (kart)' AND COALESCE(s2b.gonderen_ad,'') NOT LIKE '% (yanıt)'
+           ORDER BY COALESCE(s2b.mesaj_tarihi, s2b.cekilme_tarihi) DESC LIMIT 1),
+        (SELECT gonderen_ad FROM sosyal_mesajlar s2c WHERE s2c.konu_id = s.konu_id
+           ORDER BY COALESCE(s2c.mesaj_tarihi, s2c.cekilme_tarihi) DESC LIMIT 1)
       ) kisi,
       -- Son mesajın metni; metin boşsa (hikaye yanıtı / paylaşım / medya) ek başlığını göster.
       (SELECT CASE WHEN COALESCE(metin,'') != '' THEN metin
                    WHEN ek_tur IS NOT NULL THEN '📎 ' || COALESCE(ek_baslik, 'Ek içerik')
-                   ELSE metin END
+                   ELSE '(metinsiz içerik)' END
          FROM sosyal_mesajlar s3 WHERE s3.konu_id = s.konu_id
          ORDER BY COALESCE(s3.mesaj_tarihi, s3.cekilme_tarihi) DESC LIMIT 1) son_metin
     FROM sosyal_mesajlar s
     WHERE ${kosul.join(' AND ')} AND konu_id IS NOT NULL
     GROUP BY konu_id, platform
-    ${having.length ? 'HAVING ' + having.join(' AND ') : ''}
+    -- Müşterinin HİÇ yazmadığı konuşma listelenmez (09.09.2026): bunlar otomasyonun yorumdan
+    -- açtığı tek yönlü kart gönderimleridir (2.130 adet) — yanıt verilemez (gelen mesaj yok),
+    -- listeyi boğuyordu. Müşteri yazınca konuşma kendiliğinden görünür.
+    HAVING SUM(CASE WHEN yon='gelen' THEN 1 ELSE 0 END) > 0${having.length ? ' AND ' + having.join(' AND ') : ''}
     ORDER BY son_zaman DESC
     LIMIT 200
   `).all(p)
 }
 
+// TEK SEFERLİK ONARIM (09.09.2026): eko benimseme kuralı boş kopyayı tanımadan önce çekilen
+// kart kopyaları (metinsiz, eksiz giden satır) yerel kart kaydının yanında AYRI satır olarak
+// birikti → sohbette boş balon + listede "Otomasyon (kart)". Aynı konuşmada ±2 dk içindeki
+// çifti birleştirir: yerel kayıt Meta kimliğini alır, kopya silinir. İdempotent, açılışta çağrılır.
+function _kartEkolariniBirlestir() {
+  const db = getDb()
+  const ciftler = db.prepare(`
+    SELECT k.id kart_id, e.id eko_id, e.harici_id eko_harici, e.mesaj_tarihi eko_tarih
+    FROM sosyal_mesajlar k
+    JOIN sosyal_mesajlar e ON e.konu_id = k.konu_id AND e.tur = 'dm' AND e.yon = 'giden'
+      AND e.id != k.id AND e.harici_id NOT LIKE 'giden\\_%' ESCAPE '\\'
+      AND COALESCE(e.metin,'') = '' AND e.ek_tur IS NULL
+      AND ABS(${ZAMAN_SN.replace(/mesaj_tarihi/g, 'e.mesaj_tarihi')} - ${ZAMAN_SN.replace(/mesaj_tarihi/g, 'k.mesaj_tarihi')}) <= 120
+    WHERE k.tur = 'dm' AND k.yon = 'giden' AND k.ek_tur = 'urun_karti'
+      AND k.harici_id LIKE 'giden\\_%' ESCAPE '\\'
+    GROUP BY k.id
+  `).all()
+  const sil = db.prepare('DELETE FROM sosyal_mesajlar WHERE id = ?')
+  const tasi = db.prepare('UPDATE sosyal_mesajlar SET harici_id = ?, mesaj_tarihi = COALESCE(?, mesaj_tarihi) WHERE id = ?')
+  for (const c of ciftler) { sil.run(c.eko_id); tasi.run(c.eko_harici, c.eko_tarih, c.kart_id) }
+  return ciftler.length
+}
+
 module.exports = {
   _upsertMesaj,
+  _kartEkolariniBirlestir,
   _gonderiKaydet,
   _dbAyarla, // YALNIZ TEST — bkz. dosya başındaki test dikişi notu
   _silinenGonderileriIsaretle,

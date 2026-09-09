@@ -46,7 +46,12 @@ protocol.registerSchemesAsPrivileged([
 // aynı yorumlara paralel DM denemesi + hız kısıtı örnek başına sayıldığı için Meta'nın saatlik
 // sınırının iki katına çıkma riski. (2026-07-16'da iki dev örneği yüzünden gerçekten yaşandı.)
 // Ayrıca aynı SQLite dosyasına iki süreçten yazmak WAL'a rağmen kilit çekişmesi yaratır.
-const tekOrnekKilidi = app.requestSingleInstanceLock()
+// SEYİRCİ KİPİ (yalnız dev): TNC_SEYIRCI=1 ile açılan örnek kilidi ALMAZ, arka plan
+// yoklayıcı/otomasyon KURMAZ ve CDP portu açar (ekran görüntüsü / arayüz denetimi için).
+// Kurulu uygulama açıkken arayüzü gözle doğrulamak için var; polling tek örnekte kalır.
+const seyirci = isDev && process.env.TNC_SEYIRCI === '1'
+if (seyirci) app.commandLine.appendSwitch('remote-debugging-port', process.env.TNC_CDP_PORT || '9333')
+const tekOrnekKilidi = seyirci ? true : app.requestSingleInstanceLock()
 if (!tekOrnekKilidi) {
   app.quit()
 } else {
@@ -125,8 +130,10 @@ function createWindow() {
   if (!isDev) Menu.setApplicationMenu(null)
 
   mainWindow = new BrowserWindow({
-    width: 1366,
-    height: 800,
+    // Seyirci kipinde mağaza PC'sinin gerçek çalışma alanına yakın boyut (1920 fiziksel,
+    // %140 ölçekte ~1370 CSS px) — arayüz denetimi o genişlikte yapılır.
+    width: seyirci ? 1920 : 1366,
+    height: seyirci ? 1040 : 800,
     minWidth: 1100,
     minHeight: 600,
     title: 'Tencerecim Mağaza Yönetim Sistemi',
@@ -136,6 +143,9 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       devTools: isDev,
+      // Seyirci kipinde pencere başka pencerelerin altında kalsa da boyamaya devam etsin
+      // (CDP ekran görüntüsü örtülü pencerede sonsuza kadar bekliyordu).
+      ...(seyirci ? { backgroundThrottling: false } : {}),
     },
   })
 
@@ -416,7 +426,7 @@ if (tekOrnekKilidi) {
   }
 
   const arkaPlanIslerBaslat = () => {
-    if (arkaPlanKuruldu) return
+    if (arkaPlanKuruldu || seyirci) return
     arkaPlanKuruldu = true
     // Tek seferlik ağır bakım — yoklayıcılardan ÖNCE: VACUUM tekel erişim ister, arka
     // plan işleri başladıktan sonra çalıştırılsa SQLITE_BUSY ile çakışırdı. Arayüz bu
