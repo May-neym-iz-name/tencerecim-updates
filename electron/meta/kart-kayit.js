@@ -1,7 +1,7 @@
 // Gönderilen ÜRÜN KARTINI yerel gelen kutusuna yazılabilir hale getirir (08.09.2026).
 // Eskiden kart DM'i yalnız metin olarak (ya da hiç) kaydediliyordu → sohbette BOŞ BALON.
 //
-// ek_* alanları İLK kartı taşır (liste satırı ve önizleme için), ham_ek TÜM kartları
+// ek_* alanları İLK kartı taşır (liste satırı ve önizleme için), ham_ek TÜM kartları + BUTONLARI
 // (balon karuseli buradan çizer — bkz. src/components/UrunKartiBalonu.jsx).
 // `yuk` = kartMesajiOlustur().yuk: { attachment: { payload: { elements: [...] } } }.
 function kartKaydi(yuk, { kim = null } = {}) {
@@ -21,6 +21,10 @@ function kartKaydi(yuk, { kim = null } = {}) {
       kim,
       elements: el.map(e => ({
         title: e.title || null, subtitle: e.subtitle || null, image_url: e.image_url || null, url: linkOf(e),
+        // Butonlar da saklanır: balon Instagram'daki kartın AYNISINI çizsin diye
+        // (10.09 — eskiden yalnız `url` saklanıyordu, WhatsApp hatları panelde görünmüyordu
+        // ve kart "tek butonlu" sanılıyordu; gönderilen yükte hep 3 buton vardı).
+        buttons: (e.buttons || []).filter(b => b && b.url).map(b => ({ title: b.title || null, url: b.url })),
       })),
     }),
   }

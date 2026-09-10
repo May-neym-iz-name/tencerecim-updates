@@ -4,7 +4,12 @@ import { describe, test, expect } from 'vitest'
 const { kartKaydi } = await import('./kart-kayit.js')
 
 const yuk = { attachment: { type: 'template', payload: { template_type: 'generic', elements: [
-  { title: 'Sofram Soft 12 Parça', subtitle: 'Fiyat: 3.490 TL · Ücretsiz kargo', image_url: 'https://cdn/a.webp', default_action: { url: 'https://tencerecim.store/a' } },
+  { title: 'Sofram Soft 12 Parça', subtitle: 'Fiyat: 3.490 TL · Ücretsiz kargo', image_url: 'https://cdn/a.webp', default_action: { url: 'https://tencerecim.store/a' },
+    buttons: [
+      { type: 'web_url', url: 'https://tencerecim.store/a', title: '🛒 Online Sipariş' },
+      { type: 'web_url', url: 'https://wa.me/905451516077', title: 'WhatsApp Pendik' },
+      { type: 'web_url', url: 'https://wa.me/905372881241', title: 'WhatsApp Gölcük' },
+    ] },
   { title: 'Thor Tava 28', subtitle: 'Fiyat: 1.290 TL', image_url: 'https://cdn/b.webp', buttons: [{ url: 'https://tencerecim.store/b' }] },
 ] } } }
 
@@ -26,6 +31,13 @@ describe('kartKaydi', () => {
     const k = kartKaydi(tek, { kim: 'Ufuk' })
     expect(k.ek_baslik).toBe('Thor Tava 28')
     expect(k.ek_link).toBe('https://tencerecim.store/b')
+  })
+  test('butonlar ham_ek alanına yazılır (WhatsApp hatları panelde de görünsün — 10.09)', () => {
+    const k = kartKaydi(yuk, { kim: 'otomasyon' })
+    const h = JSON.parse(k.ham_ek)
+    expect(h.elements[0].buttons.map(b => b.title))
+      .toEqual(['🛒 Online Sipariş', 'WhatsApp Pendik', 'WhatsApp Gölcük'])
+    expect(h.elements[0].buttons[1].url).toBe('https://wa.me/905451516077')
   })
   test('boş/bozuk yük null döner', () => {
     expect(kartKaydi(null, {})).toBeNull()
