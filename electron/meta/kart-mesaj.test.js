@@ -72,11 +72,11 @@ describe('kartMesajiOlustur', () => {
     expect(e.default_action).toEqual({ type: 'web_url', url: URUN.web_link })
   })
 
-  it('butonlar: Ürünü İncele + Pendik + Gölcük (kullanıcı kararı 08.09)', () => {
+  it('butonlar: Online Sipariş + Pendik + Gölcük (kullanıcı kararı 08.09)', () => {
     const { yuk } = kartMesajiOlustur({ urunler: [URUN], numaralar: HATLAR })
     const b = yuk.attachment.payload.elements[0].buttons
     expect(b).toHaveLength(3)
-    expect(b[0].title).toBe('Ürünü İncele')
+    expect(b[0].title).toBe('🛒 Online Sipariş')
     expect(b[1]).toEqual({ type: 'web_url', url: 'https://wa.me/905451516077', title: 'WhatsApp Pendik' })
     expect(b[2]).toEqual({ type: 'web_url', url: 'https://wa.me/905372881241', title: 'WhatsApp Gölcük' })
   })
@@ -94,7 +94,7 @@ describe('kartMesajiOlustur', () => {
     expect(wa).toHaveLength(1)
   })
 
-  it('linksiz ürün de kart olur; Ürünü İncele butonu ve default_action YAZILMAZ', () => {
+  it('linksiz ürün de kart olur; Online Sipariş butonu ve default_action YAZILMAZ', () => {
     const { yuk } = kartMesajiOlustur({ urunler: [{ ad: 'Linksiz', fiyat: 100 }], numaralar: HATLAR })
     const e = yuk.attachment.payload.elements[0]
     expect(e.default_action).toBeUndefined()

@@ -186,7 +186,7 @@ export default function OtomasyonPaneli({ konu }) {
       <label className="text-[11px] font-semibold text-gray-600">Mesaj tipi</label>
       <div className="flex gap-2 mb-3 mt-1">
         {[
-          { d: 'kart', b: '🖼️ Ürün kartı', a: 'Her ürün görseli, fiyatı ve "Ürünü İncele" + WhatsApp butonlarıyla kart olarak gider (en fazla 10 ürün). Açıklama yazısı GİTMEZ — kart mesajı metin taşıyamıyor.' },
+          { d: 'kart', b: '🖼️ Ürün kartı', a: 'Her ürün görseli, fiyatı ve "🛒 Online Sipariş" + WhatsApp butonlarıyla kart olarak gider (en fazla 10 ürün). Açıklama yazısı GİTMEZ — kart mesajı metin taşıyamıyor.' },
           { d: 'metin', b: '📝 Düz metin', a: 'Eski biçim: açıklama + ürün adı/fiyat/link alt alta yazılır. Görsel ve buton yoktur, 1000 karakter sınırı geçerlidir.' },
         ].map(s => (
           <button key={s.d} type="button" title={s.a} disabled={!yonetebilir}

@@ -19,7 +19,7 @@ const MAKS_BUTON = 3
 const BASLIK_SINIR = 80
 const ALT_BASLIK_SINIR = 80
 const BUTON_BASLIK_SINIR = 20
-const BUTON_URUN = 'Ürünü İncele'
+const BUTON_URUN = '🛒 Online Sipariş'
 
 /**
  * Metni sınıra kırpar; kırpıldıysa sonuna … koyar (kelime ortasında kesip anlamsız bırakmamak

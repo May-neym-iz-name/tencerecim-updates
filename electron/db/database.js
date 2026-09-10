@@ -947,7 +947,7 @@ function migrate() {
   // Çözüm: gönderiye ait veri gönderinin kendi satırında dursun.
   try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN ozel_aciklama TEXT") } catch {}
   try { db.exec("ALTER TABLE sosyal_otomasyonlar ADD COLUMN whatsapp TEXT") } catch {}
-  // mesaj_tipi: 'kart' = ürün kartı karuseli (görsel + fiyat + Ürünü İncele/WhatsApp butonları),
+  // mesaj_tipi: 'kart' = ürün kartı karuseli (görsel + fiyat + Online Sipariş/WhatsApp butonları),
   // 'metin' = eski düz metin. Kullanıcı gönderi bazında seçer (v1.2.197).
   // Kart mesajı METİN TAŞIYAMAZ (Meta: text ile attachment aynı mesajda gitmiyor) → açıklama
   // yazısı önemliyse 'metin' seçilir. Varsayılan 'kart': ürünler görselli ve tıklanabilir gider
