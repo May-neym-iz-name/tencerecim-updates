@@ -41,8 +41,10 @@ MAL KABUL/
 /*.jpeg
 /*.jpg
 
-# Yerel calisma/gecici dosyalar
-_*.js
+# Yerel calisma/gecici dosyalar.
+# KOKTE '_' ile baslayan hicbir sey uygulama kodu degildir (11.09 dogrulandi:
+# takipli tek bir '_' dosyasi yok). Betik + gunluk + ara cikti hepsi buraya girer.
+/_*
 *.output
 
 # GENEL KURAL: Uygulama kodu/dokumani DISINDA hicbir sey (sirket verisi,
@@ -56,3 +58,13 @@ REKLAM-KAMPANYALARI/
 
 # Yayin gunlugu (yerel)
 publish.log
+
+# Arama indeksi (urun adi/fiyat = ticari veri) — repoya girmez, deploy sirasinda uretilir
+cloudflare/arama-worker/veri/
+
+# Calisma verisi (tedarikci PDF, ham video) — REPO PUBLIC, uygulama kodu degil
+Dara/
+video edit/
+
+# Claude Code calisma kilidi (yerel)
+.claude/scheduled_tasks.lock
