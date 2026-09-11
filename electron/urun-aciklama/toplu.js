@@ -27,6 +27,7 @@ const sablon = require('./sablon')
 const metin = require('./metin')
 const { rozetler } = require('./siniflandir')
 const induksiyon = require('./induksiyon')
+const denetim = require('./denetim')
 
 // Şablonla yazılmış açıklamaların işareti. Yeniden çalıştırmada atlanır,
 // böylece iş yarıda kalırsa baştan başlanabilir ve Gemini kotası boşa gitmez.
@@ -225,7 +226,7 @@ async function calistir({ mod, limit, gunluk }) {
     hedefler.map(u => ({ id: u.id, name: u.name, description: u.description })), null, 2), 'utf8')
   gunluk(`yedek: ${yedekYol}`)
 
-  const sonuc = { yazildi: 0, atlandi: 0, hata: 0, satirlar: [] }
+  const sonuc = { yazildi: 0, atlandi: 0, hata: 0, satirlar: [], suphe: [] }
 
   for (const u of hedefler) {
     const etiket = `${u.name} (${u.id})`
@@ -237,6 +238,18 @@ async function calistir({ mod, limit, gunluk }) {
         gunluk: (s) => gunluk(`   … ${etiket}: ${s}`),
       })
       if (uyari) { sonuc.atlandi++; gunluk(`⚠ ATLANDI ${etiket} — ${uyari}`); continue }
+
+      // DOĞRULUK KAPISI — Gemini'ye "uydurma" demek yeterli değil, ÖLÇ.
+      // Yeni metindeki her sayı ve teknik iddia kaynakta desteklenmeli.
+      // Desteklenmiyorsa ürüne DOKUNULMAZ; yanlış bilgi yayınlamaktansa atla.
+      const uretilenMetin = [bilgi.seo, bilgi.icerik, bilgi.malzeme, bilgi.saglik].join(' ')
+      const kontrol = denetim.denetle(uretilenMetin, kaynakMetin, u.name)
+      if (!kontrol.temiz) {
+        sonuc.atlandi++
+        gunluk(`⚠ ATLANDI ${etiket} — doğruluk denetimi:\n    · ${kontrol.bulgular.join('\n    · ')}`)
+        sonuc.suphe.push({ ad: u.name, id: u.id, bulgular: kontrol.bulgular, uretilen: uretilenMetin })
+        continue
+      }
 
       // Rozetler metinden DEĞİL, sınıflandırmadan gelir. İndüksiyon yalnız
       // doğrulanmış haritadan; eşleşme yoksa rozet yazılmaz.
@@ -294,7 +307,7 @@ async function calistir({ mod, limit, gunluk }) {
 // 11.09 DERSİ: bu kipler tek seferlik TOPLU İŞTİR, oturum değil. İş bitince süreç
 // kendini kapatmazsa pencere açık kalır ve her çalıştırma bir örnek biriktirir
 // (bir oturumda 9 tane birikti). Bittiğinde app.quit() ŞART.
-const KIPLER = ['plan', 'uygula', 'oku', 'denetle', 'fiyat', 'onar']
+const KIPLER = ['plan', 'uygula', 'oku', 'denetle', 'fiyat', 'onar', 'dogrula']
 
 // main.js bunu açılışta sorar: toplu iş mi, normal açılış mı?
 // Toplu iş ise pencere AÇILMAZ (bkz. main.js'teki 11.09 dersi).
@@ -375,6 +388,41 @@ async function _kipiCalistir(mod) {
       } catch (e) { rapor.push({ urunId: o.urunId, dogrulama: 'okunamadi: ' + e.message }) }
     }
     fs.writeFileSync(yol, JSON.stringify(rapor, null, 2), 'utf8')
+    return
+  }
+
+  // GERİYE DÖNÜK DOĞRULUK DENETİMİ: TNC_ACIKLAMA=dogrula
+  // Yazılmış (imzalı) her ürünü yedekteki ORİJİNALİNE karşı sınar. Hiçbir şey yazmaz,
+  // Gemini çağırmaz (kota harcamaz). Çıktı: aciklama-dogrulama.json
+  if (mod === 'dogrula') {
+    const yol = path.join(app.getPath('userData'), 'aciklama-dogrulama.json')
+    try {
+      const orijinaller = orijinalAciklamalar()
+      const urunler = await tumUrunler()
+      const rapor = []
+      for (const u of urunler) {
+        const d = String(u.description || '')
+        if (!d.includes(IMZA)) continue                  // yalnız bizim yazdıklarımız
+        const kaynak = orijinaller.get(u.id)
+        if (!kaynak) {
+          rapor.push({ ad: u.name, id: u.id, durum: 'ORİJİNAL YOK — denetlenemedi' })
+          continue
+        }
+        // Rozetler kaynaktan türemez → denetimden ÖNCE çıkarılır.
+        const k = denetim.denetle(denetim.rozetleriCikar(d), kaynak, u.name)
+        rapor.push({
+          ad: u.name, id: u.id,
+          slug: u.metaData && u.metaData.slug,
+          durum: k.temiz ? 'TEMİZ' : 'BULGU VAR',
+          bulgular: k.bulgular,
+          orijinal: denetim.duzMetin(kaynak),
+          yeni: denetim.duzMetin(d),
+        })
+      }
+      fs.writeFileSync(yol, JSON.stringify(rapor, null, 2), 'utf8')
+    } catch (e) {
+      fs.writeFileSync(yol, JSON.stringify({ hata: e.message }, null, 2), 'utf8')
+    }
     return
   }
 
