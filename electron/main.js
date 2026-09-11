@@ -475,13 +475,23 @@ if (tekOrnekKilidi) {
 
   app.whenReady().then(() => {
     require('./db/database').init()
+
+    // TOPLU AÇIKLAMA DÖNÜŞTÜRME (tek seferlik iş, yalnız TNC_ACIKLAMA verilmişse).
+    // PENCERE AÇILMAZ ve arka plan işleri kurulmaz — kimlik zaten main process'te.
+    //
+    // 11.09 DERSİ: önce pencere de açılıyordu. Pencere localhost:5173'ü yükleyemeyince
+    // kapanıyor, 'window-all-closed' app.quit() diyor ve TOPLU İŞ ORTASINDAN KESİLİYORDU
+    // (3 üründen 2'si yazılıp süreç sessizce ölmüştü — günlükte "BİTTİ" satırı yoktu).
+    // Toplu kipin arayüze ihtiyacı yok; pencereyi hiç açmamak yarışı tamamen kaldırır.
+    if (require('./urun-aciklama/toplu').topluKipMi()) {
+      require('./urun-aciklama/toplu').envIleCalistir()
+      return
+    }
+
     gorselProtokolunuKur()
     createWindow()
     // Normal yol: arayüz yüklendi, artık arka plan işleri açılışı yavaşlatamaz.
     mainWindow.webContents.once('did-finish-load', arkaPlanIslerBaslat)
-    // TOPLU AÇIKLAMA DÖNÜŞTÜRME (tek seferlik iş, yalnız TNC_ACIKLAMA verilmişse).
-    // Arayüzü yok; kimlik main process'te çözüldüğü için burada çalışır.
-    require('./urun-aciklama/toplu').envIleCalistir()
     // EMNİYET AĞI: yükleme hata alır ya da hiç bitmezse did-finish-load ATEŞLENMEZ ve
     // sipariş çekme sessizce hiç başlamazdı. 20 sn sonra ne olursa olsun başlat.
     setTimeout(arkaPlanIslerBaslat, 20 * 1000)

@@ -162,6 +162,31 @@ async function tumUrunler() {
   return hepsi
 }
 
+// Yedeklerden ORİJİNAL açıklamaları toplar (urunId -> ilk görülen açıklama).
+// Yedek dosyaları eskiden yeniye taranır; İLK kayıt gerçek orijinaldir, sonrakiler
+// zaten şablonlanmış metni taşıyabilir.
+//
+// Neden gerekli: şablonu güncelleyip ürünü YENİDEN yazarken, mevcut açıklama artık
+// şablonun kendisidir. Onu Gemini'ye kaynak diye vermek bilgi kaybettirir (özet
+// üstüne özet). Kaynak her zaman ilk orijinal olmalı.
+function orijinalAciklamalar() {
+  const dizin = path.join(app.getPath('userData'), 'aciklama-yedek')
+  const harita = new Map()
+  let dosyalar = []
+  try { dosyalar = fs.readdirSync(dizin).filter(f => f.endsWith('.json')).sort() } catch { return harita }
+  for (const d of dosyalar) {
+    let kayitlar = []
+    try { kayitlar = JSON.parse(fs.readFileSync(path.join(dizin, d), 'utf8')) } catch { continue }
+    for (const k of kayitlar) {
+      if (!k || !k.id || harita.has(k.id)) continue
+      const a = String(k.description || '')
+      if (!a.trim() || a.includes(IMZA)) continue      // şablonlanmış metin orijinal değildir
+      harita.set(k.id, a)
+    }
+  }
+  return harita
+}
+
 async function calistir({ mod, limit, gunluk }) {
   const anahtar = (aiAyarlar().gemini_anahtar || '').trim()
   if (!anahtar) throw new Error('Gemini anahtarı girilmemiş (Ayarlar > Yapay Zeka).')
@@ -170,13 +195,22 @@ async function calistir({ mod, limit, gunluk }) {
   const urunler = await tumUrunler()
   gunluk(`ikas'ta ${urunler.length} ürün.`)
 
+  // TNC_ACIKLAMA_YENIDEN=1 → şablonu değiştirdiğimizde önceden yazılanları da tazele.
+  const yeniden = process.env.TNC_ACIKLAMA_YENIDEN === '1'
+  const orijinaller = yeniden ? orijinalAciklamalar() : new Map()
+
   const adaylar = urunler.filter(u => {
     const d = String(u.description || '').trim()
-    if (!d) return false                  // dağıtılacak bilgi yok
-    if (d.includes(IMZA)) return false     // zaten dönüştürülmüş
+    if (!d) return false                       // dağıtılacak bilgi yok
+    if (d.includes(IMZA)) {
+      // Zaten dönüşmüş. Tazeleme kipinde yalnız ORİJİNALİ elimizde olanı yeniden yaz;
+      // yoksa dokunma (şablonun üstüne şablon üretmek bilgi kaybettirir).
+      return yeniden && orijinaller.has(u.id)
+    }
     return true
   })
-  gunluk(`aday: ${adaylar.length} (boş açıklamalı ve zaten dönüşmüş olanlar hariç)`)
+  gunluk(`aday: ${adaylar.length}`
+    + (yeniden ? ` (tazeleme AÇIK — yedekte orijinali olan ${orijinaller.size} ürün dahil)` : ' (boş ve zaten dönüşmüş olanlar hariç)'))
 
   const hedefler = limit > 0 ? adaylar.slice(0, limit) : adaylar
 
@@ -196,8 +230,11 @@ async function calistir({ mod, limit, gunluk }) {
   for (const u of hedefler) {
     const etiket = `${u.name} (${u.id})`
     try {
+      // Kaynak metin: tazelemede yedekteki ORİJİNAL, normalde ikas'taki mevcut.
+      const kaynakMetin = orijinaller.get(u.id) || u.description
       const { bilgi, uyari } = await metin.bolumleriUret({
-        ad: u.name, marka: u.brand?.name, mevcut: u.description, anahtar,
+        ad: u.name, marka: u.brand?.name, mevcut: kaynakMetin, anahtar,
+        gunluk: (s) => gunluk(`   … ${etiket}: ${s}`),
       })
       if (uyari) { sonuc.atlandi++; gunluk(`⚠ ATLANDI ${etiket} — ${uyari}`); continue }
 
@@ -250,6 +287,10 @@ async function calistir({ mod, limit, gunluk }) {
 // kendini kapatmazsa pencere açık kalır ve her çalıştırma bir örnek biriktirir
 // (bir oturumda 9 tane birikti). Bittiğinde app.quit() ŞART.
 const KIPLER = ['plan', 'uygula', 'oku', 'denetle', 'fiyat', 'onar']
+
+// main.js bunu açılışta sorar: toplu iş mi, normal açılış mı?
+// Toplu iş ise pencere AÇILMAZ (bkz. main.js'teki 11.09 dersi).
+function topluKipMi() { return KIPLER.includes(process.env.TNC_ACIKLAMA) }
 
 async function envIleCalistir() {
   const mod = process.env.TNC_ACIKLAMA
@@ -398,4 +439,4 @@ async function _kipiCalistir(mod) {
   gunluk(`\nÇıktı: ${cikti}`)
 }
 
-module.exports = { calistir, envIleCalistir, girdi, iskelet, IMZA, ALANLAR }
+module.exports = { calistir, envIleCalistir, topluKipMi, girdi, iskelet, farklar, IMZA, ALANLAR }

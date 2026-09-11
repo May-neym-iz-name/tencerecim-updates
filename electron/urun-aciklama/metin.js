@@ -96,14 +96,70 @@ function seoDenetle(seo) {
   return null
 }
 
+// SEO uzunluğu tutmazsa modele NE YAPACAĞINI söyleyip tekrar sorar.
+// 11.09 ölçüldü: tek denemede 238 krkt gelip ürün atlandı. 424 üründe bu çok sayıda
+// atlama demek. Düzelt-ve-tekrar-sor, "atla"dan iyi; ama sonsuz denemez.
+const EN_FAZLA_DENEME = 3
+
+// GEÇİCİ GEMINI ARIZASI — 11.09'da canlıda görüldü:
+// "This model is currently experiencing high demand..." Bu kalıcı bir hata değil;
+// gemini.js tüm modelleri deneyip pes ediyor. 424 ürünlük turda bunun sık olması
+// beklenir ve ürünü atlamak bilgi kaybıdır → geri çekilerek (backoff) tekrar dene.
+const GECICI_KALIP = /high demand|yogun|yoğun|overloaded|rate limit|quota|timeout|zaman asimi|ECONNRESET|ETIMEDOUT|socket hang up|503|429/i
+
+function geciciMi(hata) {
+  return GECICI_KALIP.test(String((hata && hata.message) || hata || ''))
+}
+
+const uyu = (ms) => new Promise(r => setTimeout(r, ms))
+
+// Geçici arızada artan beklemeyle tekrar dener. Kalıcı hatada HEMEN fırlatır —
+// yoksa gerçek hatayı 4 kat yavaşlatarak gizlemiş oluruz.
+async function geciciyeDayanikli(fn, { tur = 4, ilkBekleme = 5000, gunluk = () => {}, _uyu = uyu } = {}) {
+  let son
+  for (let i = 1; i <= tur; i++) {
+    try { return await fn() } catch (e) {
+      son = e
+      if (!geciciMi(e) || i === tur) throw e
+      const bekle = ilkBekleme * Math.pow(2, i - 1)     // 5s · 10s · 20s
+      gunluk(`geçici Gemini arızası (${i}/${tur - 1}), ${bekle / 1000} sn sonra tekrar: ${e.message}`)
+      await _uyu(bekle)
+    }
+  }
+  throw son
+}
+
+function duzeltmeEki(seo) {
+  const n = seo.length
+  const yon = n < SEO_EN_AZ
+    ? `ÇOK KISA (${n} karakter). Kaynak metindeki BAŞKA olguları ekleyerek uzat.`
+    : `ÇOK UZUN (${n} karakter). Yeni bilgi ekleme, sadece kısalt.`
+  return `\n\nÖNCEKİ DENEMEN REDDEDİLDİ: "seo" alanı ${yon}`
+    + `\n${SEO_EN_AZ}-${SEO_EN_FAZLA} karakter arasında olmalı. Diğer alanları aynı bırakabilirsin.`
+    + `\nYine SADECE JSON döndür.`
+}
+
 // Dönen: { bilgi, uyari }  — uyari null değilse metin şablona uygun değil.
-async function bolumleriUret({ ad, marka, mevcut, anahtar, _uret = geminiUret }) {
+async function bolumleriUret({ ad, marka, mevcut, anahtar, gunluk, _uret = geminiUret, _uyu = uyu }) {
   const kaynak = duzMetin(mevcut)
   if (!kaynak) return { bilgi: null, uyari: 'mevcut açıklama boş — dağıtılacak bilgi yok' }
 
+  let sonBilgi = null, sonUyari = null
+  for (let deneme = 1; deneme <= EN_FAZLA_DENEME; deneme++) {
+    const ek = sonBilgi ? duzeltmeEki(sonBilgi.seo) : ''
+    sonBilgi = await geciciyeDayanikli(
+      () => _tekDeneme({ ad, marka, kaynak, anahtar, ek, _uret }),
+      { gunluk, _uyu })
+    sonUyari = seoDenetle(sonBilgi.seo)
+    if (!sonUyari) return { bilgi: sonBilgi, uyari: null }
+  }
+  return { bilgi: sonBilgi, uyari: `${sonUyari} — ${EN_FAZLA_DENEME} denemede düzelmedi` }
+}
+
+async function _tekDeneme({ ad, marka, kaynak, anahtar, ek, _uret }) {
   const yanit = await _uret({
     anahtar,
-    istem: istemKur({ ad, marka, mevcut: kaynak }),
+    istem: istemKur({ ad, marka, mevcut: kaynak }) + (ek || ''),
     sicaklik: 0.4,          // dağıtım işi; yaratıcılık istemiyoruz
     // 11.09 ÖLÇÜLDÜ: 800 de 2500 de yanıtı ortasından kesti. Sebep jeton azlığı DEĞİL —
     // gemini-3.x flash bir DÜŞÜNME modeli ve maxOutputTokens düşünme jetonlarını da
@@ -116,8 +172,7 @@ async function bolumleriUret({ ad, marka, mevcut, anahtar, _uret = geminiUret })
     },
   })
   // gemini.uret → { metin, model }
-  const bilgi = jsonAyristir(yanit && yanit.metin)
-  return { bilgi, uyari: seoDenetle(bilgi.seo) }
+  return jsonAyristir(yanit && yanit.metin)
 }
 
 module.exports = { bolumleriUret, duzMetin, jsonAyristir, seoDenetle, istemKur, SEO_EN_AZ, SEO_EN_FAZLA }

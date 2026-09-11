@@ -126,6 +126,68 @@ describe('metin ayrıştırma', () => {
   })
 })
 
+describe('SEO yeniden deneme', () => {
+  const yanit = (seo) => ({ metin: JSON.stringify({ seo, icerik: 'i', malzeme: 'm', saglik: 's' }) })
+
+  test('kısa gelirse tekrar sorar ve düzeleni kabul eder', async () => {
+    const uzunluklar = [200, 300]      // 1. deneme kısa, 2. deneme uygun
+    let cagri = 0
+    const sahte = async () => yanit('a'.repeat(uzunluklar[cagri++]))
+    const r = await metin.bolumleriUret({ ad: 'X', mevcut: '<p>kaynak</p>', anahtar: 'k', _uret: sahte })
+    expect(cagri).toBe(2)
+    expect(r.uyari).toBeNull()
+    expect(r.bilgi.seo).toHaveLength(300)
+  })
+
+  test('düzelmezse 3 denemede durur — sonsuz denemez', async () => {
+    let cagri = 0
+    const sahte = async () => { cagri++; return yanit('a'.repeat(100)) }
+    const r = await metin.bolumleriUret({ ad: 'X', mevcut: '<p>kaynak</p>', anahtar: 'k', _uret: sahte })
+    expect(cagri).toBe(3)
+    expect(r.uyari).toMatch(/denemede düzelmedi/)
+  })
+
+  test('ilk deneme uygunsa tekrar sormaz', async () => {
+    let cagri = 0
+    const sahte = async () => { cagri++; return yanit('a'.repeat(300)) }
+    await metin.bolumleriUret({ ad: 'X', mevcut: '<p>kaynak</p>', anahtar: 'k', _uret: sahte })
+    expect(cagri).toBe(1)
+  })
+
+  test('düzeltme isteminde modele ne yapacağı SÖYLENİR', async () => {
+    const istemler = []
+    let cagri = 0
+    const sahte = async ({ istem }) => { istemler.push(istem); return yanit('a'.repeat(cagri++ === 0 ? 100 : 300)) }
+    await metin.bolumleriUret({ ad: 'X', mevcut: '<p>kaynak</p>', anahtar: 'k', _uret: sahte })
+    expect(istemler[0]).not.toContain('REDDEDİLDİ')
+    expect(istemler[1]).toContain('ÇOK KISA')
+  })
+})
+
+describe('geçici Gemini arızası', () => {
+  const yanit = (seo) => ({ metin: JSON.stringify({ seo, icerik: 'i', malzeme: 'm', saglik: 's' }) })
+  const hemen = async () => {}            // beklemeyi atla (test hızlı kalsın)
+
+  test('yoğunluk hatasında geri çekilip tekrar dener', async () => {
+    let cagri = 0
+    const sahte = async () => {
+      if (++cagri < 3) throw new Error('Gemini yanit vermedi: This model is currently experiencing high demand.')
+      return yanit('a'.repeat(300))
+    }
+    const r = await metin.bolumleriUret({ ad: 'X', mevcut: '<p>k</p>', anahtar: 'k', _uret: sahte, _uyu: hemen })
+    expect(cagri).toBe(3)
+    expect(r.uyari).toBeNull()
+  })
+
+  test('KALICI hatada beklemeden fırlatır — gerçek hatayı geciktirmez', async () => {
+    let cagri = 0
+    const sahte = async () => { cagri++; throw new Error('Gemini anahtari girilmemis.') }
+    await expect(metin.bolumleriUret({ ad: 'X', mevcut: '<p>k</p>', anahtar: '', _uret: sahte, _uyu: hemen }))
+      .rejects.toThrow(/anahtari girilmemis/)
+    expect(cagri).toBe(1)
+  })
+})
+
 describe('SEO uzunluk kapısı', () => {
   test('kısa metin uyarı verir', () => {
     expect(metin.seoDenetle('a'.repeat(100))).toMatch(/kısa/)
