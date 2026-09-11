@@ -275,7 +275,15 @@ async function calistir({ mod, limit, gunluk }) {
       sonuc.hata++
       gunluk(`✘ HATA ${etiket} — ${e.message}`)
       // Alan kaybı/görsel kaybı sessizce geçilmez: hasar iddiası varsa çalışmayı durdur.
-      if (/KAYBI|DIŞINDA/.test(e.message)) { gunluk('!! DURDURULDU'); break }
+      if (/KAYBI|DIŞINDA/.test(e.message)) { gunluk('!! DURDURULDU — HASAR ŞÜPHESİ'); break }
+      // Günlük kota bittiyse kalan ürünler için denemenin ANLAMI YOK; turu bitir.
+      // Yazılanlar imzalı olduğu için sonraki tur kaldığı yerden devam eder.
+      if (metin.kotaMi(e)) {
+        gunluk('!! DURDURULDU — GEMINI GÜNLÜK KOTASI BİTTİ. Kota yenilenince aynı komutu '
+          + 'tekrar çalıştır; yazılanlar imzalı olduğu için kaldığı yerden devam eder.')
+        sonuc.kotaBitti = true
+        break
+      }
     }
   }
   return { ...sonuc, yedekYol }

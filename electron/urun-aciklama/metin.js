@@ -105,9 +105,19 @@ const EN_FAZLA_DENEME = 3
 // "This model is currently experiencing high demand..." Bu kalıcı bir hata değil;
 // gemini.js tüm modelleri deneyip pes ediyor. 424 ürünlük turda bunun sık olması
 // beklenir ve ürünü atlamak bilgi kaybıdır → geri çekilerek (backoff) tekrar dene.
-const GECICI_KALIP = /high demand|yogun|yoğun|overloaded|rate limit|quota|timeout|zaman asimi|ECONNRESET|ETIMEDOUT|socket hang up|503|429/i
+const GECICI_KALIP = /high demand|yogun|yoğun|overloaded|rate limit|timeout|zaman asimi|ECONNRESET|ETIMEDOUT|socket hang up|503|429/i
+
+// GÜNLÜK KOTA BİTMESİ geçici DEĞİLDİR — beklemekle geçmez, ertesi güne kadar sürer.
+// 11.09'da "quota" kalıbı geçici sayılmıştı: her ürün 4 kez deneyip 35 sn bekledi,
+// kalan ürünler için bu saatlerce boşuna iş demek. Artık ayrı sınıf.
+const KOTA_KALIP = /exceeded your current quota|billing details|RESOURCE_EXHAUSTED/i
+
+function kotaMi(hata) {
+  return KOTA_KALIP.test(String((hata && hata.message) || hata || ''))
+}
 
 function geciciMi(hata) {
+  if (kotaMi(hata)) return false
   return GECICI_KALIP.test(String((hata && hata.message) || hata || ''))
 }
 
@@ -175,4 +185,7 @@ async function _tekDeneme({ ad, marka, kaynak, anahtar, ek, _uret }) {
   return jsonAyristir(yanit && yanit.metin)
 }
 
-module.exports = { bolumleriUret, duzMetin, jsonAyristir, seoDenetle, istemKur, SEO_EN_AZ, SEO_EN_FAZLA }
+module.exports = {
+  bolumleriUret, duzMetin, jsonAyristir, seoDenetle, istemKur,
+  kotaMi, geciciMi, SEO_EN_AZ, SEO_EN_FAZLA,
+}

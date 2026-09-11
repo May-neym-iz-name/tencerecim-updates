@@ -179,6 +179,26 @@ describe('geçici Gemini arızası', () => {
     expect(r.uyari).toBeNull()
   })
 
+  test('KOTA hatası geçici SAYILMAZ — beklemeden fırlatır', async () => {
+    let cagri = 0
+    const sahte = async () => {
+      cagri++
+      throw new Error('Gemini yanit vermedi: You exceeded your current quota, please check your plan and billing details.')
+    }
+    await expect(metin.bolumleriUret({ ad: 'X', mevcut: '<p>k</p>', anahtar: 'k', _uret: sahte, _uyu: hemen }))
+      .rejects.toThrow(/quota/)
+    expect(cagri).toBe(1)          // 4 kez deneyip 35 sn beklemez
+  })
+
+  test('kotaMi ile geciciMi birbirini dışlar', () => {
+    const kota = new Error('You exceeded your current quota, please check your plan and billing details.')
+    const gecici = new Error('This model is currently experiencing high demand.')
+    expect(metin.kotaMi(kota)).toBe(true)
+    expect(metin.geciciMi(kota)).toBe(false)
+    expect(metin.kotaMi(gecici)).toBe(false)
+    expect(metin.geciciMi(gecici)).toBe(true)
+  })
+
   test('KALICI hatada beklemeden fırlatır — gerçek hatayı geciktirmez', async () => {
     let cagri = 0
     const sahte = async () => { cagri++; throw new Error('Gemini anahtari girilmemis.') }
