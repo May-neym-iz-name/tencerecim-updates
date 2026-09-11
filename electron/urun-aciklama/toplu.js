@@ -188,6 +188,47 @@ function orijinalAciklamalar() {
   return harita
 }
 
+// GÜVENLİ YAZMA — metnin NEREDEN geldiğinden bağımsız tek yol.
+//
+// Metni Gemini de üretmiş olabilir, elle de yazılmış olabilir; kapılar aynıdır.
+// İki ayrı yazma yolu tutmak, birinde düzeltilen hatanın diğerinde kalması demektir.
+//
+// Sırayla: doğruluk denetimi → rozetler → şablon → saveProduct → fiyat listelerini
+// geri yaz → geri oku → iskelet + görsel + açıklama doğrula.
+// Dönen: { durum: 'yazildi'|'atlandi', bulgular?, yeni? }
+async function guvenliYaz({ u, bilgi, kaynakMetin, harita, gunluk = () => {} }) {
+  const etiket = `${u.name} (${u.id})`
+
+  // Metin uydurma sayı/iddia taşıyorsa ürüne DOKUNULMAZ.
+  const uretilenMetin = [bilgi.seo, bilgi.icerik, bilgi.malzeme, bilgi.saglik].join(' ')
+  const kontrol = denetim.denetle(uretilenMetin, kaynakMetin, u.name)
+  if (!kontrol.temiz) return { durum: 'atlandi', bulgular: kontrol.bulgular, uretilen: uretilenMetin }
+
+  // Rozetler metinden DEĞİL, sınıflandırmadan gelir.
+  const bayrak = rozetler(u, harita)
+  const yeni = IMZA + '\n' + sablon.uret({ ...bilgi, ...bayrak })
+
+  // Görsel kapısı burada da devrede: girdi() okunamayan görselde fırlatır.
+  await graphql(`mutation($input:ProductInput!){ saveProduct(input:$input){ id } }`,
+    { input: girdi(u, yeni) })
+
+  // saveProduct fiyat listesi satırlarını sildi; HEMEN geri yaz. Sıra önemli:
+  // geri okuma denetimi bundan sonra çalışmalı, yoksa kendi sildiğimizi yakalar.
+  await fiyatListeleriniGeriYaz(u.id, u.variants)
+
+  // "Hata vermedi" doğrulama değildir — geri oku ve karşılaştır.
+  const sonra = await urunOku(u.id)
+  if (iskelet(sonra) !== iskelet(u)) {
+    throw new Error('açıklama DIŞINDA alan değişti:\n    - '
+      + farklar(JSON.parse(iskelet(u)), JSON.parse(iskelet(sonra))).join('\n    - '))
+  }
+  GORSEL.gorselDogrula(u, sonra, etiket)
+  if (String(sonra.description || '') !== yeni) {
+    throw new Error('açıklama yazıldı ama geri okunan metin farklı')
+  }
+  return { durum: 'yazildi', yeni }
+}
+
 async function calistir({ mod, limit, gunluk }) {
   const anahtar = (aiAyarlar().gemini_anahtar || '').trim()
   if (!anahtar) throw new Error('Gemini anahtarı girilmemiş (Ayarlar > Yapay Zeka).')
@@ -239,49 +280,23 @@ async function calistir({ mod, limit, gunluk }) {
       })
       if (uyari) { sonuc.atlandi++; gunluk(`⚠ ATLANDI ${etiket} — ${uyari}`); continue }
 
-      // DOĞRULUK KAPISI — Gemini'ye "uydurma" demek yeterli değil, ÖLÇ.
-      // Yeni metindeki her sayı ve teknik iddia kaynakta desteklenmeli.
-      // Desteklenmiyorsa ürüne DOKUNULMAZ; yanlış bilgi yayınlamaktansa atla.
-      const uretilenMetin = [bilgi.seo, bilgi.icerik, bilgi.malzeme, bilgi.saglik].join(' ')
-      const kontrol = denetim.denetle(uretilenMetin, kaynakMetin, u.name)
-      if (!kontrol.temiz) {
-        sonuc.atlandi++
-        gunluk(`⚠ ATLANDI ${etiket} — doğruluk denetimi:\n    · ${kontrol.bulgular.join('\n    · ')}`)
-        sonuc.suphe.push({ ad: u.name, id: u.id, bulgular: kontrol.bulgular, uretilen: uretilenMetin })
-        continue
-      }
-
-      // Rozetler metinden DEĞİL, sınıflandırmadan gelir. İndüksiyon yalnız
-      // doğrulanmış haritadan; eşleşme yoksa rozet yazılmaz.
-      const bayrak = rozetler(u, haritaOnbellek)
-      const yeni = IMZA + '\n' + sablon.uret({ ...bilgi, ...bayrak })
-
       if (mod === 'plan') {
-        sonuc.satirlar.push({ ad: u.name, id: u.id, eski: u.description, yeni })
+        const bayrak = rozetler(u, haritaOnbellek)
+        sonuc.satirlar.push({
+          ad: u.name, id: u.id, eski: u.description,
+          yeni: IMZA + '\n' + sablon.uret({ ...bilgi, ...bayrak }),
+        })
         gunluk(`· plan ${etiket} — SEO ${bilgi.seo.length} krkt`)
         continue
       }
 
-      // Görsel kapısı burada da devrede: girdi() okunamayan görselde fırlatır.
-      const g = girdi(u, yeni)
-      await graphql(`mutation($input:ProductInput!){ saveProduct(input:$input){ id } }`, { input: g })
-
-      // saveProduct fiyat listesi satırlarını sildi; HEMEN geri yaz. Sıra önemli:
-      // geri okuma denetimi bundan sonra çalışmalı, yoksa kendi sildiğimizi yakalar.
-      await fiyatListeleriniGeriYaz(u.id, u.variants)
-
-      // "Hata vermedi" doğrulama değildir — geri oku ve karşılaştır.
-      const sonra = await urunOku(u.id)
-      if (iskelet(sonra) !== iskelet(u)) {
-        const oncesi = JSON.parse(iskelet(u)), sonrasi = JSON.parse(iskelet(sonra))
-        throw new Error('açıklama DIŞINDA alan değişti:\n    - '
-          + farklar(oncesi, sonrasi).join('\n    - '))
+      const r = await guvenliYaz({ u, bilgi, kaynakMetin, harita: haritaOnbellek, gunluk })
+      if (r.durum === 'atlandi') {
+        sonuc.atlandi++
+        gunluk(`⚠ ATLANDI ${etiket} — doğruluk denetimi:\n    · ${r.bulgular.join('\n    · ')}`)
+        sonuc.suphe.push({ ad: u.name, id: u.id, bulgular: r.bulgular, uretilen: r.uretilen })
+        continue
       }
-      GORSEL.gorselDogrula(u, sonra, etiket)
-      if (String(sonra.description || '') !== yeni) {
-        throw new Error('açıklama yazıldı ama geri okunan metin farklı')
-      }
-
       sonuc.yazildi++
       gunluk(`✔ ${etiket} — SEO ${bilgi.seo.length} krkt`)
     } catch (e) {
@@ -307,7 +322,7 @@ async function calistir({ mod, limit, gunluk }) {
 // 11.09 DERSİ: bu kipler tek seferlik TOPLU İŞTİR, oturum değil. İş bitince süreç
 // kendini kapatmazsa pencere açık kalır ve her çalıştırma bir örnek biriktirir
 // (bir oturumda 9 tane birikti). Bittiğinde app.quit() ŞART.
-const KIPLER = ['plan', 'uygula', 'oku', 'denetle', 'fiyat', 'onar', 'dogrula']
+const KIPLER = ['plan', 'uygula', 'oku', 'denetle', 'fiyat', 'onar', 'dogrula', 'kaynak', 'dosyadan']
 
 // main.js bunu açılışta sorar: toplu iş mi, normal açılış mı?
 // Toplu iş ise pencere AÇILMAZ (bkz. main.js'teki 11.09 dersi).
@@ -388,6 +403,99 @@ async function _kipiCalistir(mod) {
       } catch (e) { rapor.push({ urunId: o.urunId, dogrulama: 'okunamadi: ' + e.message }) }
     }
     fs.writeFileSync(yol, JSON.stringify(rapor, null, 2), 'utf8')
+    return
+  }
+
+  // KAYNAK DÖKÜMÜ: TNC_ACIKLAMA=kaynak → metni ELLE yazmak için ürün listesi.
+  // Gemini çağırmaz, hiçbir şey yazmaz. Henüz dönüştürülmemiş ürünleri döker.
+  if (mod === 'kaynak') {
+    const yol = path.join(app.getPath('userData'), 'aciklama-kaynak.json')
+    const atla = Number(process.env.TNC_ACIKLAMA_ATLA || 0) || 0
+    const limit = Number(process.env.TNC_ACIKLAMA_LIMIT || 0) || 0
+    try {
+      const orijinaller = orijinalAciklamalar()
+      const yeniden = process.env.TNC_ACIKLAMA_YENIDEN === '1'
+      let liste = (await tumUrunler()).filter(u => {
+        const d = String(u.description || '').trim()
+        if (!d) return false
+        if (d.includes(IMZA)) return yeniden && orijinaller.has(u.id)
+        return true
+      })
+      if (atla) liste = liste.slice(atla)
+      if (limit) liste = liste.slice(0, limit)
+      fs.writeFileSync(yol, JSON.stringify(liste.map(u => ({
+        id: u.id,
+        ad: u.name,
+        marka: u.brand && u.brand.name,
+        kategoriler: (u.categories || []).map(c => c.name),
+        etiketler: (u.tags || []).map(t => t.name),
+        sku: (u.variants || []).map(v => v.sku).filter(Boolean),
+        kaynak: denetim.duzMetin(orijinaller.get(u.id) || u.description),
+      })), null, 2), 'utf8')
+    } catch (e) {
+      fs.writeFileSync(yol, JSON.stringify({ hata: e.message }, null, 2), 'utf8')
+    }
+    return
+  }
+
+  // ELLE YAZILMIŞ METİNLERİ YAZ: TNC_ACIKLAMA=dosyadan
+  //
+  // Girdi: userData/aciklama-girdi.json = [{id, seo, icerik, malzeme, saglik}]
+  // Metni kim yazarsa yazsın (Gemini ya da elle) AYNI güvenli yoldan geçer:
+  // doğruluk denetimi → rozetler → şablon → saveProduct → fiyat geri yaz → doğrula.
+  // Gemini'ye hiç gitmez, dolayısıyla KOTA HARCAMAZ.
+  if (mod === 'dosyadan') {
+    const girdiYol = path.join(app.getPath('userData'), 'aciklama-girdi.json')
+    const cikti = path.join(app.getPath('userData'), 'aciklama-toplu-dosyadan.log')
+    const satirlar = []
+    const gunluk = (s) => { satirlar.push(s); fs.writeFileSync(cikti, satirlar.join('\n'), 'utf8') }
+    gunluk(`== ELLE YAZILMIŞ METİNLER — ${new Date().toISOString()}`)
+    try {
+      const kayitlar = JSON.parse(fs.readFileSync(girdiYol, 'utf8'))
+      gunluk(`girdi: ${kayitlar.length} ürün (${girdiYol})`)
+      const orijinaller = orijinalAciklamalar()
+      const harita = induksiyon.harita()
+      let yazildi = 0, atlandi = 0, hata = 0
+
+      // Yedek — yazmadan önce, her koşulda.
+      const yedekDizin = path.join(app.getPath('userData'), 'aciklama-yedek')
+      fs.mkdirSync(yedekDizin, { recursive: true })
+
+      for (const k of kayitlar) {
+        const etiket = k.id
+        try {
+          const u = await urunOku(k.id)
+          const kaynakMetin = orijinaller.get(u.id) || u.description
+          fs.writeFileSync(
+            path.join(yedekDizin, `${new Date().toISOString().replace(/[:.]/g, '-')}-${u.id}.json`),
+            JSON.stringify([{ id: u.id, name: u.name, description: u.description }], null, 2), 'utf8')
+
+          const bilgi = {
+            seo: String(k.seo || ''), icerik: String(k.icerik || ''),
+            malzeme: String(k.malzeme || ''), saglik: String(k.saglik || ''),
+          }
+          const uzunlukUyari = metin.seoDenetle(bilgi.seo)
+          if (uzunlukUyari) {
+            atlandi++; gunluk(`⚠ ATLANDI ${u.name} — ${uzunlukUyari}`); continue
+          }
+          const r = await guvenliYaz({ u, bilgi, kaynakMetin, harita, gunluk })
+          if (r.durum === 'atlandi') {
+            atlandi++
+            gunluk(`⚠ ATLANDI ${u.name} — doğruluk denetimi:\n    · ${r.bulgular.join('\n    · ')}`)
+            continue
+          }
+          yazildi++
+          gunluk(`✔ ${u.name} — SEO ${bilgi.seo.length} krkt`)
+        } catch (e) {
+          hata++
+          gunluk(`✘ HATA ${etiket} — ${e.message}`)
+          if (/KAYBI|DIŞINDA/.test(e.message)) { gunluk('!! DURDURULDU — HASAR ŞÜPHESİ'); break }
+        }
+      }
+      gunluk(`\n== BİTTİ: yazıldı ${yazildi}, atlandı ${atlandi}, hata ${hata}`)
+    } catch (e) {
+      gunluk(`\n== ÇALIŞMA HATASI: ${e.stack || e.message}`)
+    }
     return
   }
 
