@@ -479,6 +479,9 @@ if (tekOrnekKilidi) {
     createWindow()
     // Normal yol: arayüz yüklendi, artık arka plan işleri açılışı yavaşlatamaz.
     mainWindow.webContents.once('did-finish-load', arkaPlanIslerBaslat)
+    // TOPLU AÇIKLAMA DÖNÜŞTÜRME (tek seferlik iş, yalnız TNC_ACIKLAMA verilmişse).
+    // Arayüzü yok; kimlik main process'te çözüldüğü için burada çalışır.
+    require('./urun-aciklama/toplu').envIleCalistir()
     // EMNİYET AĞI: yükleme hata alır ya da hiç bitmezse did-finish-load ATEŞLENMEZ ve
     // sipariş çekme sessizce hiç başlamazdı. 20 sn sonra ne olursa olsun başlat.
     setTimeout(arkaPlanIslerBaslat, 20 * 1000)
