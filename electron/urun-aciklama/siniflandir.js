@@ -4,10 +4,22 @@
 // Bu yüzden üçü de kanıta bağlı: ad/kategori metni (çelik, outlet) veya
 // doğrulanmış veri haritası (indüksiyon). Marka bazında varsayım YOK.
 
-// Çelik/paslanmaz mı? Ad veya kategoride açıkça geçiyorsa.
-function celikMi(ad = '', kategoriler = []) {
-  const metin = (ad + ' ' + kategoriler.join(' ')).toLocaleLowerCase('tr')
-  return /çelik|paslanmaz|18\/10|inox/.test(metin)
+// Çelik/paslanmaz mı — ve KALİTESİ belirtilmiş mi?
+//
+// 11.09 DÜZELTMESİ: eskiden tek bir true/false döndürüyordu ve şablon her çelik
+// üründe "★ 304 / 18-10 Çelik" rozetini basıyordu. Bu bir YÜKSELTMEDİR: kaynakta
+// yalnız "paslanmaz çelik" yazan ürüne 304/18-10 demek doğrulanmamış kalite
+// iddiasıdır (Falez Bella servis setlerinde yakalandı).
+//
+// Dönen:
+//   'kesin' → 304 veya 18/10 açıkça geçiyor  → "★ 304 / 18-10 Çelik"
+//   'genel' → yalnız çelik/paslanmaz geçiyor → "★ Paslanmaz Çelik"
+//   false   → çelik değil                    → rozet yok
+function celikMi(ad = '', kategoriler = [], ekMetin = '') {
+  const metin = (ad + ' ' + kategoriler.join(' ') + ' ' + ekMetin).toLocaleLowerCase('tr')
+  if (/\b304\b|18\/10|18-10/.test(metin)) return 'kesin'
+  if (/çelik|paslanmaz|inox/.test(metin)) return 'genel'
+  return false
 }
 
 // Outlet / 2. kalite / teşhir üründe garanti rozeti YAZILMAZ.

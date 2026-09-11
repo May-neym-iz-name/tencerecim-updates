@@ -85,9 +85,16 @@ describe('sınıflandırma', () => {
   })
 
   test('çelik ad veya kategoriden anlaşılır', () => {
-    expect(siniflandir.celikMi('Zeycan Çelik Tencere', [])).toBe(true)
-    expect(siniflandir.celikMi('Tencere', ['Paslanmaz Çelik'])).toBe(true)
+    expect(siniflandir.celikMi('Zeycan Çelik Tencere', [])).toBe('genel')
+    expect(siniflandir.celikMi('Tencere', ['Paslanmaz Çelik'])).toBe('genel')
     expect(siniflandir.celikMi('Granit Tencere', ['Granitler'])).toBe(false)
+  })
+
+  // 11.09: rozet her çelik üründe "304 / 18-10" diyordu — bu bir YÜKSELTMEDİR.
+  test('kalite AÇIKÇA yazmıyorsa 304/18-10 İDDİA EDİLMEZ', () => {
+    expect(siniflandir.celikMi('Paslanmaz Çelik Servis Seti', [])).toBe('genel')
+    expect(siniflandir.celikMi('18/10 Çelik Tencere', [])).toBe('kesin')
+    expect(siniflandir.celikMi('304 Kalite Çelik Tencere', [])).toBe('kesin')
   })
 
   test('indüksiyon haritada yoksa bilinmiyor döner — varsayım yapmaz', () => {
@@ -220,5 +227,22 @@ describe('SEO uzunluk kapısı', () => {
   })
   test('boş metin uyarı verir', () => {
     expect(metin.seoDenetle('')).toMatch(/boş/)
+  })
+})
+
+describe('çelik rozeti kalite iddiası (11.09 düzeltmesi)', () => {
+  test("'genel' çelikte 304/18-10 YAZILMAZ", () => {
+    const html = sablon.uret({ icerik: 'A', celik: 'genel' })
+    expect(html).toContain('Paslanmaz Çelik')
+    expect(html).not.toContain('304')
+    expect(html).not.toContain('18-10')
+  })
+
+  test("'kesin' çelikte 304/18-10 yazılır", () => {
+    expect(sablon.uret({ icerik: 'A', celik: 'kesin' })).toContain('304 / 18-10 Çelik')
+  })
+
+  test('çelik değilse hiç rozet yok', () => {
+    expect(sablon.uret({ icerik: 'A', celik: false })).not.toContain('Çelik')
   })
 })

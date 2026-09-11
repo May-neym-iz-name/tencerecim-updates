@@ -93,7 +93,10 @@ function uret(bilgi) {
 
   // ROZETLER — yalnız doğrulanmış/uygun olanlar. Varsayım YOK.
   const rozetler = []
-  if (b.celik) rozetler.push(rozet('★ 304 / 18-10 Çelik', true))
+  // celik: 'kesin' → kalite açıkça doğrulanmış · 'genel'/true → yalnız paslanmaz çelik.
+  // Kaynakta 304/18-10 yazmıyorsa o kaliteyi İDDİA ETME (11.09 dersi).
+  if (b.celik === 'kesin' || b.celik === true) rozetler.push(rozet('★ 304 / 18-10 Çelik', true))
+  else if (b.celik) rozetler.push(rozet('★ Paslanmaz Çelik', true))
   if (b.induksiyon === 'evet') {
     rozetler.push(`<span style="background:#eef1f4;color:${RENK.lacivert};border:1px solid #d6dbe2;`
       + `border-radius:8px;padding:9px 15px;font-weight:800;font-size:13.5px">⚡ İndüksiyon Uyumlu</span>`)
