@@ -109,24 +109,39 @@ function cevirHata(mesaj) {
   return HATA_CEVIRI[anahtar] || mesaj
 }
 
+// HIZ SINIRI (HTTP 429) — 11.09'da toplu açıklama yazımında görüldü.
+// ikas pencere başına 50 istek veriyor ve yanıt gövdesinde `retryAfter` (saniye)
+// döndürüyor. Bu kalıcı bir hata DEĞİL, sadece "biraz bekle" demek; işi düşürmek
+// yerine sunucunun söylediği kadar bekleyip tekrar dener.
+const HIZ_SINIRI_TUR = 4
+const uyu = (ms) => new Promise(r => setTimeout(r, ms))
+
 // GraphQL sorgusu çalıştırır; ikas hata döndürürse Error fırlatır.
 async function graphql(query, variables) {
-  const token = await tokenAl()
-  const { status, json } = await postJson(
-    GRAPHQL_URL,
-    { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-    JSON.stringify({ query, variables }),
-  )
-  // GraphQL doğrulama hataları HTTP 400 ile birlikte gövdede gelebilir; mutlaka oku.
-  if (json?.errors?.length) {
-    const mesaj = json.errors.map(e => cevirHata(e.message) || JSON.stringify(e)).join('; ')
-    throw new Error('ikas: ' + mesaj)
+  for (let tur = 1; ; tur++) {
+    const token = await tokenAl()
+    const { status, json } = await postJson(
+      GRAPHQL_URL,
+      { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      JSON.stringify({ query, variables }),
+    )
+    // GraphQL doğrulama hataları HTTP 400 ile birlikte gövdede gelebilir; mutlaka oku.
+    if (json?.errors?.length) {
+      const mesaj = json.errors.map(e => cevirHata(e.message) || JSON.stringify(e)).join('; ')
+      throw new Error('ikas: ' + mesaj)
+    }
+    if (status === 429 && tur < HIZ_SINIRI_TUR) {
+      // Sunucunun kendi verdiği süreye uy; yoksa artan bekleme.
+      const sn = Number(json && json.retryAfter)
+      await uyu(Number.isFinite(sn) && sn > 0 ? Math.ceil(sn * 1000) + 250 : 1000 * tur)
+      continue
+    }
+    if (status < 200 || status >= 300) {
+      const ek = json ? ' — ' + JSON.stringify(json).slice(0, 300) : ''
+      throw new Error(`ikas API hatası (HTTP ${status})${ek}`)
+    }
+    return json?.data
   }
-  if (status < 200 || status >= 300) {
-    const ek = json ? ' — ' + JSON.stringify(json).slice(0, 300) : ''
-    throw new Error(`ikas API hatası (HTTP ${status})${ek}`)
-  }
-  return json?.data
 }
 
 // Token cache'ini geçersiz kılar (ayarlar değişince çağrılır).
