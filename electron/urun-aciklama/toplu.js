@@ -205,7 +205,7 @@ async function guvenliYaz({ u, bilgi, kaynakMetin, harita, gunluk = () => {} }) 
   if (!kontrol.temiz) return { durum: 'atlandi', bulgular: kontrol.bulgular, uretilen: uretilenMetin }
 
   // Rozetler metinden DEĞİL, sınıflandırmadan gelir.
-  const bayrak = rozetler(u, harita)
+  const bayrak = rozetler(u, harita, kaynakMetin)
   const yeni = IMZA + '\n' + sablon.uret({ ...bilgi, ...bayrak })
 
   // Görsel kapısı burada da devrede: girdi() okunamayan görselde fırlatır.
@@ -281,7 +281,7 @@ async function calistir({ mod, limit, gunluk }) {
       if (uyari) { sonuc.atlandi++; gunluk(`⚠ ATLANDI ${etiket} — ${uyari}`); continue }
 
       if (mod === 'plan') {
-        const bayrak = rozetler(u, haritaOnbellek)
+        const bayrak = rozetler(u, haritaOnbellek, kaynakMetin)
         sonuc.satirlar.push({
           ad: u.name, id: u.id, eski: u.description,
           yeni: IMZA + '\n' + sablon.uret({ ...bilgi, ...bayrak }),

@@ -48,12 +48,16 @@ function induksiyonDurum(urun, harita = {}) {
 }
 
 // ikas ürün nesnesinden rozet bayraklarını kurar.
-function rozetler(urun, induksiyonHaritasi = {}) {
+// kaynakMetin: ürünün KENDİ açıklaması. Çelik kalitesi çoğu zaman adda değil
+// açıklamada yazıyor (Lines Luxury: "304 kalite paslanmaz çelik"). Ada bakmak
+// 'genel' verip kaliteyi gereksizce gizliyordu. Kaynak da okunur — ama yalnız
+// YÜKSELTME için: kaynakta 304/18-10 yoksa yine 'genel' kalır, iddia icat edilmez.
+function rozetler(urun, induksiyonHaritasi = {}, kaynakMetin = '') {
   const ad = urun.name || ''
   const kategoriler = (urun.categories || []).map(c => c.name || c)
   const etiketler = (urun.tags || []).map(t => t.name || t)
   return {
-    celik: celikMi(ad, kategoriler),
+    celik: celikMi(ad, kategoriler, kaynakMetin),
     garanti: garantiVarMi(ad, kategoriler, etiketler),
     induksiyon: induksiyonDurum(urun, induksiyonHaritasi),
   }

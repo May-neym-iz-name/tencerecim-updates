@@ -246,3 +246,20 @@ describe('çelik rozeti kalite iddiası (11.09 düzeltmesi)', () => {
     expect(sablon.uret({ icerik: 'A', celik: false })).not.toContain('Çelik')
   })
 })
+
+describe('çelik kalitesi kaynak metinden de okunur', () => {
+  test('kaynak 304 diyorsa kesin olur (ad demese bile)', () => {
+    expect(siniflandir.celikMi('Lines Luxury Paslanmaz Çelik Tencere Seti', [],
+      '304 kalite paslanmaz çelik gövde')).toBe('kesin')
+  })
+
+  test('kaynak kalite demiyorsa YÜKSELTİLMEZ', () => {
+    expect(siniflandir.celikMi('Paslanmaz Çelik Servis Seti', [],
+      'yüksek kaliteli paslanmaz çelik malzeme')).toBe('genel')
+  })
+
+  test('çelik olmayan üründe kaynak metin rozet DOĞURMAZ', () => {
+    expect(siniflandir.celikMi('Granit Tencere', ['Granitler'],
+      'granit kaplama gövde')).toBe(false)
+  })
+})
