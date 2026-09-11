@@ -237,8 +237,24 @@ async function calistir({ mod, limit, gunluk }) {
 }
 
 // main.js'ten çağrılır. Sonucu dosyaya yazar (Electron GUI stdout'u kabuğa vermez).
+//
+// 11.09 DERSİ: bu kipler tek seferlik TOPLU İŞTİR, oturum değil. İş bitince süreç
+// kendini kapatmazsa pencere açık kalır ve her çalıştırma bir örnek biriktirir
+// (bir oturumda 9 tane birikti). Bittiğinde app.quit() ŞART.
+const KIPLER = ['plan', 'uygula', 'oku', 'denetle', 'fiyat', 'onar']
+
 async function envIleCalistir() {
-  const mod = process.env.TNC_ACIKLAMA           // 'plan' | 'uygula' | 'oku'
+  const mod = process.env.TNC_ACIKLAMA
+  if (!KIPLER.includes(mod)) return              // normal açılış — hiçbir şey yapma
+  try {
+    await _kipiCalistir(mod)
+  } finally {
+    // Kip ne olursa olsun, hata alsa bile: bu bir toplu iştir, süreç burada biter.
+    app.quit()
+  }
+}
+
+async function _kipiCalistir(mod) {
 
   // TEŞHİS KİPİ: TNC_ACIKLAMA=oku TNC_ACIKLAMA_ID=<ürün id> → ürünü olduğu gibi döker.
   // Kapı ateşlendiğinde "hasar var mı" sorusunu ölçmek için; hiçbir şey yazmaz.
@@ -336,6 +352,10 @@ async function envIleCalistir() {
       const once = await urunOku(id)
       await graphql(`mutation($input:ProductInput!){ saveProduct(input:$input){ id } }`,
         { input: girdi(once, null) })       // null → mevcut açıklama korunur
+      // Bu kip de saveProduct çağırıyor → fiyat listesi satırlarını o da siler.
+      // 11.09'da bu kip "fark yok" dedi, çünkü o üründe silinecek satır ZATEN kalmamıştı;
+      // yani sonuç yanıltıcıydı. Telafi burada da şart.
+      await fiyatListeleriniGeriYaz(id, once.variants)
       const sonra = await urunOku(id)
       fs.writeFileSync(yol, JSON.stringify({
         ad: once.name,
