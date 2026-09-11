@@ -48,6 +48,8 @@ MUTLAK KURALLAR:
    bunlar kaynak metinde açıkça yazmıyorsa ÇIKTIDA DA OLMAYACAK. Tahmin etme,
    markadan çıkarım yapma, "muhtemelen" deme.
 2. Fiyat, indirim, kampanya, kargo sözü YAZMA.
+2b. İNDÜKSİYON, GARANTİ ve ÇELİK KALİTESİ hakkında HİÇBİR ŞEY YAZMA — bunlar
+   ayrıca doğrulanıp rozet olarak eklenir. Sen yazarsan çift/çelişkili bilgi olur.
 3. Bir bölüme koyacak bilgi yoksa o bölümü boş string bırak. Doldurmak için uydurma.
 4. SEO paragrafı ${SEO_EN_AZ}-${SEO_EN_FAZLA} karakter arası olacak. Ürün adı ve
    marka doğal biçimde geçsin. Abartılı sıfat ("muhteşem", "eşsiz") kullanma.

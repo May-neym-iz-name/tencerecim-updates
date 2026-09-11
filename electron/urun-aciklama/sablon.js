@@ -1,18 +1,27 @@
 // ÜRÜN AÇIKLAMA ŞABLONU — saf fonksiyon, ağa çıkmaz, DB'ye dokunmaz.
 //
-// Sitedeki ürün açıklamalarını TEK formata çevirir: üstte kısa SEO paragrafı,
-// altında açılır-kapanır (akordeon) bölümler.
+// SEÇİLEN TASARIM (kullanıcı kararı, _urun-aciklama-onizleme/ önizlemesiyle onaylandı):
+// açılır-kapanır akordeon, emoji başlıklı, marka renkleri krem #ecdf93 + lacivert #052238.
+// Çıktı ikas açıklama alanına giden SATIR-İÇİ stilli HTML'dir —
+// <style> ve <script> ikas tarafından silinir, <details> ise JS'siz çalışır.
 //
-// Renkler tema paletinden: krem #ecdf93 (başlık zemini), lacivert #052238 (mürekkep).
+// 11.09 DÜZELTMESİ — OK İŞARETİ:
+// Summary'de `list-style:none` VARDI; bu, tarayıcının açılır-kapanır üçgenini siliyordu.
+// Müşteri bölmenin açılabildiğini göremiyordu. Kaldırıldı: yerli üçgen geri geldi ve
+// açılıp kapandıkça KENDİLİĞİNDEN dönüyor. Özel ok çizmek işe yaramaz, çünkü durumuna
+// göre döndürmek CSS gerektirir ve ikas <style> etiketini siliyor.
 //
-// KURAL: bu dosya bilgi ÜRETMEZ. Kendisine verilen metinleri biçimlendirir.
-// Bir bölümün metni boşsa o bölüm HİÇ yazılmaz (boş akordeon üretme).
+// KURAL: bu dosya bilgi ÜRETMEZ, biçimlendirir. Boş bölüm için akordeon açmaz.
+// Rozetler KOŞULLU: doğrulanmamış iddia yazılmaz.
 
-const KREM = '#ecdf93'
-const LACIVERT = '#052238'
+const RENK = {
+  krem: '#ecdf93',        // marka kremi — dolu rozet zemini
+  kremYum: '#f6f2df',     // yumuşak krem — başlık şeridi
+  kremKenar: '#e2dcc2',   // kenarlık
+  lacivert: '#052238',    // marka laciverti — mürekkep
+  govde: '#1a2230',       // gövde metni
+}
 
-// ikas açıklama alanı HTML kabul eder; kullanıcı/tedarikçi metni oraya
-// kaçışlanmadan girerse biçim bozulur. & < > " hepsi kapatılır.
 function kacir(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -21,24 +30,33 @@ function kacir(s) {
     .replace(/"/g, '&quot;')
 }
 
-// Bölüm sırası ve başlıkları SABİT — tek format olmasının anlamı bu.
+// Bölüm sırası ve başlıkları SABİT — "tek format" olmasının anlamı bu.
+// İlk bölme AÇIK başlar: müşteri içerik olduğunu görsün.
 const BOLUMLER = [
-  { anahtar: 'icerik', baslik: '🍲 Ürün İçeriği' },
-  { anahtar: 'malzeme', baslik: '🧪 Malzeme ve Yapı' },
-  { anahtar: 'saglik', baslik: '❤️ Kullanım ve Bakım' },
+  { anahtar: 'icerik', baslik: '🍲 Ürün İçeriği', acik: true },
+  { anahtar: 'malzeme', baslik: '🧪 Malzeme', acik: false },
+  { anahtar: 'saglik', baslik: '❤️ Sağlık', acik: false },
 ]
 
-function akordeon(baslik, govde) {
-  return [
-    `<details style="margin:8px 0;border:1px solid ${KREM};border-radius:8px;overflow:hidden">`,
-    `<summary style="background:${KREM};color:${LACIVERT};padding:10px 14px;`
-      + `font-weight:600;cursor:pointer;list-style:none">${kacir(baslik)}</summary>`,
-    `<div style="padding:12px 14px;color:${LACIVERT};line-height:1.6">${govde}</div>`,
-    `</details>`,
-  ].join('')
+function bolme({ baslik, govde, acik }) {
+  return (
+    `<details${acik ? ' open' : ''} style="border:1px solid ${RENK.kremKenar};border-radius:10px;margin:0 0 10px;overflow:hidden">` +
+      // list-style BİLEREK ayarlanmadı → yerli açılır-kapanır üçgeni görünür kalsın.
+      `<summary style="background:${RENK.kremYum};padding:13px 16px;font-weight:700;` +
+        `color:${RENK.lacivert};font-size:15px;cursor:pointer">${kacir(baslik)}</summary>` +
+      `<div style="padding:13px 16px;font-size:14.5px">${govde}</div>` +
+    `</details>`
+  )
 }
 
-// Bir bölümün gövdesi: tek metin ya da madde listesi olabilir.
+function rozet(metin, dolu) {
+  const stil = dolu
+    ? `background:${RENK.lacivert};color:${RENK.krem}`
+    : `background:${RENK.krem};color:${RENK.lacivert}`
+  return `<span style="${stil};border-radius:8px;padding:9px 15px;font-weight:800;font-size:13.5px">${kacir(metin)}</span>`
+}
+
+// Bir bölümün gövdesi: tek metin ya da madde listesi.
 function govde(deger) {
   if (Array.isArray(deger)) {
     const maddeler = deger.map(m => String(m || '').trim()).filter(Boolean)
@@ -51,25 +69,43 @@ function govde(deger) {
   return metin ? `<p style="margin:0">${kacir(metin)}</p>` : ''
 }
 
-// bilgi: { seo: string, icerik: string|string[], malzeme: ..., saglik: ... }
-// Dönen: ikas description alanına yazılacak HTML.
+/**
+ * @param {object} bilgi
+ * @param {string} bilgi.seo      Gemini SEO paragrafı (düz metin)
+ * @param {string|string[]} bilgi.icerik
+ * @param {string|string[]} bilgi.malzeme
+ * @param {string|string[]} bilgi.saglik
+ * @param {boolean} bilgi.celik   304/18-10 rozeti
+ * @param {'evet'|'hayir'|'bilinmiyor'} bilgi.induksiyon  YALNIZ 'evet' rozet yazar
+ * @param {boolean} bilgi.garanti 2 yıl garanti rozeti (outlet'te false)
+ */
 function uret(bilgi) {
   const b = bilgi || {}
   const parcalar = []
 
   const seo = String(b.seo || '').trim()
-  if (seo) {
-    parcalar.push(
-      `<p style="color:${LACIVERT};line-height:1.7;margin:0 0 14px">${kacir(seo)}</p>`
-    )
-  }
+  if (seo) parcalar.push(`<p style="font-size:15.5px;margin:0 0 16px">${kacir(seo)}</p>`)
 
-  for (const { anahtar, baslik } of BOLUMLER) {
+  for (const { anahtar, baslik, acik } of BOLUMLER) {
     const g = govde(b[anahtar])
-    if (g) parcalar.push(akordeon(baslik, g))
+    if (g) parcalar.push(bolme({ baslik, govde: g, acik }))
   }
 
-  return parcalar.join('\n')
+  // ROZETLER — yalnız doğrulanmış/uygun olanlar. Varsayım YOK.
+  const rozetler = []
+  if (b.celik) rozetler.push(rozet('★ 304 / 18-10 Çelik', true))
+  if (b.induksiyon === 'evet') {
+    rozetler.push(`<span style="background:#eef1f4;color:${RENK.lacivert};border:1px solid #d6dbe2;`
+      + `border-radius:8px;padding:9px 15px;font-weight:800;font-size:13.5px">⚡ İndüksiyon Uyumlu</span>`)
+  }
+  if (b.garanti) rozetler.push(rozet('🛡️ 2 Yıl Garanti', false))
+  if (rozetler.length) {
+    parcalar.push(`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">${rozetler.join('')}</div>`)
+  }
+
+  if (!parcalar.length) return ''
+  return `<div style="font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;`
+    + `color:${RENK.govde};line-height:1.6;max-width:760px">${parcalar.join('')}</div>`
 }
 
-module.exports = { uret, kacir, BOLUMLER, KREM, LACIVERT }
+module.exports = { uret, kacir, BOLUMLER, RENK }

@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import sablon from './sablon.js'
 import metin from './metin.js'
+import siniflandir from './siniflandir.js'
 
 describe('şablon', () => {
   test('boş bölüm için akordeon üretmez', () => {
@@ -11,8 +12,29 @@ describe('şablon', () => {
 
   test('dolu bölümler sabit sırada gelir', () => {
     const html = sablon.uret({ seo: 'x', icerik: 'A', malzeme: 'B', saglik: 'C' })
-    expect(html.indexOf('Ürün İçeriği')).toBeLessThan(html.indexOf('Malzeme ve Yapı'))
-    expect(html.indexOf('Malzeme ve Yapı')).toBeLessThan(html.indexOf('Kullanım ve Bakım'))
+    expect(html.indexOf('Ürün İçeriği')).toBeLessThan(html.indexOf('🧪 Malzeme'))
+    expect(html.indexOf('🧪 Malzeme')).toBeLessThan(html.indexOf('❤️ Sağlık'))
+  })
+
+  // 11.09: list-style:none okları siliyordu, müşteri açılabildiğini göremiyordu.
+  // Bu test o gerilemeyi kilitler.
+  test('açılır-kapanır oku SİLİNMEZ (list-style ayarlanmaz)', () => {
+    const html = sablon.uret({ icerik: 'A', malzeme: 'B' })
+    expect(html).toContain('<details')
+    expect(html).not.toContain('list-style')
+  })
+
+  test('ilk bölme açık, diğerleri kapalı başlar', () => {
+    const html = sablon.uret({ icerik: 'A', malzeme: 'B', saglik: 'C' })
+    expect(html.match(/<details open/g)).toHaveLength(1)
+    expect(html.match(/<details/g)).toHaveLength(3)
+    // Açık olan İLK bölme (Ürün İçeriği) olmalı
+    expect(html.indexOf('<details open')).toBe(html.indexOf('<details'))
+  })
+
+  test('içerik bölümü boşsa açık bayrağı bir sonrakine SIÇRAMAZ', () => {
+    const html = sablon.uret({ malzeme: 'B', saglik: 'C' })
+    expect(html.match(/<details open/g)).toBeNull()
   })
 
   test('dizi verilirse madde listesi üretir', () => {
@@ -28,6 +50,54 @@ describe('şablon', () => {
     expect(html).toContain('&lt;script&gt;')
     expect(html).toContain('&amp;')
     expect(html).toContain('&quot;')
+  })
+})
+
+describe('rozetler — doğrulanmamış iddia yazılmaz', () => {
+  test('indüksiyon yalnız evet ise rozet yazar', () => {
+    expect(sablon.uret({ icerik: 'A', induksiyon: 'evet' })).toContain('İndüksiyon Uyumlu')
+    expect(sablon.uret({ icerik: 'A', induksiyon: 'bilinmiyor' })).not.toContain('İndüksiyon')
+    expect(sablon.uret({ icerik: 'A', induksiyon: 'hayir' })).not.toContain('İndüksiyon')
+    expect(sablon.uret({ icerik: 'A' })).not.toContain('İndüksiyon')
+  })
+
+  test('çelik rozeti yalnız celik=true ile gelir', () => {
+    expect(sablon.uret({ icerik: 'A', celik: true })).toContain('304 / 18-10 Çelik')
+    expect(sablon.uret({ icerik: 'A', celik: false })).not.toContain('304')
+  })
+
+  test('outlet üründe garanti rozeti yok', () => {
+    expect(sablon.uret({ icerik: 'A', garanti: true })).toContain('2 Yıl Garanti')
+    expect(sablon.uret({ icerik: 'A', garanti: false })).not.toContain('Garanti')
+  })
+
+  test('hiç rozet yoksa rozet satırı da yok', () => {
+    expect(sablon.uret({ icerik: 'A' })).not.toContain('flex-wrap')
+  })
+})
+
+describe('sınıflandırma', () => {
+  test('outlet/teşhir/2. kalite garantiyi kaldırır', () => {
+    expect(siniflandir.garantiVarMi('Tencere', [], [])).toBe(true)
+    expect(siniflandir.garantiVarMi('Tencere OUTLET', [], [])).toBe(false)
+    expect(siniflandir.garantiVarMi('Tencere', [], ['teşhir'])).toBe(false)
+    expect(siniflandir.garantiVarMi('Tencere', ['2. Kalite'], [])).toBe(false)
+  })
+
+  test('çelik ad veya kategoriden anlaşılır', () => {
+    expect(siniflandir.celikMi('Zeycan Çelik Tencere', [])).toBe(true)
+    expect(siniflandir.celikMi('Tencere', ['Paslanmaz Çelik'])).toBe(true)
+    expect(siniflandir.celikMi('Granit Tencere', ['Granitler'])).toBe(false)
+  })
+
+  test('indüksiyon haritada yoksa bilinmiyor döner — varsayım yapmaz', () => {
+    expect(siniflandir.induksiyonDurum({ id: 'x', name: 'Granit Tencere' }, {})).toBe('bilinmiyor')
+  })
+
+  test('model eşleşmesi haritadan gelir', () => {
+    const h = { modeller: [{ eslesme: 'zeycan', durum: 'evet' }] }
+    expect(siniflandir.induksiyonDurum({ id: 'x', name: 'Lines Zeycan 26 cm' }, h)).toBe('evet')
+    expect(siniflandir.induksiyonDurum({ id: 'x', name: 'Lines Başka 26 cm' }, h)).toBe('bilinmiyor')
   })
 })
 

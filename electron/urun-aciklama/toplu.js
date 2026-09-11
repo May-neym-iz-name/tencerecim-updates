@@ -25,6 +25,8 @@ const { _ayarlariGetir: aiAyarlar } = require('../db/ai-ayarlar')
 const GORSEL = require('../../URUN-ESLESTIRME/_gorsel-guvence')
 const sablon = require('./sablon')
 const metin = require('./metin')
+const { rozetler } = require('./siniflandir')
+const induksiyon = require('./induksiyon')
 
 // Şablonla yazılmış açıklamaların işareti. Yeniden çalıştırmada atlanır,
 // böylece iş yarıda kalırsa baştan başlanabilir ve Gemini kotası boşa gitmez.
@@ -178,6 +180,9 @@ async function calistir({ mod, limit, gunluk }) {
 
   const hedefler = limit > 0 ? adaylar.slice(0, limit) : adaylar
 
+  // Doğrulanmış indüksiyon haritası bir kez yüklenir (seed + userData birleşimi).
+  const haritaOnbellek = induksiyon.harita()
+
   // YEDEK — yazmadan önce, her koşulda.
   const yedekDizin = path.join(app.getPath('userData'), 'aciklama-yedek')
   fs.mkdirSync(yedekDizin, { recursive: true })
@@ -196,7 +201,10 @@ async function calistir({ mod, limit, gunluk }) {
       })
       if (uyari) { sonuc.atlandi++; gunluk(`⚠ ATLANDI ${etiket} — ${uyari}`); continue }
 
-      const yeni = IMZA + '\n' + sablon.uret(bilgi)
+      // Rozetler metinden DEĞİL, sınıflandırmadan gelir. İndüksiyon yalnız
+      // doğrulanmış haritadan; eşleşme yoksa rozet yazılmaz.
+      const bayrak = rozetler(u, haritaOnbellek)
+      const yeni = IMZA + '\n' + sablon.uret({ ...bilgi, ...bayrak })
 
       if (mod === 'plan') {
         sonuc.satirlar.push({ ad: u.name, id: u.id, eski: u.description, yeni })
