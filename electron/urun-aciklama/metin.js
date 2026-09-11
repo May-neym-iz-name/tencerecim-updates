@@ -27,23 +27,24 @@ function duzMetin(html) {
     .trim()
 }
 
-// ——— MARKA SESİ — BURAYI KENDİ AĞZINA GÖRE AYARLA ———
+// ——— İSTEM — BURAYI KENDİ AĞZINA GÖRE AYARLA ———
 //
-// TASARIM İLKESİ (11.09 kullanıcı geri bildirimi): metnin İKİ EKSENİ var ve
-// yalnız biri kilitlenmeli.
-//   OLGULAR (ölçü, malzeme, indüksiyon, garanti) → KİLİTLİ. Yanlışı iade doğurur.
-//   SES (nasıl anlatıldığı)                      → SERBEST. Kısıtlamak için sebep yok.
-// İlk sürüm ikisini birden kıstı ("abartılı sıfat kullanma", "sade Türkçe",
-// sıcaklık 0.4) ve metinler kuru çıktı. Modele yaratıcı olmamasını söylemiştim,
-// o da uymuştu.
+// HEDEF: SEO ODAKLI ve AKICI. Ne kuru katalog metni, ne hikâye.
 //
-// Sesi serbest bırakmak GÜVENLİ, çünkü denetim.js her sayıyı ve teknik iddiayı
-// kaynağa karşı sınıyor; uydurma varsa ürün yazılmıyor. Denetim olmasaydı bu
-// riskli olurdu — denetim olduğu için ucuz. Bkz. [[uretilen-metin-dogruluk-denetimi]]
+// 11.09'da iki kez ayar tutturulamadı, ikisi de kullanıcı geri bildirimiyle:
+//   1. Fazla kısıtlıydı ("abartılı sıfat kullanma", "sade Türkçe", sıcaklık 0.4)
+//      → metinler KURU çıktı. Modele yaratıcı olmamasını söylemiştim, uymuştu.
+//   2. Aşırı düzeltildi (tezgâh dili, duyusal anlatım, sıcaklık 0.9)
+//      → HİKÂYE ANLATMAYA kaçtı. Oysa bu metnin işi Google'da bulunmak.
+// Şimdiki denge: arama terimleri cümlenin içine yedirilir, akıcı yazılır,
+// sahne kurulmaz. Sıcaklık 0.65.
+//
+// OLGULAR her koşulda kilitlidir ve bu istemle değil denetim.js ile güvence altında:
+// her sayı ve teknik iddia kaynağa karşı sınanır, uydurma varsa ürün yazılmaz.
+// Bkz. [[uretilen-metin-dogruluk-denetimi]]
 function istemKur({ ad, marka, mevcut }) {
-  return `Sen Tencerecim'in ürün metni yazarısın. Tencerecim, Kocaeli ve İstanbul'da
-tezgâhı olan bir mutfak gereçleri dükkânı — kataloğ dili değil, tezgâhın arkasından
-konuşan bir esnaf dili kullanır.
+  return `Sen Tencerecim'in ürün metni yazarısın. Yazdığın metnin İKİ işi var:
+Google'da doğru aramalarda çıkmak ve okuyan müşteriye ürünü net anlatmak.
 
 ÜRÜN ADI: ${ad}
 MARKA: ${marka || 'belirtilmemiş'}
@@ -53,16 +54,26 @@ MEVCUT AÇIKLAMA (OLGULAR için tek kaynağın budur):
 ${mevcut}
 """
 
-GÖREVİN: Bu üründen ne pişeceğini, sofraya nasıl geleceğini anlatan sıcak bir metin
-yaz; kaynak metindeki bilgileri de üç bölüme dağıt.
+GÖREVİN: SEO odaklı, akıcı bir ürün metni yaz ve kaynak metindeki bilgileri üç
+bölüme dağıt.
 
-ÜSLUP — BURADA SERBESTSİN:
-· Mutfak dilinde yaz. Yemeğin adını an: karnıyarık, güveç, pilav, zeytinyağlı, sac kavurma.
-· Duyuya hitap et — kısık ateşte demlenmek, dibi tutmamak, kalabalık sofra, misafir günü.
-· Kime yarar onu söyle: kalabalık aile, hafta sonu misafiri, her günün tenceresi.
-· Akıcı cümleler kur. Şablon gibi değil, insan gibi yaz. Klişeye ("mutfağınızın
-  vazgeçilmezi", "kaliteyi ayağınıza getiriyoruz") kaçma; somut ol.
-· Ürünü gerçekten kullanan birinin anlatacağı gibi anlat.
+SEO — METNİN ASIL İŞİ BU:
+· Ürün adı ilk cümlede doğal biçimde geçsin. Marka adı da metinde yer alsın.
+· Müşterinin ARAMA KUTUSUNA YAZACAĞI terimleri kullan: ürün tipi, ölçü, hacim,
+  malzeme, kullanım alanı ("34 cm karnıyarık tenceresi", "granit tencere",
+  "7 litre", "yapışmaz tava"). Bunları cümlenin içine yedir.
+· Ürünün NE İŞE YARADIĞINI ve KİME uygun olduğunu açıkça yaz — arayan kişi
+  aradığını bulduğunu ilk cümlede anlasın.
+· Kaynakta geçen yemek adlarını (karnıyarık, güveç, zeytinyağlı vb.) kullan;
+  bunlar gerçek arama terimleridir.
+
+ÜSLUP:
+· AKICI ve net yaz. Kopuk, madde madde sıralanmış cümle kurma.
+· HİKÂYE ANLATMA. "Misafir gününde...", "Karnıyarık yapacaksanız..." gibi sahne
+  kurma; doğrudan ürünü anlat.
+· Klişe kullanma: "mutfağınızın vazgeçilmezi", "kaliteyi ayağınıza getiriyoruz",
+  "eşsiz", "muhteşem" YASAK.
+· Anahtar kelime tıkıştırma; aynı terimi arka arkaya tekrarlama. Akıcılık önce gelir.
 
 OLGULAR — BURADA KESİNLİKLE SERBEST DEĞİLSİN:
 1. Kaynak metinde GEÇMEYEN hiçbir ÖZELLİK yazma. Ölçü, hacim, ağırlık, parça sayısı,
@@ -82,10 +93,10 @@ OLGULAR — BURADA KESİNLİKLE SERBEST DEĞİLSİN:
 YALNIZCA şu JSON'u döndür, başka hiçbir şey yazma:
 {"seo":"...","icerik":"...","malzeme":"...","saglik":"..."}
 
-seo     = ürünü tanıtan, iştah açan giriş paragrafı
+seo     = ürünü tanıtan SEO giriş paragrafı: ne olduğu, ölçüsü, neye yaradığı
 icerik  = kutudan ne çıkıyor, parça sayısı, ebat (kaynakta varsa)
-malzeme = neyden yapılmış, kaplama, yapı — ve bunun pişirmeye ne kattığı
-saglik  = nasıl kullanılır, nasıl bakılır, hangi yemekte parlar`
+malzeme = neyden yapılmış, kaplama, yapı — ve bunun pişirmeye pratik faydası
+saglik  = nasıl kullanılır, nasıl bakılır, hangi yemekler için uygun`
 }
 
 // Gemini bazen JSON'u ``` bloğuna sarar veya önüne laf eder. Temizle ve ayrıştır.
@@ -195,10 +206,10 @@ async function _tekDeneme({ ad, marka, kaynak, anahtar, ek, _uret }) {
   const yanit = await _uret({
     anahtar,
     istem: istemKur({ ad, marka, mevcut: kaynak }) + (ek || ''),
-    // 0.4 idi: model kelime seçiminde risk almıyor, metinler kuru çıkıyordu.
-    // Olgu güvenliği sıcaklıktan değil, denetim.js kapısından geliyor — o yüzden
-    // üslup için sıcaklığı açmak bedava. Uydurma olursa kapı zaten yakalar.
-    sicaklik: 0.9,
+    // 0.4 çok kuru, 0.9 ise hikâye anlatmaya kaçtı (kullanıcı 11.09'da ikisini de
+    // bildirdi). 0.65: akıcı cümle kurmaya yetecek kadar serbest, SEO odağını
+    // kaybedecek kadar değil. Olgu güvenliği zaten sıcaklıktan değil denetim.js'ten.
+    sicaklik: 0.65,
     // 11.09 ÖLÇÜLDÜ: 800 de 2500 de yanıtı ortasından kesti. Sebep jeton azlığı DEĞİL —
     // gemini-3.x flash bir DÜŞÜNME modeli ve maxOutputTokens düşünme jetonlarını da
     // sayıyor; bütçeyi düşünme yiyip görünür çıktıya yer kalmıyordu.
