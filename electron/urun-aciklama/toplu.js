@@ -77,11 +77,66 @@ function girdi(u, yeniAciklama) {
   }
 }
 
+// FİYAT LİSTESİ SATIRLARINI GERİ YAZ.
+//
+// 11.09 ÖLÇÜLDÜ — girdi() priceListId'li satırları göndermiyor (gönderirse ikas
+// "multiple default prices" diyor), saveProduct da gönderilmeyeni SİLİYOR.
+// İlk sürümde bu adım YOKTU: iki üründe Trendyol/Hepsiburada fiyat satırları silindi.
+// saveProduct'tan sonra bu çağrı ŞART; atlanırsa pazaryeri fiyatları kaybolur.
+async function fiyatListeleriniGeriYaz(urunId, oncekiVaryantlar) {
+  const listeBazli = new Map()   // priceListId -> [{productId, variantId, price}]
+  for (const v of oncekiVaryantlar) {
+    for (const p of (v.prices || [])) {
+      if (!p.priceListId) continue
+      if (!listeBazli.has(p.priceListId)) listeBazli.set(p.priceListId, [])
+      listeBazli.get(p.priceListId).push({
+        productId: urunId, variantId: v.id,
+        price: {
+          sellPrice: p.sellPrice, buyPrice: p.buyPrice,
+          currency: p.currency, discountPrice: p.discountPrice,
+        },
+      })
+    }
+  }
+  for (const [priceListId, variantPriceInputs] of listeBazli) {
+    await graphql(
+      `mutation($input:SaveVariantPricesInput!){ saveVariantPrices(input:$input) }`,
+      { input: { priceListId, variantPriceInputs } })
+  }
+  return listeBazli.size
+}
+
 // description DIŞINDA hiçbir şey değişmemeli. Karşılaştırma otomatik, göz kararı değil.
 function iskelet(u) {
   const k = JSON.parse(JSON.stringify(u))
   delete k.description
   return JSON.stringify(k)
+}
+
+// Hangi alanın değiştiğini SÖYLEYEN karşılaştırma. "bir alan değişti" demek
+// teşhis ettirmiyordu (11.09) — kapı durdurmakla kalmayıp kanıtı da vermeli.
+// Dönen: farkları anlatan satır dizisi (boşsa fark yok).
+function farklar(a, b, yol = '', bulunan = []) {
+  if (bulunan.length >= 10) return bulunan            // ilk 10 fark yeter
+  if (a === b) return bulunan
+  const tip = (x) => Array.isArray(x) ? 'dizi' : x === null ? 'null' : typeof x
+  if (tip(a) !== tip(b)) {
+    bulunan.push(`${yol || '(kök)'}: ${tip(a)} → ${tip(b)}`)
+    return bulunan
+  }
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) bulunan.push(`${yol}: ${a.length} öğe → ${b.length} öğe`)
+    for (let i = 0; i < Math.max(a.length, b.length); i++) farklar(a[i], b[i], `${yol}[${i}]`, bulunan)
+    return bulunan
+  }
+  if (a && typeof a === 'object') {
+    for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      farklar(a[k], b[k], yol ? `${yol}.${k}` : k, bulunan)
+    }
+    return bulunan
+  }
+  bulunan.push(`${yol}: ${JSON.stringify(a)} → ${JSON.stringify(b)}`)
+  return bulunan
 }
 
 async function urunOku(id) {
@@ -153,10 +208,16 @@ async function calistir({ mod, limit, gunluk }) {
       const g = girdi(u, yeni)
       await graphql(`mutation($input:ProductInput!){ saveProduct(input:$input){ id } }`, { input: g })
 
+      // saveProduct fiyat listesi satırlarını sildi; HEMEN geri yaz. Sıra önemli:
+      // geri okuma denetimi bundan sonra çalışmalı, yoksa kendi sildiğimizi yakalar.
+      await fiyatListeleriniGeriYaz(u.id, u.variants)
+
       // "Hata vermedi" doğrulama değildir — geri oku ve karşılaştır.
       const sonra = await urunOku(u.id)
       if (iskelet(sonra) !== iskelet(u)) {
-        throw new Error('açıklama DIŞINDA bir alan değişti — ikas panelinden kontrol et')
+        const oncesi = JSON.parse(iskelet(u)), sonrasi = JSON.parse(iskelet(sonra))
+        throw new Error('açıklama DIŞINDA alan değişti:\n    - '
+          + farklar(oncesi, sonrasi).join('\n    - '))
       }
       GORSEL.gorselDogrula(u, sonra, etiket)
       if (String(sonra.description || '') !== yeni) {
@@ -177,7 +238,116 @@ async function calistir({ mod, limit, gunluk }) {
 
 // main.js'ten çağrılır. Sonucu dosyaya yazar (Electron GUI stdout'u kabuğa vermez).
 async function envIleCalistir() {
-  const mod = process.env.TNC_ACIKLAMA           // 'plan' | 'uygula'
+  const mod = process.env.TNC_ACIKLAMA           // 'plan' | 'uygula' | 'oku'
+
+  // TEŞHİS KİPİ: TNC_ACIKLAMA=oku TNC_ACIKLAMA_ID=<ürün id> → ürünü olduğu gibi döker.
+  // Kapı ateşlendiğinde "hasar var mı" sorusunu ölçmek için; hiçbir şey yazmaz.
+  if (mod === 'oku') {
+    const id = process.env.TNC_ACIKLAMA_ID
+    const yol = path.join(app.getPath('userData'), 'aciklama-oku.json')
+    try {
+      // İKİ KEZ okunur: aradaki fark YAZMADAN doğar, yani o alan ikas tarafında
+      // oynaktır (normalleştirme/zaman damgası) ve kapıyı boş yere ateşliyordur.
+      const a = await urunOku(id)
+      const b = await urunOku(id)
+      fs.writeFileSync(yol, JSON.stringify({
+        urun: a,
+        ikiOkumaArasiFark: farklar(JSON.parse(iskelet(a)), JSON.parse(iskelet(b))),
+      }, null, 2), 'utf8')
+    } catch (e) {
+      fs.writeFileSync(yol, JSON.stringify({ hata: e.message }, null, 2), 'utf8')
+    }
+    return
+  }
+
+  // ONARIM: TNC_ACIKLAMA=onar → 11.09'da silinen fiyat listesi satırlarını geri yazar.
+  // Değerler 31.08 tarihli ikas yedeğinden (URUN-ESLESTIRME/ikas-urunler-2026-08-31.json);
+  // ayrıca mağaza geneli oran deseniyle (HB ~1,1746 · TY ~1,14) çapraz doğrulandı.
+  // TEK SEFERLİKTİR — iş bittikten sonra bu blok silinebilir.
+  if (mod === 'onar') {
+    const ONARIM = [
+      { urunId: 'e80c2542-3614-4fb7-9214-5af58dd7a9e3', varyantId: '86b3d0d3-36aa-4d6c-973a-f225aeb57eb6',
+        satirlar: [
+          { priceListId: '679dd41d-3a5e-4d73-932f-558e21883cbe', sellPrice: 3249, currency: 'TRY' },  // TRENDYOL
+          { priceListId: '0e7e6642-0d64-4f4d-adf1-84b38c8d01e4', sellPrice: 3348, currency: 'TRY' },  // HEPSİBURADA
+        ] },
+      { urunId: 'd183e886-3938-483a-a569-fd9893763556', varyantId: '6c36c134-008b-4f70-8247-9697df3b3f66',
+        satirlar: [
+          { priceListId: '0e7e6642-0d64-4f4d-adf1-84b38c8d01e4', sellPrice: 3583, currency: 'TRY' },  // HEPSİBURADA
+        ] },
+    ]
+    const yol = path.join(app.getPath('userData'), 'aciklama-onarim.json')
+    const rapor = []
+    for (const o of ONARIM) {
+      for (const s of o.satirlar) {
+        try {
+          await graphql(`mutation($input:SaveVariantPricesInput!){ saveVariantPrices(input:$input) }`, {
+            input: {
+              priceListId: s.priceListId,
+              variantPriceInputs: [{
+                productId: o.urunId, variantId: o.varyantId,
+                price: { sellPrice: s.sellPrice, buyPrice: null, currency: s.currency, discountPrice: null },
+              }],
+            },
+          })
+          rapor.push({ urunId: o.urunId, liste: s.priceListId, fiyat: s.sellPrice, sonuc: 'yazildi' })
+        } catch (e) {
+          rapor.push({ urunId: o.urunId, liste: s.priceListId, fiyat: s.sellPrice, sonuc: 'HATA: ' + e.message })
+        }
+      }
+      // Geri oku ve gerçekten oturdu mu doğrula — "hata vermedi" yeterli değil.
+      try {
+        const u = await urunOku(o.urunId)
+        rapor.push({ urunId: o.urunId, dogrulama: (u.variants[0].prices || []) })
+      } catch (e) { rapor.push({ urunId: o.urunId, dogrulama: 'okunamadi: ' + e.message }) }
+    }
+    fs.writeFileSync(yol, JSON.stringify(rapor, null, 2), 'utf8')
+    return
+  }
+
+  // FİYAT DÖKÜMÜ: TNC_ACIKLAMA=fiyat → fiyat listeleri + her varyantın fiyat satırları.
+  // 11.09 hasarını ölçmek ve onarmak için; hiçbir şey yazmaz.
+  if (mod === 'fiyat') {
+    const yol = path.join(app.getPath('userData'), 'aciklama-fiyat.json')
+    try {
+      const l = await graphql(`query{ listPriceList { id name currencyCode } }`, {})
+      const urunler = await tumUrunler()
+      fs.writeFileSync(yol, JSON.stringify({
+        listeler: l?.listPriceList || [],
+        urunler: urunler.map(u => ({
+          id: u.id, ad: u.name,
+          varyantlar: u.variants.map(v => ({ id: v.id, sku: v.sku, prices: v.prices })),
+        })),
+      }, null, 2), 'utf8')
+    } catch (e) {
+      fs.writeFileSync(yol, JSON.stringify({ hata: e.message }, null, 2), 'utf8')
+    }
+    return
+  }
+
+  // TUR DENETİMİ: TNC_ACIKLAMA=denetle TNC_ACIKLAMA_ID=<id>
+  // Ürünü okur, AÇIKLAMAYI DEĞİŞTİRMEDEN aynen geri yazar, geri okur ve karşılaştırır.
+  // İçerik açısından işlemsizdir; amacı saveProduct'ın hangi alanı kendiliğinden
+  // değiştirdiğini görmek. Kapı ateşlendiğinde suçluyu bu bulur.
+  if (mod === 'denetle') {
+    const id = process.env.TNC_ACIKLAMA_ID
+    const yol = path.join(app.getPath('userData'), 'aciklama-denetle.json')
+    try {
+      const once = await urunOku(id)
+      await graphql(`mutation($input:ProductInput!){ saveProduct(input:$input){ id } }`,
+        { input: girdi(once, null) })       // null → mevcut açıklama korunur
+      const sonra = await urunOku(id)
+      fs.writeFileSync(yol, JSON.stringify({
+        ad: once.name,
+        aciklamaAyniMi: String(once.description || '') === String(sonra.description || ''),
+        farklar: farklar(JSON.parse(iskelet(once)), JSON.parse(iskelet(sonra))),
+      }, null, 2), 'utf8')
+    } catch (e) {
+      fs.writeFileSync(yol, JSON.stringify({ hata: e.message }, null, 2), 'utf8')
+    }
+    return
+  }
+
   if (mod !== 'plan' && mod !== 'uygula') return
 
   const limit = Number(process.env.TNC_ACIKLAMA_LIMIT || 0) || 0

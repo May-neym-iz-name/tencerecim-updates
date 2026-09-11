@@ -63,11 +63,13 @@ function istekYap({ model, anahtar, govde }) {
  * Metin üretir. Modeller sırayla denenir; yoğunlukta alt basamağa düşülür.
  * @returns {{metin: string, model: string}}
  */
-async function uret({ anahtar, istem, sicaklik = 0.7, enFazlaJeton = 500, gunluk = () => {}, _istek = istekYap }) {
+async function uret({ anahtar, istem, sicaklik = 0.7, enFazlaJeton = 500, ekConfig = {}, gunluk = () => {}, _istek = istekYap }) {
   if (!anahtar) throw new Error('Gemini anahtari girilmemis. Ayarlar > Yapay Zeka bolumunden girin.')
+  // ekConfig: generationConfig'e eklenecek alanlar (responseMimeType, thinkingConfig...).
+  // Varsayilani bos; mevcut cagiranlarin davranisi degismez.
   const govde = {
     contents: [{ role: 'user', parts: [{ text: istem }] }],
-    generationConfig: { temperature: sicaklik, maxOutputTokens: enFazlaJeton },
+    generationConfig: { temperature: sicaklik, maxOutputTokens: enFazlaJeton, ...ekConfig },
   }
   let sonHata = 'bilinmeyen hata'
   for (const model of MODELLER) {

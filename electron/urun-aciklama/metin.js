@@ -68,7 +68,12 @@ function jsonAyristir(ham) {
   const aday = (blok ? blok[1] : metin).trim()
   const ilk = aday.indexOf('{')
   const son = aday.lastIndexOf('}')
-  if (ilk === -1 || son <= ilk) throw new Error(`Gemini JSON döndürmedi: ${metin.slice(0, 200)}`)
+  if (ilk !== -1 && son <= ilk) {
+    // Açılan süslü parantez var ama kapanan yok → yanıt jeton sınırında KESİLMİŞ.
+    // Bunu "JSON döndürmedi" diye raporlamak yanlış teşhise götürüyordu (11.09).
+    throw new Error(`Gemini yanıtı KESİLDİ (jeton sınırı) — enFazlaJeton artırılmalı: ${aday.slice(-80)}`)
+  }
+  if (ilk === -1) throw new Error(`Gemini JSON döndürmedi: ${metin.slice(0, 200)}`)
   let nesne
   try {
     nesne = JSON.parse(aday.slice(ilk, son + 1))
@@ -98,7 +103,15 @@ async function bolumleriUret({ ad, marka, mevcut, anahtar, _uret = geminiUret })
     anahtar,
     istem: istemKur({ ad, marka, mevcut: kaynak }),
     sicaklik: 0.4,          // dağıtım işi; yaratıcılık istemiyoruz
-    enFazlaJeton: 800,
+    // 11.09 ÖLÇÜLDÜ: 800 de 2500 de yanıtı ortasından kesti. Sebep jeton azlığı DEĞİL —
+    // gemini-3.x flash bir DÜŞÜNME modeli ve maxOutputTokens düşünme jetonlarını da
+    // sayıyor; bütçeyi düşünme yiyip görünür çıktıya yer kalmıyordu.
+    // Çözüm: düşünmeyi kapat + yanıtı katı JSON'a bağla.
+    enFazlaJeton: 4000,
+    ekConfig: {
+      responseMimeType: 'application/json',   // ``` sarmalı ve önsöz üretmez
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   })
   // gemini.uret → { metin, model }
   const bilgi = jsonAyristir(yanit && yanit.metin)
