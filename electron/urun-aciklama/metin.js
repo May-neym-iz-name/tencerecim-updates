@@ -27,40 +27,65 @@ function duzMetin(html) {
     .trim()
 }
 
-// ——— BURAYI KENDİ AĞZINA GÖRE AYARLA ———
-// Marka sesi senin bilgin; aşağısı başlangıç noktası.
+// ——— MARKA SESİ — BURAYI KENDİ AĞZINA GÖRE AYARLA ———
+//
+// TASARIM İLKESİ (11.09 kullanıcı geri bildirimi): metnin İKİ EKSENİ var ve
+// yalnız biri kilitlenmeli.
+//   OLGULAR (ölçü, malzeme, indüksiyon, garanti) → KİLİTLİ. Yanlışı iade doğurur.
+//   SES (nasıl anlatıldığı)                      → SERBEST. Kısıtlamak için sebep yok.
+// İlk sürüm ikisini birden kıstı ("abartılı sıfat kullanma", "sade Türkçe",
+// sıcaklık 0.4) ve metinler kuru çıktı. Modele yaratıcı olmamasını söylemiştim,
+// o da uymuştu.
+//
+// Sesi serbest bırakmak GÜVENLİ, çünkü denetim.js her sayıyı ve teknik iddiayı
+// kaynağa karşı sınıyor; uydurma varsa ürün yazılmıyor. Denetim olmasaydı bu
+// riskli olurdu — denetim olduğu için ucuz. Bkz. [[uretilen-metin-dogruluk-denetimi]]
 function istemKur({ ad, marka, mevcut }) {
-  return `Sen bir mutfak gereçleri e-ticaret sitesinin ürün metni editörüsün.
+  return `Sen Tencerecim'in ürün metni yazarısın. Tencerecim, Kocaeli ve İstanbul'da
+tezgâhı olan bir mutfak gereçleri dükkânı — kataloğ dili değil, tezgâhın arkasından
+konuşan bir esnaf dili kullanır.
 
 ÜRÜN ADI: ${ad}
 MARKA: ${marka || 'belirtilmemiş'}
 
-MEVCUT AÇIKLAMA (tek bilgi kaynağın budur):
+MEVCUT AÇIKLAMA (OLGULAR için tek kaynağın budur):
 """
 ${mevcut}
 """
 
-GÖREVİN: Yukarıdaki mevcut açıklamadaki bilgileri üç bölüme dağıt ve bir SEO paragrafı yaz.
+GÖREVİN: Bu üründen ne pişeceğini, sofraya nasıl geleceğini anlatan sıcak bir metin
+yaz; kaynak metindeki bilgileri de üç bölüme dağıt.
 
-MUTLAK KURALLAR:
-1. Mevcut açıklamada GEÇMEYEN hiçbir özelliği yazma. Indüksiyon uyumluluğu, çelik
-   kalitesi (304/18-10), bulaşık makinesi, fırın, garanti süresi, ölçü, ağırlık —
-   bunlar kaynak metinde açıkça yazmıyorsa ÇIKTIDA DA OLMAYACAK. Tahmin etme,
-   markadan çıkarım yapma, "muhtemelen" deme.
-2. Fiyat, indirim, kampanya, kargo sözü YAZMA.
-2b. İNDÜKSİYON, GARANTİ ve ÇELİK KALİTESİ hakkında HİÇBİR ŞEY YAZMA — bunlar
-   ayrıca doğrulanıp rozet olarak eklenir. Sen yazarsan çift/çelişkili bilgi olur.
-3. Bir bölüme koyacak bilgi yoksa o bölümü boş string bırak. Doldurmak için uydurma.
-4. SEO paragrafı ${SEO_EN_AZ}-${SEO_EN_FAZLA} karakter arası olacak. Ürün adı ve
-   marka doğal biçimde geçsin. Abartılı sıfat ("muhteşem", "eşsiz") kullanma.
-5. Sade Türkçe. Madde işareti, emoji, HTML etiketi KULLANMA — düz metin ver.
+ÜSLUP — BURADA SERBESTSİN:
+· Mutfak dilinde yaz. Yemeğin adını an: karnıyarık, güveç, pilav, zeytinyağlı, sac kavurma.
+· Duyuya hitap et — kısık ateşte demlenmek, dibi tutmamak, kalabalık sofra, misafir günü.
+· Kime yarar onu söyle: kalabalık aile, hafta sonu misafiri, her günün tenceresi.
+· Akıcı cümleler kur. Şablon gibi değil, insan gibi yaz. Klişeye ("mutfağınızın
+  vazgeçilmezi", "kaliteyi ayağınıza getiriyoruz") kaçma; somut ol.
+· Ürünü gerçekten kullanan birinin anlatacağı gibi anlat.
+
+OLGULAR — BURADA KESİNLİKLE SERBEST DEĞİLSİN:
+1. Kaynak metinde GEÇMEYEN hiçbir ÖZELLİK yazma. Ölçü, hacim, ağırlık, parça sayısı,
+   kaplama türü — kaynakta yoksa çıktıda da olmayacak. Tahmin etme, markadan çıkarım
+   yapma, "muhtemelen" deme. Sayı uydurmak en ağır hatadır.
+2. İNDÜKSİYON, GARANTİ, ÇELİK KALİTESİ (304/18-10), BULAŞIK MAKİNESİ, FIRIN, BPA
+   hakkında HİÇBİR ŞEY yazma. Bunlar ayrıca doğrulanıp rozet olarak ekleniyor;
+   sen yazarsan çelişkili bilgi çıkar.
+3. Fiyat, indirim, kampanya, kargo sözü YAZMA.
+4. Bir bölüme koyacak BİLGİ yoksa o bölümü boş string bırak. Doldurmak için uydurma.
+   (Üslup serbest demek, olgu icat etmek demek değil — anlatımı zenginleştir,
+   özelliği değil.)
+5. SEO paragrafı ${SEO_EN_AZ}-${SEO_EN_FAZLA} karakter arası. Ürün adı ve marka
+   doğal aksın, anahtar kelime tıkıştırma.
+6. Düz metin ver: madde işareti, emoji, HTML etiketi yok.
 
 YALNIZCA şu JSON'u döndür, başka hiçbir şey yazma:
 {"seo":"...","icerik":"...","malzeme":"...","saglik":"..."}
 
+seo     = ürünü tanıtan, iştah açan giriş paragrafı
 icerik  = kutudan ne çıkıyor, parça sayısı, ebat (kaynakta varsa)
-malzeme = neyden yapılmış, kaplama, yapı (kaynakta varsa)
-saglik  = nasıl kullanılır, nasıl temizlenir, nelere dikkat (kaynakta varsa)`
+malzeme = neyden yapılmış, kaplama, yapı — ve bunun pişirmeye ne kattığı
+saglik  = nasıl kullanılır, nasıl bakılır, hangi yemekte parlar`
 }
 
 // Gemini bazen JSON'u ``` bloğuna sarar veya önüne laf eder. Temizle ve ayrıştır.
@@ -170,7 +195,10 @@ async function _tekDeneme({ ad, marka, kaynak, anahtar, ek, _uret }) {
   const yanit = await _uret({
     anahtar,
     istem: istemKur({ ad, marka, mevcut: kaynak }) + (ek || ''),
-    sicaklik: 0.4,          // dağıtım işi; yaratıcılık istemiyoruz
+    // 0.4 idi: model kelime seçiminde risk almıyor, metinler kuru çıkıyordu.
+    // Olgu güvenliği sıcaklıktan değil, denetim.js kapısından geliyor — o yüzden
+    // üslup için sıcaklığı açmak bedava. Uydurma olursa kapı zaten yakalar.
+    sicaklik: 0.9,
     // 11.09 ÖLÇÜLDÜ: 800 de 2500 de yanıtı ortasından kesti. Sebep jeton azlığı DEĞİL —
     // gemini-3.x flash bir DÜŞÜNME modeli ve maxOutputTokens düşünme jetonlarını da
     // sayıyor; bütçeyi düşünme yiyip görünür çıktıya yer kalmıyordu.
