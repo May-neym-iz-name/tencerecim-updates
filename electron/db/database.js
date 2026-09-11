@@ -469,6 +469,16 @@ function createTables() {
       deger TEXT
     );
 
+    -- Ürün açıklaması yazımından ÖNCE eski açıklama buraya yedeklenir (geri alma).
+    CREATE TABLE IF NOT EXISTS aciklama_yedek (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      urun_id TEXT NOT NULL,
+      urun_adi TEXT,
+      eski_aciklama TEXT,
+      yeni_aciklama TEXT,
+      tarih TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS sosyal_mesajlar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       platform TEXT NOT NULL,

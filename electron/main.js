@@ -536,6 +536,7 @@ const handlerModules = [
   require('./ikas'),
   require('./ikas/ekstra'),
   require('./ikas/kampanya'),
+  require('./urun-aciklama/ipc'),
   require('./db/setler'),
   require('./db/meta-ayarlar'),
   require('./db/sosyal-mesajlar'),

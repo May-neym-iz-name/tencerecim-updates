@@ -39,6 +39,7 @@ import Bildirimler from './pages/Bildirimler.jsx'
 const Raporlar = lazy(() => import('./pages/Raporlar.jsx'))       // ağır recharts kütüphanesi
 const SosyalMedya = lazy(() => import('./pages/SosyalMedya.jsx')) // en büyük sayfa (48 KB kaynak)
 const Kampanyalar = lazy(() => import('./pages/Kampanyalar.jsx')) // ikas kampanya/kupon; yalnız yönetici
+const UrunAciklamaStudyo = lazy(() => import('./pages/UrunAciklamaStudyo.jsx')) // yalnız yönetici, seyrek açılır
 const Ayarlar = lazy(() => import('./pages/Ayarlar.jsx'))         // 41 KB, günde bir kez bile açılmaz
 const Kullanicilar = lazy(() => import('./pages/Kullanicilar.jsx'))
 const Urunler = lazy(() => import('./pages/Urunler.jsx'))
@@ -54,6 +55,7 @@ const navItems = [
   { to: '/bildirimler', label: '🔔 Bildirimler', yetki: 'bildirim_goruntule', el: <Bildirimler /> },
   { to: '/sosyal-medya', label: '💬 Sosyal Medya', yetki: 'sosyal_medya_yonet', el: <SosyalMedya /> },
   { to: '/kampanyalar', label: '🎯 Kampanyalar', yetki: 'kampanya_yonet', el: <Kampanyalar /> },
+  { to: '/urun-aciklama', label: '📝 Açıklama Stüdyosu', yetki: 'ikas_yonet', el: <UrunAciklamaStudyo /> },
   { to: '/raporlar', label: '📈 Raporlar', yetki: 'rapor_goruntule', el: <Raporlar /> },
   { to: '/musteriler', label: '👥 Müşteriler', yetki: 'musteri_goruntule', el: <Musteriler /> },
   { to: '/kargo', label: '📦 Kargo', yetki: 'kargo_yonet', el: <Kargo /> },

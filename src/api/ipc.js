@@ -220,6 +220,16 @@ export const ikasApi = {
   siparisKargoIptal: (veri) => invoke('ikas:siparis-kargo-iptal', veri),
 }
 
+// Ürün Açıklama Stüdyosu — Gemini SEO metni + akordeon şablon → ikas açıklaması.
+// onizle YAZMAZ (Gemini + okuma); yayinla/geriAl canlıya güvenli yazar (yedek + doğrulama).
+export const urunAciklamaApi = {
+  adaylar: (params) => invoke('urun-aciklama:adaylar', params),
+  onizle: (urunId) => invoke('urun-aciklama:onizle', { urunId }),
+  yayinla: (urunId, html) => invoke('urun-aciklama:yayinla', { urunId, html }),
+  yedekler: (params) => invoke('urun-aciklama:yedekler', params),
+  geriAl: (yedekId) => invoke('urun-aciklama:geriAl', { yedekId }),
+}
+
 // Meta (Facebook/Instagram) sosyal medya entegrasyonu.
 export const metaApi = {
   ayarGetir: () => invoke('meta-ayar:getir'),
