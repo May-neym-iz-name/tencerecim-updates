@@ -17,14 +17,6 @@ const KANAL_YETKI = Object.freeze({
   'musteriler:listele': 'musteri_goruntule',
   'musteriler:getir': 'musteri_goruntule',
 
-  // Ürün Açıklama Stüdyosu (ikas ürün açıklamasına yazar → yönetici seviyesi).
-  // onizle Gemini çağırır (maliyet) + ikas okur; yayınla/geriAl canlıya yazar.
-  'urun-aciklama:adaylar': 'ikas_yonet',
-  'urun-aciklama:onizle': 'ikas_yonet',
-  'urun-aciklama:yayinla': 'ikas_yonet',
-  'urun-aciklama:yedekler': 'ikas_yonet',
-  'urun-aciklama:geriAl': 'ikas_yonet',
-
   // Ürün sözlükleri (Ürünler sayfası kapısı: urun_goruntule)
   'kategoriler:listele': 'urun_goruntule',
   'markalar:listele': 'urun_goruntule',
