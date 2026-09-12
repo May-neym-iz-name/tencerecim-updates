@@ -91,8 +91,11 @@ describe('harca — sayac birikimi', () => {
     expect(kota.harcanan()).toBe(51)
   })
 
-  test('bilinmeyen operasyon sayaci kirletmez', () => {
-    kota.harca('olmayan.operasyon')
+  // ESKI DAVRANIS (12.09'da DEGISTI): bilinmeyen operasyon sessizce 0 sayilirdi ve
+  // bu test onu DOGRU sayiyordu -- yani tuzagi kilitliyordu. Artik firlatiyor.
+  // Niyet ("sayac kirlenmesin") korunuyor: firlatan cagri hicbir sey yazmaz.
+  test('bilinmeyen operasyon sayaci kirletmez -- ama artik SESSIZ degil', () => {
+    expect(() => kota.harca('olmayan.operasyon')).toThrow(/maliyet tablosunda YOK/)
     expect(kota.harcanan()).toBe(0)
   })
 })
@@ -112,5 +115,44 @@ describe('durum — arayuz ozeti', () => {
     const d = kota.durum()
     expect(d.kalan).toBe(0)
     expect(d.kalan_video).toBe(0)
+  })
+})
+
+describe('bilinmeyen operasyon SESSIZCE 0 sayilmaz', () => {
+  // Bu tuzaga uc kez dusuldu: channels.update, videos.delete, playlistItems.list
+  // tabloda yoktu ve sayac gercegin ALTINA kaydi. Sessiz 0, sayacin tam da
+  // guvenilmesi gereken anda yaniltmasi demek.
+  test('harca tanimadigi operasyonda HATA firlatir', () => {
+    expect(() => kota.harca('bilinmeyen.operasyon')).toThrow(/maliyet tablosunda YOK/)
+  })
+
+  test('yeterMi tanimadigi operasyonda HATA firlatir', () => {
+    expect(() => kota.yeterMi('bilinmeyen.operasyon')).toThrow(/maliyet tablosunda YOK/)
+  })
+
+  test('hata mesaji operasyon adini SOYLER', () => {
+    expect(() => kota.harca('captions.insert')).toThrow(/'captions\.insert'/)
+  })
+
+  test('firlatan cagri kotaya HICBIR SEY yazmaz', () => {
+    try { kota.harca('bilinmeyen.operasyon') } catch {}
+    expect(kota.harcanan()).toBe(0)
+  })
+
+  test('playlistItems.list artik tabloda ve 1 birim', () => {
+    expect(kota.MALIYET['playlistItems.list']).toBe(1)
+  })
+
+  // Canli cagri yerlerinin tamami (12.09'da tarandi) tabloda OLMALI --
+  // aksi halde firlatma calisan bir akisi bozar.
+  test('canli kullanilan operasyonlarin hepsi tabloda', () => {
+    const kullanilan = [
+      'channels.list', 'channels.update', 'videos.list', 'videos.insert',
+      'videos.update', 'videos.delete', 'commentThreads.list', 'comments.insert',
+      'playlistItems.list',
+    ]
+    for (const op of kullanilan) {
+      expect(kota.MALIYET, `${op} tabloda yok`).toHaveProperty(op)
+    }
   })
 })

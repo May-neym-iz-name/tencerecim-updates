@@ -14,13 +14,16 @@ const GUNLUK_LIMIT = 10000
 const MALIYET = {
   'videos.insert': 1600,
   'videos.update': 50,
+  'videos.delete': 50,
   'videos.list': 1,
   'channels.list': 1,
+  'channels.update': 50,
   'commentThreads.list': 1,
   'comments.insert': 50,
   'search.list': 100,
   'thumbnails.set': 50,
   'playlistItems.insert': 50,
+  'playlistItems.list': 1,
 }
 
 // Pasifik saatine göre 'YYYY-MM-DD'. Kotanın sıfırlandığı gün budur.
@@ -42,11 +45,33 @@ function kalan(gun = pasifikGun()) {
 }
 
 /**
+ * Operasyonun birim maliyetini verir. TABLODA YOKSA HATA FIRLATIR.
+ *
+ * NEDEN SESSİZ 0 DEĞİL: sayacın tek işi, yükleme yarıda kalmadan önce "sığmıyor"
+ * diyebilmek. Tanımadığı operasyonu 0 sayan bir sayaç gerçeğin altına kayar ve
+ * tam da güvenilmesi gereken anda yanıltır. Bu tuzağa ÜÇ KEZ düşüldü:
+ * 'channels.update' (11.09), 'videos.delete' (12.09), 'playlistItems.list' (12.09)
+ * — üçü de tabloya sonradan, zarar görüldükten sonra eklendi.
+ * Artık yeni bir operasyon tabloya eklenmeden ilk çağrıda kırmızı olur.
+ * Tüm canlı çağrı yerleri tabloda mevcut operasyonları kullanıyor (12.09 tarandı),
+ * bu yüzden fırlatmak çalışan hiçbir akışı bozmaz.
+ */
+function birimHesap(operasyon, adet = 1) {
+  if (!Object.prototype.hasOwnProperty.call(MALIYET, operasyon)) {
+    throw new Error(
+      `kota: '${operasyon}' maliyet tablosunda YOK. ` +
+      'Google’in yayimladigi birim degerini electron/youtube/kota.js MALIYET tablosuna ekle.'
+    )
+  }
+  return MALIYET[operasyon] * adet
+}
+
+/**
  * Bir işlemin kotaya sığıp sığmadığını söyler. Sığmıyorsa neden sığmadığını da
  * söyler — "kota doldu" demek yetmez, kullanıcı kaç video daha atabileceğini bilmeli.
  */
 function yeterMi(operasyon, adet = 1) {
-  const birim = (MALIYET[operasyon] || 0) * adet
+  const birim = birimHesap(operasyon, adet)
   const k = kalan()
   return { yeter: birim <= k, gerekli: birim, kalan: k }
 }
@@ -56,7 +81,7 @@ function yeterMi(operasyon, adet = 1) {
  * isteklerin çoğunda kota düşmez, peşin yazmak sayacı gereksiz şişirir.
  */
 function harca(operasyon, adet = 1) {
-  const birim = (MALIYET[operasyon] || 0) * adet
+  const birim = birimHesap(operasyon, adet)
   if (!birim) return
   const gun = pasifikGun()
   getDb().prepare(
