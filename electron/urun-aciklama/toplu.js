@@ -22,7 +22,20 @@ const path = require('path')
 const { app } = require('electron')
 const { graphql } = require('../ikas/client')
 const { _ayarlariGetir: aiAyarlar } = require('../db/ai-ayarlar')
-const GORSEL = require('../../URUN-ESLESTIRME/_gorsel-guvence')
+// KAPSAM-AŞIRI BAĞ — TEPE SEVİYEDE require ETME.
+// _gorsel-guvence depoda URUN-ESLESTIRME/ altındadır ve electron-builder onu
+// PAKETLEMEZ (package.json build.files: yalnız dist/ electron/ node_modules/).
+// Tepe seviyede require edilirse bu modülün YÜKLENMESİ kurulu uygulamada patlar;
+// main.js açılışta topluKipMi() için bu modülü yüklediği için 1.2.208 sürümünde
+// pencere hiç açılmadı (whenReady içinde yakalanmamış promise reddi, sessiz).
+// Tembel yükleme: yalnız toplu iş gerçekten çalışırken, yani modülün var olduğu
+// depo içinden çalıştırıldığında istenir. Bulunamazsa AÇIKÇA patlar — görsel
+// koruması sessizce atlanmaz.
+let _gorsel
+function GORSEL_YUKLE() {
+  if (!_gorsel) _gorsel = require('../../URUN-ESLESTIRME/_gorsel-guvence')
+  return _gorsel
+}
 const sablon = require('./sablon')
 const metin = require('./metin')
 const { rozetler } = require('./siniflandir')
@@ -69,7 +82,7 @@ function girdi(u, yeniAciklama) {
       id: v.id, isActive: v.isActive, sku: v.sku,
       barcodeList: v.barcodeList || [],
       weight: v.weight ?? undefined,
-      images: GORSEL.gorseller(v, u.name),
+      images: GORSEL_YUKLE().gorseller(v, u.name),
       // priceListId'li satırlar saveProduct'a verilirse "multiple default prices"
       // hatası çıkar; verilmezse silinme riski var → iskelet karşılaştırması yakalar.
       // FİYAT DEĞİŞTİRMİYORUZ: okunan değer aynen geri yazılıyor ([[fiyat-kaynak-kurali]]).
@@ -222,7 +235,7 @@ async function guvenliYaz({ u, bilgi, kaynakMetin, harita, gunluk = () => {} }) 
     throw new Error('açıklama DIŞINDA alan değişti:\n    - '
       + farklar(JSON.parse(iskelet(u)), JSON.parse(iskelet(sonra))).join('\n    - '))
   }
-  GORSEL.gorselDogrula(u, sonra, etiket)
+  GORSEL_YUKLE().gorselDogrula(u, sonra, etiket)
   if (String(sonra.description || '') !== yeni) {
     throw new Error('açıklama yazıldı ama geri okunan metin farklı')
   }

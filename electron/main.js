@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, shell, protocol } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu, shell, protocol, dialog } = require('electron')
 const path = require('path')
 const os = require('os')
 const { autoUpdater } = require('electron-updater')
@@ -483,9 +483,19 @@ if (tekOrnekKilidi) {
     // kapanıyor, 'window-all-closed' app.quit() diyor ve TOPLU İŞ ORTASINDAN KESİLİYORDU
     // (3 üründen 2'si yazılıp süreç sessizce ölmüştü — günlükte "BİTTİ" satırı yoktu).
     // Toplu kipin arayüze ihtiyacı yok; pencereyi hiç açmamak yarışı tamamen kaldırır.
-    if (require('./urun-aciklama/toplu').topluKipMi()) {
-      require('./urun-aciklama/toplu').envIleCalistir()
-      return
+    // Bu kontrol SEÇİMLİ bir yan yoldur; açılışı düşürme yetkisi YOKTUR.
+    // 12.09 DERSİ (1.2.208): toplu.js kapsam dışı bir modülü (URUN-ESLESTIRME/
+    // _gorsel-guvence, electron-builder onu PAKETLEMEZ) tepe seviyede require
+    // ediyordu. Kurulu uygulamada çözülemeyince bu satır patlıyor, whenReady
+    // zinciri .catch()'siz olduğu için hata YUTULUYOR, pencere hiç açılmıyordu.
+    // try/catch: toplu kip bozulsa bile uygulama normal şekilde açılır.
+    try {
+      if (require('./urun-aciklama/toplu').topluKipMi()) {
+        require('./urun-aciklama/toplu').envIleCalistir()
+        return
+      }
+    } catch (e) {
+      console.error('[açılış] toplu kip kontrolü başarısız, normal açılışa devam:', e.message)
     }
 
     gorselProtokolunuKur()
@@ -496,6 +506,21 @@ if (tekOrnekKilidi) {
     // sipariş çekme sessizce hiç başlamazdı. 20 sn sonra ne olursa olsun başlat.
     setTimeout(arkaPlanIslerBaslat, 20 * 1000)
     // Güncelleme kontrolü renderer açılışında 'update:kontrolEt' ile tetiklenir.
+  }).catch((e) => {
+    // whenReady().then() içindeki bir hata, .catch() olmadan YAKALANMAMIŞ PROMISE
+    // REDDİ olur: süreç ölmez, pencere açılmaz, ekranda hiçbir şey çıkmaz. Üstüne
+    // tek örnek kilidi tutulmaya devam ettiği için sonraki her açma denemesi de
+    // sessizce kapanır. 1.2.208 tam olarak böyle "hiç açılmıyor" oldu.
+    // Artık hata GÖRÜNÜR ve süreç arkada asılı kalmaz.
+    console.error('[açılış] ÖLÜMCÜL:', (e && e.stack) || e)
+    try {
+      dialog.showErrorBox(
+        'Tencerecim açılamadı',
+        'Uygulama başlatılırken hata oluştu:\n\n' + ((e && e.message) || String(e)) +
+        '\n\nBu ekranı kapatınca uygulama kapanacak. Ekran görüntüsünü destek için saklayın.'
+      )
+    } catch (_) { /* dialog da kurulamadıysa yapacak bir şey yok */ }
+    app.exit(1)
   })
 }
 
