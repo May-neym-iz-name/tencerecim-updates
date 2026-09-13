@@ -503,6 +503,58 @@ function createTables() {
       PRIMARY KEY (islem_id, barkod)
     );
 
+    -- TRENDYOL SİPARİŞLERİ. online_siparisler'den AYRI tutulur çünkü:
+    --  1) Trendyol'un birimi sipariş değil PAKETtir (bir sipariş çok pakete bölünebilir,
+    --     her paket ayrı kargolanır ve ayrı statü taşır),
+    --  2) online_siparisler.ikas_siparis_id ZORUNLU ve TEKİL — canlı ikas boru hattını
+    --     bozmadan oraya Trendyol sığmaz,
+    --  3) kullanıcı arayüzde de ayrı alan istedi.
+    -- Fatura çekirdeği kanal adaptörüyle çalışır (electron/fatura/kanal/), depo enjekte
+    -- edilir → ayrı tablo fatura akışını engellemez.
+    CREATE TABLE IF NOT EXISTS trendyol_siparisler (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      paket_id TEXT UNIQUE NOT NULL,        -- shipmentPackageId
+      siparis_no TEXT,                      -- orderNumber
+      siparis_tarihi TEXT,
+      durum TEXT,                           -- Created/Picking/Invoiced/Shipped/...
+      kargo_firma TEXT, kargo_takip_no TEXT, kargo_takip_link TEXT, kargo_gonderi_no TEXT,
+      toplam REAL DEFAULT 0, indirim REAL DEFAULT 0, para_birimi TEXT DEFAULT 'TRY',
+      musteri_ad TEXT, musteri_email TEXT,
+      teslimat_il TEXT, teslimat_ilce TEXT, teslimat_adres TEXT, teslimat_telefon TEXT,
+      fatura_unvan TEXT, fatura_vergi_no TEXT, fatura_vergi_dairesi TEXT, fatura_tc TEXT,
+      ticari INTEGER DEFAULT 0,
+      tahmini_teslim TEXT, kararlastirilan_teslim TEXT, son_degisiklik TEXT,
+      -- stok_dusuldu: bu paket yüzünden ana kanaldan düşüm YAPILDI mı (bir kez).
+      stok_dusuldu INTEGER DEFAULT 0,
+      -- fatura: BİZİM tarafımız (fatura_*) ve TRENDYOL'un tarafı (ty_fatura_*) AYRI.
+      -- fatura_gonderildi = "biz gönderdik"; ty_fatura_durum = "Trendyol gerçekten aldı".
+      -- İkisi ayrı tutulur çünkü gönderim başarılı dönse bile link işlenmemiş olabilir.
+      fatura_senk_id TEXT, fatura_url TEXT, fatura_gonderildi INTEGER DEFAULT 0,
+      ty_fatura_link TEXT, ty_fatura_no TEXT, ty_fatura_durum TEXT,
+      kargo_desi REAL DEFAULT 0, kapida_odeme INTEGER DEFAULT 0, depo_id TEXT,
+      ham TEXT,                             -- ham yanıt (yeni alan çıkarsa geri dönülebilsin)
+      cekilme_tarihi TEXT DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS trendyol_siparis_kalemleri (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      siparis_id INTEGER NOT NULL REFERENCES trendyol_siparisler(id),
+      kalem_id TEXT,                        -- lineId
+      barkod TEXT, sku TEXT,                -- eşleşme SKU, Trendyol yazma barkod
+      urun_adi TEXT,
+      miktar INTEGER DEFAULT 1,
+      -- 🔴 BİRİM fiyat. lineUnitPrice/lineGrossAmount ÜÇÜ DE birimdir, BÖLÜNMEZ.
+      birim_fiyat REAL DEFAULT 0, birim_indirim REAL DEFAULT 0,
+      kdv_orani REAL DEFAULT 20, komisyon_orani REAL DEFAULT 0,
+      kalem_durum TEXT, iptal_sebep TEXT,
+      urun_id INTEGER REFERENCES urunler(id),
+      UNIQUE(siparis_id, kalem_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ty_siparis_durum ON trendyol_siparisler(durum);
+    CREATE INDEX IF NOT EXISTS idx_ty_siparis_tarih ON trendyol_siparisler(siparis_tarihi);
+    CREATE INDEX IF NOT EXISTS idx_ty_kalem_sku ON trendyol_siparis_kalemleri(sku);
+
     -- YouTube entegrasyon ayarları (anahtar-değer). meta_ayarlar ile aynı model.
     -- client_id, client_secret (hassas), refresh_token (hassas, SÜRESİZ — çalınırsa
     -- kanala kalıcı erişim demektir), access_token (1 saatlik, hassas sayılmaz ama

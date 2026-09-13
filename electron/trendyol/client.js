@@ -111,12 +111,20 @@ async function istek(method, yol, opts = {}, { deneme = 3 } = {}) {
       cevap = await istekTek(method, yol, opts)
     } catch (e) {
       sonHata = e
-      if (!AG_HATALARI.has(e.code) || i === deneme - 1) throw e
+      // Ağ hatası: bağlantı kurulamadıysa istek gitmemiştir → tekrar güvenli.
+      // Ama ETIMEDOUT yazmada belirsizdir (istek gitmiş, yanıt gelmemiş olabilir).
+      const belirsizYazma = method !== 'GET' && e.code === 'ETIMEDOUT'
+      if (!AG_HATALARI.has(e.code) || belirsizYazma || i === deneme - 1) throw e
       await bekle(500 * (i + 1))
       continue
     }
-    // 429/5xx geçicidir → bekleyip tekrar dene. 4xx (429 hariç) kalıcıdır → hemen fırlat.
-    if (cevap.status === 429 || cevap.status >= 500) {
+    // 429 = hız sınırı: istek HİÇ işlenmedi, tekrar denemek güvenlidir.
+    // 5xx = sunucu hatası: istek işlenmiş OLABİLİR. Okumada tekrar denemek zararsız,
+    // ama YAZMADA (POST/PUT) aynı işlemi ikinci kez yapma riski var — iade talebi,
+    // statü ilerletme, fatura linki iki kez gidebilir. Bu yüzden yazmada 5xx'te
+    // tekrar DENEMEYİZ; hata kullanıcıya çıkar, o karar verir.
+    const yazma = method !== 'GET'
+    if (cevap.status === 429 || (cevap.status >= 500 && !yazma)) {
       sonHata = hataCevir(cevap.status, cevap.json, cevap.ham)
       if (i === deneme - 1) throw sonHata
       await bekle(2000 * (i + 1))
@@ -129,7 +137,10 @@ async function istek(method, yol, opts = {}, { deneme = 3 } = {}) {
 }
 
 const get = (yol, sorgu, opts) => istek('GET', yol, { sorgu }, opts)
-const post = (yol, govde, opts) => istek('POST', yol, { govde }, opts)
+// POST/PUT gövdeyle çalışır; bazı uçlar (ör. iade reddi) parametreleri SORGU DİZESİNDE
+// ister, gövdede değil — o yüzden ikisi de geçilebilir.
+const post = (yol, govde, opts = {}) => istek('POST', yol, { govde, sorgu: opts.sorgu }, opts)
+const put = (yol, govde, opts = {}) => istek('PUT', yol, { govde, sorgu: opts.sorgu }, opts)
 
 function sellerId() { return _ayarlariGetir().seller_id || null }
 function kimlikVar() {
@@ -137,4 +148,4 @@ function kimlikVar() {
   return !!(a.seller_id && a.api_key && a.api_secret)
 }
 
-module.exports = { get, post, sellerId, kimlikVar, _hataCevir: hataCevir }
+module.exports = { get, post, put, sellerId, kimlikVar, _hataCevir: hataCevir }

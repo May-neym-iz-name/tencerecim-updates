@@ -405,6 +405,7 @@ const KANAL_OKUMA_ARALIGI_MS = 10 * 60 * 1000 * YOKLAMA_CARPANI
 
 function kanalStokOkumaBaslat() {
   const trendyol = require('./trendyol')
+  const trendyolSiparis = require('./trendyol/siparis-ipc')
   let calisiyor = false
   const calistir = async () => {
     if (calisiyor) return
@@ -414,6 +415,16 @@ function kanalStokOkumaBaslat() {
       if (r.hatalar.length) console.warn('[kanal] okuma uyarıları:', r.hatalar.join(' | '))
     } catch (err) {
       console.error('[kanal] okuma hatası:', err.message)
+    }
+    // Trendyol siparişleri AYRI try: stok okuması patlasa da siparişler gelsin
+    // (ve tersi). Sipariş çekmek stok eşitlemesinin önkoşulu.
+    try {
+      const s = await trendyolSiparis._siparisleriCek({ gunSayisi: 14 })
+      if (s.yeni) console.log(`[trendyol] ${s.yeni} yeni sipariş paketi`)
+      if (s.hatalar.length) console.warn('[trendyol] sipariş uyarıları:', s.hatalar.join(' | '))
+    } catch (err) {
+      // Kimlik yoksa her turda gürültü yapmasın.
+      if (!/kimlik bilgileri eksik/i.test(err.message)) console.error('[trendyol] sipariş hatası:', err.message)
     } finally {
       calisiyor = false
     }
@@ -620,6 +631,7 @@ const handlerModules = [
   require('./auth'),
   require('./db/trendyol-ayarlar'),
   require('./trendyol'),
+  require('./trendyol/siparis-ipc'),
   require('./db/disa-aktarim-canli'),
 ]
 

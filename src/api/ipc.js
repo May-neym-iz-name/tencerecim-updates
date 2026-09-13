@@ -91,6 +91,56 @@ export const kanalApi = {
   acilKapat: (kapali) => invoke('kanal:acil-kapat', { kapali }),
 }
 
+// Trendyol siparişleri ve paket işlemleri.
+export const trendyolSiparisApi = {
+  cek: (gunSayisi) => invoke('ty-siparis:cek', { gunSayisi }),
+  listele: (p) => invoke('ty-siparis:listele', p),
+  getir: (paket_id) => invoke('ty-siparis:getir', { paket_id }),
+  sayaclar: () => invoke('ty-siparis:sayaclar'),
+  durumListesi: () => invoke('ty-siparis:durum-listesi'),
+  statu: (paket_id, statu, kalemler) => invoke('ty-siparis:statu', { paket_id, statu, kalemler }),
+  takipNo: (paket_id, takip_no) => invoke('ty-siparis:takip-no', { paket_id, takip_no }),
+  koli: (paket_id, desi, koli_adedi) => invoke('ty-siparis:koli', { paket_id, desi, koli_adedi }),
+  kargoFirma: (paket_id, kargo_kodu) => invoke('ty-siparis:kargo-firma', { paket_id, kargo_kodu }),
+  depo: (paket_id, depo_id) => invoke('ty-siparis:depo', { paket_id, depo_id }),
+  sureUzat: (paket_id, yeni_tarih_ms) => invoke('ty-siparis:sure-uzat', { paket_id, yeni_tarih_ms }),
+  tedarikEdilemedi: (paket_id, kalemler) => invoke('ty-siparis:tedarik-edilemedi', { paket_id, kalemler }),
+  alternatifTeslimat: (paket_id, govde) => invoke('ty-siparis:alternatif-teslimat', { paket_id, govde }),
+  manuelTeslim: (p) => invoke('ty-siparis:manuel-teslim', p),
+  manuelIade: (p) => invoke('ty-siparis:manuel-iade', p),
+  etiketTalep: (takip_no, govde) => invoke('ty-etiket:talep', { takip_no, govde }),
+  etiketAl: (takip_no) => invoke('ty-etiket:al', { takip_no }),
+}
+
+export const trendyolIadeApi = {
+  listele: (p) => invoke('ty-iade:listele', p),
+  redSebepleri: () => invoke('ty-iade:red-sebepleri'),
+  onayla: (p) => invoke('ty-iade:onayla', p),
+  reddet: (p) => invoke('ty-iade:reddet', p),
+  olustur: (govde) => invoke('ty-iade:olustur', { govde }),
+  gecmis: (kalem_id) => invoke('ty-iade:gecmis', { kalem_id }),
+}
+
+export const trendyolFaturaApi = {
+  linkGonder: (p) => invoke('ty-fatura:link-gonder', p),
+  linkSil: (p) => invoke('ty-fatura:link-sil', p),
+  dosya: (govde) => invoke('ty-fatura:dosya', { govde }),
+}
+
+export const trendyolSoruApi = {
+  listele: (p) => invoke('ty-soru:listele', p),
+  getir: (soru_id) => invoke('ty-soru:getir', { soru_id }),
+  cevapla: (soru_id, metin) => invoke('ty-soru:cevapla', { soru_id, metin }),
+}
+
+export const trendyolFinansApi = {
+  odemeEmirleri: (p) => invoke('ty-finans:odeme-emirleri', p),
+  mutabakat: (p) => invoke('ty-finans:mutabakat', p),
+  diger: (p) => invoke('ty-finans:diger', p),
+  kargoFatura: (fatura_seri_no) => invoke('ty-finans:kargo-fatura', { fatura_seri_no }),
+  tazmin: (p) => invoke('ty-tazmin:listele', p),
+}
+
 export const trendyolAyarApi = {
   getir: () => invoke('trendyol-ayar:getir'),
   kaydet: (veri) => invoke('trendyol-ayar:kaydet', veri),
