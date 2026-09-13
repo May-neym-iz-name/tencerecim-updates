@@ -425,6 +425,17 @@ function kanalStokOkumaBaslat() {
     } catch (err) {
       // Kimlik yoksa her turda gürültü yapmasın.
       if (!/kimlik bilgileri eksik/i.test(err.message)) console.error('[trendyol] sipariş hatası:', err.message)
+    }
+    // OTOMATİK EŞİTLEME — okuma ve sipariş çekme bittikten SONRA. Sıradan farkları
+    // sessizce yazar; ürünü satıştan kaldıracak olanları onay kuyruğuna alır.
+    try {
+      const e = await require('./trendyol/oto').tur()
+      if (e.satis?.dusulen) console.log(`[oto] ${e.satis.dusulen} ürün ikas'tan düşüldü (Trendyol satışı)`)
+      if (e.esit?.gonderilen) console.log(`[oto] ${e.esit.gonderilen} ürün Trendyol'a eşitlendi`)
+      const onay = (e.satis?.onaya || 0) + (e.esit?.onaya || 0)
+      if (onay) console.log(`[oto] ${onay} değişiklik ONAY BEKLİYOR (ürün satıştan kalkacak)`)
+    } catch (err) {
+      console.error('[oto] eşitleme hatası:', err.message)
     } finally {
       calisiyor = false
     }

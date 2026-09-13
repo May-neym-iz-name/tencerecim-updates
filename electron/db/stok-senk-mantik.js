@@ -149,7 +149,11 @@ function tersPlan(kalemler) {
 // Durum makinesi. Geçersiz geçiş SESSİZCE yutulmaz, fırlatılır: yarı uygulanmış bir
 // işlemin "hazır"a dönmesi ikinci kez gönderim demektir.
 const GECISLER = {
-  hazir: ['uygulandi', 'kismi', 'hata'],
+  // onay_bekliyor: otomatik eşitleme üretti ama ürünü satıştan kaldıracağı için
+  // insan onayı bekliyor (kullanıcı kararı 13.09.2026: yalnız riskli olanda sor).
+  onay_bekliyor: ['uygulandi', 'kismi', 'hata', 'iptal'],
+  iptal: [],
+  hazir: ['uygulandi', 'kismi', 'hata', 'iptal'],
   kismi: ['geri_alindi'],
   uygulandi: ['geri_alindi'],
   hata: [],

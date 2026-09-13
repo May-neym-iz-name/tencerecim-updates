@@ -51,3 +51,84 @@ async function ikasStokOku({ stokLokasyonId = null, ilerleme } = {}) {
 }
 
 module.exports = { ikasStokOku }
+
+// --- hedefli stok yazma (otomatik eşitleme için) ---------------------------
+
+const VARYANT_SORGU = `query V($sku:StringFilterInput){ listProduct(variants:{sku:$sku}){
+  data { id name variants { id sku stocks { stockLocationId stockCount } } } } }`
+
+// Tek bir SKU'nun ikas kaydını bulur: ürün/varyant kimliği + lokasyon bazında stok.
+async function varyantBul(sku) {
+  const s = String(sku || '').trim()
+  if (!s) return null
+  const r = await graphql(VARYANT_SORGU, { sku: { eq: s } })
+  for (const u of r?.listProduct?.data || []) {
+    for (const v of u.variants || []) {
+      if (String(v.sku || '').trim().toUpperCase() === s.toUpperCase()) {
+        return {
+          productId: u.id, variantId: v.id, ad: u.name || null,
+          stoklar: (v.stocks || []).map(x => ({
+            stockLocationId: x.stockLocationId,
+            stockCount: Math.trunc(Number(x.stockCount) || 0),
+          })),
+        }
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Bir SKU'nun ikas'taki TOPLAM stoğunu hedeflenen sayıya çeker.
+ *
+ * ikas stoğu lokasyon bazındadır, bizim hedefimiz toplamdır → farkı dağıtmak gerekir:
+ *  · Azaltırken EN ÇOK stoğu olan lokasyondan başlanır ve hiçbir lokasyon EKSİYE
+ *    düşürülmez (ikas eksi stoğu kabul etse bile sayım gerçeğiyle çelişir).
+ *  · Artırırken fark ilk lokasyona eklenir — hangi rafa girdiğini bilmiyoruz,
+ *    toplam doğru olsun yeter.
+ *
+ * Fiyata DOKUNULMAZ (bkz. CLAUDE.md "Fiyat"): yalnız saveProductStockLocations.
+ */
+async function stokAyarla(sku, yeniToplam) {
+  const v = await varyantBul(sku)
+  if (!v) throw new Error(`ikas'ta ${sku} bulunamadı.`)
+  if (!v.stoklar.length) throw new Error(`${sku} için ikas stok lokasyonu yok.`)
+
+  const eskiToplam = v.stoklar.reduce((t, x) => t + x.stockCount, 0)
+  const hedef = Math.max(0, Math.trunc(Number(yeniToplam) || 0))
+  let fark = hedef - eskiToplam
+  if (fark === 0) return { sku, eskiToplam, yeniToplam: hedef, degisen: 0 }
+
+  const yeni = v.stoklar.map(x => ({ ...x }))
+  if (fark < 0) {
+    // En dolu lokasyondan başla; hiçbirini eksiye düşürme.
+    yeni.sort((a, b) => b.stockCount - a.stockCount)
+    for (const l of yeni) {
+      if (fark >= 0) break
+      const dus = Math.min(l.stockCount, -fark)
+      l.stockCount -= dus
+      fark += dus
+    }
+  } else {
+    yeni[0].stockCount += fark
+    fark = 0
+  }
+
+  const degisenler = yeni.filter((l, i) => {
+    const eski = v.stoklar.find(x => x.stockLocationId === l.stockLocationId)
+    return !eski || eski.stockCount !== l.stockCount
+  })
+  if (!degisenler.length) return { sku, eskiToplam, yeniToplam: hedef, degisen: 0 }
+
+  await graphql(
+    `mutation P($input: SaveStockLocationsInput!){ saveProductStockLocations(input: $input) }`,
+    { input: { productStockLocationInputs: degisenler.map(l => ({
+      productId: v.productId, variantId: v.variantId,
+      stockLocationId: l.stockLocationId, stockCount: l.stockCount,
+    })) } },
+  )
+  return { sku, ad: v.ad, eskiToplam, yeniToplam: hedef, degisen: degisenler.length }
+}
+
+module.exports.varyantBul = varyantBul
+module.exports.stokAyarla = stokAyarla

@@ -15,7 +15,8 @@ import { usePersistentState } from '../hooks/usePersistentState'
 //  · Eşleşme stok kodu (SKU) ile — ölçüldü: 162/162 (barkodla 161/162).
 //  · Ana stok kaynağı SEÇİLEBİLİR ayardır, koda gömülü değil.
 //  · "Tazele" düğmesi YOK: okuma arka planda döner (main.js, 10 dk).
-//  · Onay HAFİFTİR; yazılı teyit YALNIZ ürün satıştan kalkacaksa istenir.
+//  · Eşitleme ARKA PLANDA otomatiktir; onay YALNIZ ürün satıştan kalkacaksa
+//    istenir ve ekranın en üstünde kuyruk olarak belirir.
 //  · Mağaza listesi salt görüntü — sayım yapılmadığı için hiçbir şeyi etkilemez.
 
 const KANAL_BILGI = {
@@ -90,11 +91,32 @@ export default function KanalSenkron() {
   const [arama, setArama] = usePersistentState('kanal_arama', '')
   const [yalnizFarkli, setYalnizFarkli] = usePersistentState('kanal_yalniz_farkli', false)
   const [plan, setPlan] = useState(null)
+  const [bekleyenler, setBekleyenler] = useState([])
   const [mesgul, setMesgul] = useState(false)
 
   const durumYukle = useCallback(async () => {
-    try { setDurum(await kanalApi.durum()) } catch (e) { toast.error(e.message) }
+    try {
+      const [d, b] = await Promise.all([kanalApi.durum(), kanalApi.bekleyenler()])
+      setDurum(d); setBekleyenler(b)
+    } catch (e) { toast.error(e.message) }
   }, [])
+
+  // Otomatik eşitleme sıradan farkları zaten yazdı; buraya YALNIZ ürünü satıştan
+  // kaldıracak olanlar düşer. Tek tıkla uygulanır ya da reddedilir.
+  async function onayla(islemId) {
+    setMesgul(true)
+    try {
+      const r = await kanalApi.bekleyenUygula(islemId)
+      if (r.hatalar?.length) r.hatalar.forEach(h => toast.error(h))
+      else toast.success(`${r.uygulanan} ürün güncellendi.`)
+      await Promise.all([durumYukle(), listeYukle(kanal)])
+    } catch (e) { toast.error(e.message) } finally { setMesgul(false) }
+  }
+  async function reddet(islemId) {
+    setMesgul(true)
+    try { await kanalApi.bekleyenIptal(islemId); toast.success('İşlem iptal edildi.'); await durumYukle() }
+    catch (e) { toast.error(e.message) } finally { setMesgul(false) }
+  }
 
   const listeYukle = useCallback(async (k) => {
     try { setSatirlar(await kanalApi.liste(k)) } catch (e) { toast.error(e.message) }
@@ -168,6 +190,34 @@ export default function KanalSenkron() {
 
   return (
     <div>
+      {/* ONAY BEKLEYENLER — en üstte, çünkü iş burada bekliyor */}
+      {bekleyenler.map(b => (
+        <div key={b.id} className="mb-4 border border-amber-300 bg-amber-50 rounded-xl px-4 py-3">
+          <div className="flex items-start gap-3 flex-wrap">
+            <div className="flex-1 min-w-64">
+              <div className="font-semibold text-amber-900">
+                {b.kalemler.length} ürün onay bekliyor
+              </div>
+              <div className="text-sm text-amber-800">{b.aciklama || 'Stok değişikliği onay bekliyor'}</div>
+              <div className="text-xs text-amber-700 mt-1">
+                {b.kalemler.slice(0, 4).map(k => `${k.ad || k.sku} (${k.eski_miktar}→${k.yeni_miktar})`).join(' · ')}
+                {b.kalemler.length > 4 && ` · +${b.kalemler.length - 4} ürün daha`}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => reddet(b.id)} disabled={mesgul}
+                className="px-3 py-1.5 rounded-lg border border-amber-300 text-amber-800 text-sm hover:bg-amber-100 disabled:opacity-40">
+                Vazgeç
+              </button>
+              <button onClick={() => onayla(b.id)} disabled={mesgul}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-40">
+                Onayla
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+
       {/* Ana kaynak — sistemin en belirleyici ayarı, bu yüzden en üstte */}
       <div className="flex flex-wrap items-center gap-3 mb-4 border rounded-xl bg-white px-4 py-3">
         <span className="text-sm text-gray-600">Ana stok kaynağı:</span>

@@ -224,6 +224,11 @@ module.exports = {
   'kanal:uygula': (p) => uygula(p || {}),
   'kanal:sonuc-tazele': (p) => sonucTazele(p || {}),
   'kanal:geri-al': (p) => geriAl(p || {}),
+  // Otomatik eşitlemenin onay kuyruğu: yalnız ürünü satıştan kaldıracak değişiklikler
+  // burada bekler (kullanıcı kararı: sıradan eşitlenme sessiz).
+  'kanal:bekleyenler': () => { yetkiKontrol('stok_duzenle'); return require('./oto').bekleyenler() },
+  'kanal:bekleyen-uygula': ({ islem_id }) => { yetkiKontrol('stok_duzenle'); return require('./oto').bekleyeniUygula(islem_id) },
+  'kanal:bekleyen-iptal': ({ islem_id }) => { yetkiKontrol('stok_duzenle'); return require('./oto').bekleyeniIptal(islem_id) },
   'kanal:islemler': (p) => { yetkiKontrol('stok_duzenle'); return islemler(p || {}) },
   'kanal:islem-detay': (p) => { yetkiKontrol('stok_duzenle'); return islemDetay(p || {}) },
   'kanal:ana-kanal-sec': ({ kanal }) => {

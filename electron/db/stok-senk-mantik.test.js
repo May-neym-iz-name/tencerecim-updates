@@ -123,6 +123,15 @@ describe('durumGecisi', () => {
   test('geri alınmış işlem tekrar geri alınamaz', () => {
     expect(() => durumGecisi('geri_alindi', 'geri_alindi')).toThrow()
   })
+  test('onay bekleyen işlem uygulanabilir veya iptal edilebilir', () => {
+    expect(durumGecisi('onay_bekliyor', 'uygulandi')).toBe('uygulandi')
+    expect(durumGecisi('onay_bekliyor', 'iptal')).toBe('iptal')
+  })
+
+  test('iptal edilmiş işlem bir daha uygulanamaz', () => {
+    expect(() => durumGecisi('iptal', 'uygulandi')).toThrow(/Geçersiz durum geçişi/)
+  })
+
   test('bilinmeyen durum sessizce geçmez', () => {
     expect(() => durumGecisi('uyduruk', 'uygulandi')).toThrow(/Bilinmeyen işlem durumu/)
   })
