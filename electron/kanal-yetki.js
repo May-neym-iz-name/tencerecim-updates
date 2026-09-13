@@ -73,6 +73,7 @@ const KANAL_YETKI = Object.freeze({
   'ty-iade:onayla': 'kargo_iptal',
   'ty-iade:reddet': 'kargo_iptal',
   'ty-iade:olustur': 'kargo_iptal',
+  'fatura:kes-trendyol': 'fatura_kes',
   'ty-fatura:link-gonder': 'fatura_kes',
   'ty-fatura:link-sil': 'fatura_kes',
   'ty-fatura:dosya': 'fatura_kes',

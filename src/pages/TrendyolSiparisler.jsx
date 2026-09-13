@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
-import { trendyolSiparisApi } from '../api/ipc'
+import { trendyolSiparisApi, trendyolFaturaApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import Sayfalama from '../components/Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
@@ -185,8 +185,28 @@ export default function TrendyolSiparisler() {
 function SiparisDetay({ siparis: s, durumlar, onKapat, onDegisti }) {
   const { yetkiVar } = useAuth()
   const kargoYetkisi = yetkiVar('kargo_yonet')
+  const faturaYetkisi = yetkiVar('fatura_kes')
   const [takipNo, setTakipNo] = useState(s.kargo_takip_no || '')
   const [mesgul, setMesgul] = useState(false)
+
+  // Fatura zinciri: Bizimhesap'ta kes → belge bağlantısını Trendyol'a bildir → GERİ OKU.
+  // "Gönderildi" ile "Trendyol aldı" ayrı raporlanır; doğrulanmadıysa uyarı gösterilir.
+  async function faturaKes() {
+    setMesgul(true)
+    try {
+      const r = await trendyolFaturaApi.kes(s.paket_id)
+      if (r.durum === 'tamam') {
+        if (r.uyari) toast(r.uyari, { icon: '⚠️', duration: 7000 })
+        else toast.success(`Fatura kesildi ve Trendyol'a bildirildi.`)
+      } else if (r.durum === 'belirsiz') {
+        toast(r.mesaj || 'Faturanın sonucu doğrulanamadı — Kontrol Bekliyor listesine düştü.',
+          { icon: '❓', duration: 8000 })
+      } else {
+        toast.error(r.mesaj || 'Fatura kesilemedi.')
+      }
+      onDegisti()
+    } catch (e) { toast.error(e.message) } finally { setMesgul(false) }
+  }
 
   async function takipKaydet() {
     setMesgul(true)
@@ -225,8 +245,13 @@ function SiparisDetay({ siparis: s, durumlar, onKapat, onDegisti }) {
               ? <div className="text-gray-500 text-xs">VKN {s.fatura_vergi_no} · {s.fatura_vergi_dairesi}</div>
               : <div className="text-gray-500 text-xs">Bireysel{s.fatura_tc ? ` · TC ${s.fatura_tc}` : ''}</div>}
             {s.fatura_gonderildi
-              ? <div className="text-emerald-600 text-xs mt-1">✓ Fatura linki Trendyol'a gönderildi</div>
-              : <div className="text-amber-600 text-xs mt-1">Fatura linki henüz gönderilmedi</div>}
+              ? <div className="text-emerald-600 text-xs mt-1">
+                  ✓ Fatura gönderildi
+                  {s.ty_fatura_durum
+                    ? <span className="text-gray-500"> · Trendyol: {s.ty_fatura_durum}</span>
+                    : <span className="text-amber-600"> · Trendyol tarafında henüz görünmüyor</span>}
+                </div>
+              : <div className="text-amber-600 text-xs mt-1">Fatura henüz kesilmedi</div>}
           </div>
         </div>
 
@@ -271,7 +296,19 @@ function SiparisDetay({ siparis: s, durumlar, onKapat, onDegisti }) {
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex justify-between items-center gap-2">
+          <div>
+            {faturaYetkisi && !s.fatura_gonderildi && (
+              <button onClick={faturaKes} disabled={mesgul}
+                className="px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 disabled:opacity-40">
+                {mesgul ? 'Kesiliyor…' : `🧾 Fatura kes ve Trendyol'a bildir`}
+              </button>
+            )}
+            {s.fatura_url && (
+              <a href={s.fatura_url} target="_blank" rel="noopener noreferrer"
+                className="ml-2 text-sm text-blue-600 hover:underline">Faturayı aç</a>
+            )}
+          </div>
           <button onClick={onKapat} className="px-4 py-2 rounded-lg border text-sm hover:bg-gray-50">Kapat</button>
         </div>
       </div>

@@ -84,6 +84,58 @@ module.exports = {
     return sonuclar
   },
 
+  /**
+   * TRENDYOL PAKETİNE fatura keser ve linki Trendyol'a bildirir — zincirin tamamı:
+   *
+   *   paket → kanal/trendyol.js → çekirdek → Bizimhesap → belge URL'i
+   *                                                          ↓
+   *                                       Trendyol sendInvoiceLink → GERİ OKU, doğrula
+   *
+   * Yeni bir fatura sistemi KURULMADI: ikas için çalışan çekirdek ve sağlayıcı aynen
+   * kullanılıyor, yalnız kanal adaptörü eklendi.
+   *
+   * "Gönderdik" ile "Trendyol aldı" AYRI raporlanır (bkz. api-verification kuralı):
+   * link gönderimi hata vermese bile paket geri okunup Trendyol'un KENDİ invoiceLink/
+   * invoiceStatus alanına bakılır; görünmüyorsa uyarı döner, "tamam" denmez.
+   */
+  'fatura:kes-trendyol': async ({ paket_id } = {}) => {
+    yetkiKontrol('fatura_kes')
+    const girdi = require('../fatura/kanal/trendyol').paketiFaturayaCevir(paket_id)
+    girdi.kullanici = kullaniciAdi()
+    const sonuc = await require('../fatura/cekirdek').faturaKes(girdi, bagimliliklariKur())
+
+    const depo = require('./trendyol-siparis')
+    if (sonuc.senk_id) depo.alanGuncelle(paket_id, { fatura_senk_id: sonuc.senk_id })
+    // Fatura kesilmediyse (hata/belirsiz) Trendyol'a HİÇBİR ŞEY gönderilmez:
+    // olmayan bir belgenin linkini bildirmek müşteriye bozuk bağlantı gösterirdi.
+    if (sonuc.durum !== 'tamam') return { ...sonuc, trendyol: null }
+    if (!sonuc.url) {
+      return { ...sonuc, trendyol: null,
+        uyari: 'Fatura kesildi ama sağlayıcı belge bağlantısı döndürmedi; Trendyol tarafına link gönderilemedi.' }
+    }
+
+    depo.alanGuncelle(paket_id, { fatura_url: sonuc.url })
+    try {
+      const api = require('../trendyol/siparis')
+      await api.faturaLinkiGonder({ paketId: paket_id, url: sonuc.url })
+      depo.alanGuncelle(paket_id, { fatura_gonderildi: 1 })
+    } catch (e) {
+      // Fatura KESİLDİ ama link gidemedi — bu iki ayrı olaydır ve ayrı raporlanır.
+      return { ...sonuc, trendyol: { gonderildi: false, hata: e.message },
+        uyari: 'Fatura kesildi ancak Trendyol tarafına bağlantı gönderilemedi: ' + e.message }
+    }
+
+    // GERİ OKU: Trendyol gerçekten aldı mı?
+    const guncel = await require('../trendyol/siparis-ipc')._paketiTazele(paket_id)
+    const dogrulandi = !!(guncel && (guncel.ty_fatura_link || guncel.ty_fatura_durum))
+    return {
+      ...sonuc,
+      trendyol: { gonderildi: true, dogrulandi, durum: guncel && guncel.ty_fatura_durum },
+      uyari: dogrulandi ? null
+        : 'Bağlantı gönderildi ama Trendyol tarafında henüz görünmüyor. Birkaç dakika sonra tekrar bakın; kalıcıysa fatura dosyası olarak gönderin.',
+    }
+  },
+
   // Sipariş listesinde satır durumunu göstermek için. Yetki BİLEREK geniş:
   // fatura kesemeyen kasiyer de "bu sipariş faturalı mı" görebilmeli.
   'fatura:durumlar': async ({ kanal = 'perakende' } = {}) => {

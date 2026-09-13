@@ -147,6 +147,7 @@ async function soruCevapla({ id, metin, kullanici }) {
 
 module.exports = {
   _siparisleriCek: siparisleriCek,
+  _paketiTazele: paketiTazele,
   _sorulariSenkronla: sorulariSenkronla,
   _pencereler: pencereler,
 

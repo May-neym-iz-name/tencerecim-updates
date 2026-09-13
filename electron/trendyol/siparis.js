@@ -169,13 +169,21 @@ async function iadeGecmisi(claimItemsId) {
 // --- F: fatura -------------------------------------------------------------
 
 // F1 — fatura linki gönderme. Bizimhesap'ın verdiği belge URL'i buraya gider.
+//
+// 🔴 invoiceNumber/invoiceDateTime BİLEREK GÖNDERİLMİYOR (belgeden doğrulandı):
+// bu iki alan YALNIZ Mikro İhracat ve Trendyol Yurt Dışı paketlerinde zorunlu, yurt içi
+// paketlerde OPSİYONEL. Üstelik invoiceNumber katı bir biçim ister
+// ([3 alfanümerik][13 rakam]) ve Bizimhesap fatura NUMARASI döndürmüyor (yalnız guid +
+// url). Uydurma bir numara göndermek isteği reddettirirdi. Çağıran gerçek bir numara
+// biliyorsa geçebilir; bilmiyorsa alan hiç eklenmez.
 async function faturaLinkiGonder({ paketId, faturaNo, faturaTarihiMs, url }) {
-  return client.post(`/sellers/${sid()}/seller-invoice-links`, {
-    invoiceLink: url,
-    shipmentPackageId: Number(paketId),
-    invoiceNumber: faturaNo,
-    invoiceDateTime: Number(faturaTarihiMs) || Date.now(),
-  })
+  if (!url) throw new Error('Fatura bağlantısı boş olamaz.')
+  const govde = { invoiceLink: url, shipmentPackageId: Number(paketId) }
+  if (faturaNo) {
+    govde.invoiceNumber = String(faturaNo)
+    govde.invoiceDateTime = Number(faturaTarihiMs) || Date.now()
+  }
+  return client.post(`/sellers/${sid()}/seller-invoice-links`, govde)
 }
 
 // F2 — fatura linki silme

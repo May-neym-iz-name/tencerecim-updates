@@ -125,6 +125,7 @@ export const trendyolIadeApi = {
 }
 
 export const trendyolFaturaApi = {
+  kes: (paket_id) => invoke('fatura:kes-trendyol', { paket_id }),
   linkGonder: (p) => invoke('ty-fatura:link-gonder', p),
   linkSil: (p) => invoke('ty-fatura:link-sil', p),
   dosya: (govde) => invoke('ty-fatura:dosya', { govde }),
