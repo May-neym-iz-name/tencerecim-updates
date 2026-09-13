@@ -90,8 +90,64 @@ function yazmaIslemi(fn, yetki = 'kargo_yonet') {
   }
 }
 
+// --- G: müşteri soruları → SOSYAL MEDYA gelen kutusu ----------------------
+//
+// YouTube deseninin aynısı: sorular AYNI sosyal_mesajlar tablosunda durur
+// (platform='trendyol', tur='yorum'); yalnız ÇEKME ve CEVAPLAMA farklı API.
+// Böylece atama, hazır yanıt, arama ve rozet altyapısı olduğu gibi çalışır.
+async function sorulariSenkronla({ gunSayisi = 14 } = {}) {
+  kimlikKontrol()
+  const { _upsertMesaj } = require('../db/sosyal-mesajlar')
+  const bitis = Date.now()
+  const baslangic = bitis - Math.max(1, Number(gunSayisi) || 14) * GUN_MS
+  let n = 0
+  // Soru ucu da 2 hafta sınırına tabi (belgede yazıyor) — pencere bölünür.
+  for (const [b, e] of pencereler(baslangic, bitis)) {
+    const r = await api.sorulariCek({ baslangicMs: b, bitisMs: e, durum: undefined, boyut: 50 })
+    for (const q of (r?.content || r?.items || [])) {
+      const id = q.id ?? q.questionId
+      if (!id) continue
+      _upsertMesaj({
+        platform: 'trendyol', tur: 'yorum',
+        harici_id: 'ty_soru_' + id,
+        konu_id: String(q.productContentId ?? q.contentId ?? id),
+        gonderen_ad: q.userName || q.customerName || 'Trendyol müşterisi',
+        metin: q.text || q.question || '',
+        yon: 'gelen',
+        mesaj_tarihi: q.creationDate ? new Date(Number(q.creationDate)).toISOString() : new Date().toISOString(),
+        konu_baslik: q.productName || null,
+        konu_link: q.productUrl || null,
+      })
+      n++
+    }
+  }
+  return { cekilen: n }
+}
+
+// Sosyal medya ekranından gelen cevabı doğru API'ye yönlendirir ve yereli işaretler.
+async function soruCevapla({ id, metin, kullanici }) {
+  const { getDb } = require('../db/database')
+  const { _upsertMesaj } = require('../db/sosyal-mesajlar')
+  const row = getDb().prepare('SELECT * FROM sosyal_mesajlar WHERE id = ?').get(id)
+  if (!row) throw new Error('Soru bulunamadı.')
+  if (row.platform !== 'trendyol') throw new Error('Bu kayıt bir Trendyol sorusu değil.')
+  const soruId = String(row.harici_id || '').replace(/^ty_soru_/, '')
+  await api.soruyuCevapla(soruId, metin)
+  getDb().prepare("UPDATE sosyal_mesajlar SET durum = 'cevaplandi', cevaplayan_kullanici = ? WHERE id = ?")
+    .run(kullanici || null, id)
+  _upsertMesaj({
+    platform: 'trendyol', tur: 'yorum',
+    harici_id: 'ty_cevap_' + soruId + '_' + Date.now(),
+    konu_id: row.konu_id, ust_id: row.harici_id,
+    gonderen_ad: `${kullanici || 'Mağaza'} (yanıt)`, metin: String(metin).trim(),
+    yon: 'giden', mesaj_tarihi: new Date().toISOString(),
+  })
+  return { ok: true }
+}
+
 module.exports = {
   _siparisleriCek: siparisleriCek,
+  _sorulariSenkronla: sorulariSenkronla,
   _pencereler: pencereler,
 
   // --- okuma ---
@@ -158,6 +214,9 @@ module.exports = {
   'ty-soru:listele': (p = {}) => { yetkiKontrol('sosyal_medya_yonet'); kimlikKontrol(); return api.sorulariCek(p) },
   'ty-soru:getir': ({ soru_id }) => { yetkiKontrol('sosyal_medya_yonet'); kimlikKontrol(); return api.soruDetay(soru_id) },
   'ty-soru:cevapla': ({ soru_id, metin }) => { yetkiKontrol('sosyal_medya_yonet'); kimlikKontrol(); return api.soruyuCevapla(soru_id, metin) },
+  // Sosyal medya ekranının kullandığı yol (yerel kayıt id'siyle).
+  'ty-soru:senkronla': (p) => { yetkiKontrol('sosyal_medya_yonet'); return sorulariSenkronla(p || {}) },
+  'ty-soru:yanitla': (p) => { yetkiKontrol('sosyal_medya_yonet'); kimlikKontrol(); return soruCevapla(p || {}) },
 
   // --- H1: ortak etiket (kendi şablonumuza basılır) ---
   'ty-etiket:talep': ({ takip_no, govde }) => { yetkiKontrol('kargo_yonet'); kimlikKontrol(); return api.ortakEtiketTalep(takip_no, govde) },

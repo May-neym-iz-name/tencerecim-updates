@@ -134,6 +134,8 @@ export const trendyolSoruApi = {
   listele: (p) => invoke('ty-soru:listele', p),
   getir: (soru_id) => invoke('ty-soru:getir', { soru_id }),
   cevapla: (soru_id, metin) => invoke('ty-soru:cevapla', { soru_id, metin }),
+  senkronla: (p) => invoke('ty-soru:senkronla', p),
+  yanitla: (p) => invoke('ty-soru:yanitla', p),
 }
 
 export const trendyolFinansApi = {

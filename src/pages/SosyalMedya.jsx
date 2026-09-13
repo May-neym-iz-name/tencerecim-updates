@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { sosyalApi, metaApi, youtubeApi, aiApi } from '../api/ipc'
+import { sosyalApi, metaApi, youtubeApi, aiApi, trendyolSoruApi } from '../api/ipc'
 import { eslesirMi } from '../utils/arama'
 import { adSadelestir, adBasHarfi } from '../utils/ad'
 import { bulutaYukle } from '../lib/ayarSenk'
@@ -22,6 +22,7 @@ const PLATFORMLAR = [
   { kod: 'instagram', ad: 'Instagram', sayacKey: 'instagram', renk: '#e1306c' },
   { kod: 'facebook', ad: 'Facebook', sayacKey: 'facebook', renk: '#1877f2' },
   { kod: 'youtube', ad: 'YouTube', sayacKey: 'youtube', renk: '#ff0000' },
+  { kod: 'trendyol', ad: 'Trendyol', sayacKey: 'trendyol', renk: '#f27a1a' },
 ]
 const BOLUMLER = {
   instagram: [
@@ -36,6 +37,11 @@ const BOLUMLER = {
   // YANITLAMA farklı API. Özel mesaj API'si YOK → DM bölümü yok.
   youtube: [
     { kod: 'yorum', ad: 'Yorumlar', mod: 'yorum', sayacKey: 'yt_yorum' },
+  ],
+  // Trendyol müşteri soruları da AYNI tabloda (platform='trendyol', tur='yorum');
+  // yalnız çekme ve cevaplama farklı API. Özel mesaj kavramı yok → DM bölümü yok.
+  trendyol: [
+    { kod: 'yorum', ad: 'Müşteri soruları', mod: 'yorum', sayacKey: 'ty_soru' },
   ],
 }
 
@@ -438,6 +444,9 @@ export default function SosyalMedya() {
         // YouTube'da yanıt, yorumun YEREL id'siyle değil harici_id ile verilir.
         // Durum ve "kim yanıtladı" işaretini modül yazar (Meta'daki gibi).
         await youtubeApi.yorumYanitla({ harici_id: yorum.harici_id, metin, kullanici })
+      } else if (yorum.platform === 'trendyol') {
+        // Trendyol müşteri sorusu: yerel id ile gider, modül harici_id'yi kendisi çözer.
+        await trendyolSoruApi.yanitla({ id: yorum.id, metin, kullanici })
       } else {
         await metaApi.yorumCevapla({ id: yorum.id, metin, kullanici })
       }

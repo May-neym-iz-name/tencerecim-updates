@@ -79,6 +79,8 @@ const KANAL_YETKI = Object.freeze({
   'ty-soru:listele': 'sosyal_medya_yonet',
   'ty-soru:getir': 'sosyal_medya_yonet',
   'ty-soru:cevapla': 'sosyal_medya_yonet',
+  'ty-soru:senkronla': 'sosyal_medya_yonet',
+  'ty-soru:yanitla': 'sosyal_medya_yonet',
   'ty-etiket:talep': 'kargo_yonet',
   'ty-etiket:al': 'kargo_yonet',
   'ty-finans:odeme-emirleri': 'rapor_goruntule',

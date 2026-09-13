@@ -426,6 +426,13 @@ function kanalStokOkumaBaslat() {
       // Kimlik yoksa her turda gürültü yapmasın.
       if (!/kimlik bilgileri eksik/i.test(err.message)) console.error('[trendyol] sipariş hatası:', err.message)
     }
+    // Trendyol müşteri soruları → Sosyal Medya gelen kutusu (YouTube deseni).
+    try {
+      const q = await trendyolSiparis._sorulariSenkronla({ gunSayisi: 14 })
+      if (q.cekilen) console.log(`[trendyol] ${q.cekilen} müşteri sorusu`)
+    } catch (err) {
+      if (!/kimlik bilgileri eksik/i.test(err.message)) console.error('[trendyol] soru hatası:', err.message)
+    }
     // OTOMATİK EŞİTLEME — okuma ve sipariş çekme bittikten SONRA. Sıradan farkları
     // sessizce yazar; ürünü satıştan kaldıracak olanları onay kuyruğuna alır.
     try {

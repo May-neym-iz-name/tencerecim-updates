@@ -377,14 +377,17 @@ function sayaclar({ kullanici } = {}) {
   const fb_yorum = q("tur='yorum' AND platform='facebook' AND niyet='soru'")
   const ig_yorum = q("tur='yorum' AND platform='instagram' AND niyet='soru'")
   const yt_yorum = q("tur='yorum' AND platform='youtube'")
+  // Trendyol müşteri soruları da AYNI tabloda (platform='trendyol'), YouTube deseni.
+  const ty_soru = q("tur='yorum' AND platform='trendyol'")
   return {
     hepsi: q(ROZET_YORUM_KOSULU),
-    messenger, instagram_dm, fb_yorum, ig_yorum, yt_yorum,
+    messenger, instagram_dm, fb_yorum, ig_yorum, yt_yorum, ty_soru,
     sorular: fb_yorum + ig_yorum,
     // Platform toplamları (üst sekme rozeti)
     instagram: instagram_dm + ig_yorum,
     facebook: messenger + fb_yorum,
     youtube: yt_yorum,
+    trendyol: ty_soru,
     bana: bana('instagram') + bana('facebook'),
     bana_instagram: bana('instagram'),
     bana_facebook: bana('facebook'),
