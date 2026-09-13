@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
-import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi, denetimApi, faturaStokApi, sosyalApi } from '../api/ipc'
+import { lokasyonApi, upsApi, ikasApi, lokasyonGondericiApi, yedekApi, metaApi, denetimApi, faturaStokApi, sosyalApi, trendyolAyarApi } from '../api/ipc'
 import { bulutaYukle } from '../lib/ayarSenk'
 import { veriSenk } from '../lib/veriSenk'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
@@ -32,6 +32,7 @@ export default function Ayarlar() {
     { kod: 'yazici', ad: '🖨️ Yazıcılar' },
     { kod: 'ikas', ad: '🛍️ ikas' },
     { kod: 'fatura', ad: '🧾 Fatura' },
+    { kod: 'trendyol', ad: '🧡 Trendyol' },
     { kod: 'meta', ad: '💬 Sosyal Medya' },
     { kod: 'youtube', ad: '▶️ YouTube' },
     { kod: 'ai', ad: '✨ Yapay Zekâ' },
@@ -294,6 +295,20 @@ export default function Ayarlar() {
       toast.success(`${r.toplam} müşteri tarandı: ${r.eslesen} güncellendi, ${r.eklenen} eklendi.`)
     } catch (e) { toast.error('Müşteri çekme hatası: ' + e.message) }
     finally { setIkasMesgul('') }
+  }
+
+  // Trendyol pazaryeri — kanal stok senkronu kimlik bilgileri.
+  // Anahtarlar diskte DPAPI ile sifreli durur; renderer'a maskeli (********) doner,
+  // maskeli deger geri gonderilirse mevcut deger KORUNUR (bkz. db/trendyol-ayarlar.js).
+  const [trendyol, setTrendyol] = useState(null)
+  const [trendyolMesgul, setTrendyolMesgul] = useState(false)
+  useEffect(() => { trendyolAyarApi.getir().then(setTrendyol).catch(() => setTrendyol({})) }, [])
+  function trendyolAlan(anahtar, deger) { setTrendyol(t => ({ ...t, [anahtar]: deger })) }
+  async function trendyolKaydet() {
+    setTrendyolMesgul(true)
+    try { setTrendyol(await trendyolAyarApi.kaydet(trendyol)); toast.success('Trendyol ayarları kaydedildi') }
+    catch (e) { toast.error(e.message) }
+    finally { setTrendyolMesgul(false) }
   }
 
   // Meta (Facebook/Instagram) entegrasyonu
@@ -616,6 +631,57 @@ export default function Ayarlar() {
       )}
 
       {/* ikas E-Ticaret Entegrasyonu (yalnızca yönetici) */}
+      {sekme === 'trendyol' && yonetici && trendyol && (
+        <div className="bg-white rounded-xl border p-5 mb-5">
+          <h3 className="font-semibold mb-1">🧡 Trendyol Pazaryeri</h3>
+          <p className="text-xs text-gray-400 mb-4">
+            Trendyol Satıcı Paneli &gt; Hesap Bilgilerim &gt; Entegrasyon Bilgileri'nden alınır
+            (master kullanıcı gerekir). Bu bilgiler yalnızca bu bilgisayarda, şifreli olarak saklanır
+            ve buluta gönderilmez — her bilgisayara ayrı girilir.
+          </p>
+
+          <p className="text-sm font-medium text-gray-600 mb-2">API Bilgileri</p>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            <input value={trendyol.seller_id || ''} onChange={e => trendyolAlan('seller_id', e.target.value)}
+              placeholder="Satıcı ID" className="border rounded px-2 py-1.5 text-sm" />
+            <input type="password" value={trendyol.api_key || ''} onChange={e => trendyolAlan('api_key', e.target.value)}
+              placeholder="API Key" className="border rounded px-2 py-1.5 text-sm" />
+            <input type="password" value={trendyol.api_secret || ''} onChange={e => trendyolAlan('api_secret', e.target.value)}
+              placeholder="API Secret" className="border rounded px-2 py-1.5 text-sm" />
+          </div>
+
+          <div className="mb-4">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={trendyol.yazma_acik === '1'}
+                onChange={e => trendyolAlan('yazma_acik', e.target.checked ? '1' : '0')}
+                className="w-4 h-4" />
+              <span className="font-medium text-gray-800">Trendyol'a stok yazmayı aç</span>
+            </label>
+            <p className="text-xs text-gray-400 mt-1">
+              Kapalıyken Stok &gt; Kanal Senkronu ekranı yalnızca <b>gösterir</b>, hiçbir şey göndermez.
+              Önce gerçek veriyle bir tur bakıp sonra açmanız önerilir.
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={trendyol.senk_kapali === '1'}
+                onChange={e => trendyolAlan('senk_kapali', e.target.checked ? '1' : '0')}
+                className="w-4 h-4" />
+              <span className="font-medium text-red-600">⛔ Acil durdur</span>
+            </label>
+            <p className="text-xs text-gray-400 mt-1">
+              İşaretlenirse Trendyol'a giden <b>tüm</b> gönderimler anında durur.
+            </p>
+          </div>
+
+          <button onClick={trendyolKaydet} disabled={trendyolMesgul}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+            {trendyolMesgul ? 'Kaydediliyor…' : 'Kaydet'}
+          </button>
+        </div>
+      )}
+
       {sekme === 'ikas' && yonetici && ikas && (
         <div className="bg-white rounded-xl border p-5 mb-5">
           <h3 className="font-semibold mb-1">🛒 ikas E-Ticaret Entegrasyonu</h3>

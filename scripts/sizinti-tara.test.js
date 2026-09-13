@@ -18,6 +18,21 @@ describe('yolIhlali', () => {
     expect(yolIhlali('REKLAM-KAMPANYALARI/butce.md')).toMatch(/sirket verisi/i)
   })
 
+  // 13.09.2026'da YASANDI: kural yolun HERHANGI bir parcasina bakiyordu, bu yuzden
+  // electron/trendyol/ kaynak klasoru "sirket verisi" sanilip commit engellendi.
+  // Kural koke sabitlendi; asagidaki iki test o davranisi iki yonden de kilitler.
+  it('ADI ayni olan KAYNAK KOD alt klasorunu engellemez', () => {
+    expect(yolIhlali('electron/trendyol/client.js')).toBeNull()
+    expect(yolIhlali('electron/trendyol/stok.js')).toBeNull()
+    expect(yolIhlali('src/components/hepsiburada/Kart.jsx')).toBeNull()
+  })
+
+  it('kok dizindeki sirket klasorunu yine de engeller (koruma zayiflamadi)', () => {
+    expect(yolIhlali('trendyol/gizli.txt')).toMatch(/sirket verisi/i)
+    expect(yolIhlali('MAL KABUL/irsaliye.txt')).toMatch(/sirket verisi/i)
+    expect(yolIhlali('ecc-kaynak/CLAUDE.md')).toMatch(/sirket verisi/i)
+  })
+
   it('klasor adi Windows ters bolu ile gelse de yakalar', () => {
     const tersBolu = ['FATURALAR', 'agustos', 'fatura.pdf'].join(String.fromCharCode(92))
     expect(yolIhlali(tersBolu)).toMatch(/sirket verisi/i)

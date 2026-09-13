@@ -33,6 +33,22 @@ const KANAL_YETKI = Object.freeze({
   'panel:ozet': 'rapor_goruntule',
   'stok:dusuk': 'stok_goruntule',
 
+  // Kanal stok senkronu (ikas <-> Trendyol). Okuma da dahil hepsi stok_duzenle ister:
+  // ekran baska magazanin stok ve urun listesini gosteriyor, salt-okunur degil sayilmaz.
+  'kanal:durum': 'stok_duzenle',
+  'kanal:tazele': 'stok_duzenle',
+  'kanal:karsilastir': 'stok_duzenle',
+  'kanal:hazirla': 'stok_duzenle',
+  'kanal:uygula': 'stok_duzenle',
+  'kanal:sonuc-tazele': 'stok_duzenle',
+  'kanal:geri-al': 'stok_duzenle',
+  'kanal:islemler': 'stok_duzenle',
+  'kanal:islem-detay': 'stok_duzenle',
+  'kanal:yazma-ac': 'ayarlar_duzenle',
+  'kanal:acil-kapat': 'ayarlar_duzenle',
+  'trendyol-ayar:getir': 'ayarlar_duzenle',
+  'trendyol-ayar:kaydet': 'ayarlar_duzenle',
+
   // Online siparişler
   'online-siparis:listele': 'online_siparis_goruntule',
   'online-siparis:getir': 'online_siparis_goruntule',

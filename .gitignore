@@ -32,10 +32,13 @@ KATALOG*.pdf
 *KATALOG*.pdf
 
 # Sirket verileri (fatura, sozlesme, komisyon, fiyat listeleri) — REPO PUBLIC, ASLA girmez
-FATURALAR/
-HEPSIBURADA/
-TRENDYOL/
-MAL KABUL/
+# Koke SABITLENDI (/ oneki): core.ignorecase=true oldugu icin "TRENDYOL/" kalibi
+# electron/trendyol/ kaynak klasorunu de yakaliyordu ve kod repoya hic girmiyordu.
+# Bu kurallar KOK dizindeki sirket verisi klasorlerini hedefler, kaynak kodu degil.
+/FATURALAR/
+/HEPSIBURADA/
+/TRENDYOL/
+/MAL KABUL/
 
 # Taranmis belge gorselleri (irsaliye vb. kaynak belgeler) — kok dizindeki jpeg/jpg
 /*.jpeg

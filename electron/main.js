@@ -589,6 +589,8 @@ const handlerModules = [
   require('./fis-yazdir'),
   require('./barkod-yazdir'),
   require('./auth'),
+  require('./db/trendyol-ayarlar'),
+  require('./trendyol'),
   require('./db/disa-aktarim-canli'),
 ]
 

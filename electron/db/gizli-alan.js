@@ -36,6 +36,10 @@ const HASSAS_ANAHTARLAR = {
   fatura_ayarlar: ['firm_id', 'token'],
   // Gemini anahtari: eline gecen bizim adimiza fatura cikarir (kullandikca odeme).
   ai_ayarlar: ['gemini_anahtar'],
+  // Trendyol: api_key + api_secret ikisi birlikte Basic Auth'u olusturur — eline
+  // gecen magazanin stogunu ve fiyatini degistirebilir. seller_id disarida:
+  // tek basina erisim vermez, User-Agent'ta zaten aciktan gidiyor.
+  trendyol_ayarlar: ['api_key', 'api_secret'],
 }
 
 function sifreliMi(deger) {

@@ -438,6 +438,61 @@ function createTables() {
       deger TEXT
     );
 
+    -- Trendyol pazaryeri ayarları (anahtar-değer). meta_ayarlar ile aynı model.
+    -- seller_id, api_key (hassas), api_secret (hassas), entegrasyon_ref,
+    -- senk_kapali ('1'/'0' acil anahtarı), yazma_acik ('1'/'0' — ilk yayında KAPALI:
+    -- kullanıcı gerçek veriyle bir tur baktıktan sonra açılır).
+    -- SENKRONLANMAZ: anahtarlar diskte DPAPI ile şifreli, şifreli değer başka PC'de
+    -- çözülemez (bkz. gizli-alan.js uyarısı).
+    CREATE TABLE IF NOT EXISTS trendyol_ayarlar (
+      anahtar TEXT PRIMARY KEY,
+      deger TEXT
+    );
+
+    -- Kanalların okunmuş stok fotoğrafı. KANAL BİR SATIRDIR, SÜTUN DEĞİL:
+    -- üçüncü/dördüncü kanal (mağaza, Hepsiburada) eklenince şema değişmez.
+    -- Karşılaştırma barkod üzerinden self-join ile yapılır.
+    -- durum: Trendyol için 'onayli' | 'onaysiz' | 'arsiv' | 'kilitli' — onaylı
+    -- olmayan ürün gönderime GİRMEZ (bkz. stok-senk-mantik.js gonderilemez).
+    CREATE TABLE IF NOT EXISTS kanal_stok (
+      barkod TEXT NOT NULL,
+      kanal TEXT NOT NULL,            -- 'ikas' | 'trendyol' | 'magaza'
+      miktar INTEGER,
+      ad TEXT,
+      durum TEXT,
+      son_okuma TEXT,
+      PRIMARY KEY (barkod, kanal)
+    );
+
+    -- Bir stok gönderim işlemi (kaynak kanaldan hedef kanala).
+    -- durum: 'hazir' | 'uygulandi' | 'kismi' | 'hata' | 'geri_alindi'
+    CREATE TABLE IF NOT EXISTS stok_senk_islem (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kaynak TEXT NOT NULL,
+      hedef TEXT NOT NULL,
+      durum TEXT NOT NULL DEFAULT 'hazir',
+      olusturan TEXT,
+      olusturma_tarihi TEXT DEFAULT (datetime('now','localtime')),
+      uygulama_tarihi TEXT,
+      ty_batch_id TEXT,
+      geri_alindigi_islem_id INTEGER REFERENCES stok_senk_islem(id),
+      aciklama TEXT
+    );
+
+    -- Kalem başına plan + DEĞİŞİKLİK ÖNCESİ ANLIK GÖRÜNTÜ.
+    -- eski_miktar gönderimden HEMEN ÖNCE hedef kanaldan taze okunur. Yedek yoksa
+    -- kalem yok, kalem yoksa gönderim yok — "yedek aldık mı?" sorusu hiç sorulmaz.
+    CREATE TABLE IF NOT EXISTS stok_senk_kalem (
+      islem_id INTEGER NOT NULL REFERENCES stok_senk_islem(id),
+      barkod TEXT NOT NULL,
+      ad TEXT,
+      eski_miktar INTEGER,
+      yeni_miktar INTEGER,
+      sonuc TEXT,
+      hata TEXT,
+      PRIMARY KEY (islem_id, barkod)
+    );
+
     -- YouTube entegrasyon ayarları (anahtar-değer). meta_ayarlar ile aynı model.
     -- client_id, client_secret (hassas), refresh_token (hassas, SÜRESİZ — çalınırsa
     -- kanala kalıcı erişim demektir), access_token (1 saatlik, hassas sayılmaz ama

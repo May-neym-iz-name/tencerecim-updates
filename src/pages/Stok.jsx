@@ -8,6 +8,7 @@ import { eslesirMi } from '../utils/arama'
 import { useSiralama } from '../hooks/useSiralama'
 import SiraliBaslik from '../components/SiraliBaslik'
 import StokSayim from '../components/StokSayim'
+import KanalSenkron from '../components/KanalSenkron'
 import { usePersistentState } from '../hooks/usePersistentState'
 
 // Stok sayfası: 2026-08-11 yeniden tasarımıyla iki alt sekmeye ayrıldı —
@@ -56,7 +57,7 @@ export default function Stok() {
 
   const sekmeler = (
     <div className="flex gap-1 mb-4 border-b">
-      {[['durum', '📋 Stok Durumu'], ...(sayimYetkisi ? [['sayim', '🔢 Sayım']] : [])].map(([k, l]) => (
+      {[['durum', '📋 Stok Durumu'], ...(sayimYetkisi ? [['sayim', '🔢 Sayım']] : []), ...(duzenleYetkisi ? [['kanal', '🔗 Kanal Senkronu']] : [])].map(([k, l]) => (
         <button key={k} onClick={() => setSekme(k)}
           className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${sekme === k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           {l}
@@ -64,6 +65,17 @@ export default function Stok() {
       ))}
     </div>
   )
+
+  // Kanal senkronu (ikas <-> Trendyol) kendi verisini yonetir; stok listesine bagli degil.
+  if (sekme === 'kanal' && duzenleYetkisi) {
+    return (
+      <div className="p-5">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Stok</h2>
+        {sekmeler}
+        <KanalSenkron />
+      </div>
+    )
+  }
 
   if (sekme === 'sayim' && sayimYetkisi) {
     return (

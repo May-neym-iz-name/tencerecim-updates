@@ -60,8 +60,12 @@ function yolIhlali(yol) {
 
   if (/^\.env(\.|$)/.test(ad)) return 'ortam dosyasi (.env) — API anahtarlari icerir'
 
-  for (const k of GIZLI_KLASORLER) {
-    if (p.includes(k)) return `sirket verisi klasoru: ${k}`
+  // YALNIZ KOK dizindeki klasor adina bakilir. Eskiden yolun HERHANGI bir parcasi
+  // yeterliydi; bu yuzden electron/trendyol/ gibi KAYNAK KOD klasorleri de sirket
+  // verisi sanilip engelleniyordu (13.09.2026'da yasandi). Listedeki klasorlerin
+  // hepsi kok dizinde durur, dolayisiyla koruma zayiflamaz.
+  if (GIZLI_KLASORLER.includes(p[0]) && p.length > 1) {
+    return `sirket verisi klasoru: ${p[0]}`
   }
 
   const uz = uzanti(yol)

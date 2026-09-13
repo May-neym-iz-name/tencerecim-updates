@@ -74,6 +74,27 @@ export const stokApi = {
   sayimIptal: (sayim_id) => invoke('sayim:iptal', sayim_id),
 }
 
+// Kanal stok senkronu (ikas <-> Trendyol). Tasarim:
+// docs/superpowers/specs/2026-09-13-kanal-stok-senkronu-design.md
+export const kanalApi = {
+  durum: () => invoke('kanal:durum'),
+  tazele: () => invoke('kanal:tazele'),
+  karsilastir: () => invoke('kanal:karsilastir'),
+  hazirla: (veri) => invoke('kanal:hazirla', veri),
+  uygula: (islem_id) => invoke('kanal:uygula', { islem_id }),
+  sonucTazele: (islem_id) => invoke('kanal:sonuc-tazele', { islem_id }),
+  geriAl: (veri) => invoke('kanal:geri-al', veri),
+  islemler: (p) => invoke('kanal:islemler', p),
+  islemDetay: (islem_id) => invoke('kanal:islem-detay', { islem_id }),
+  yazmaAc: (acik) => invoke('kanal:yazma-ac', { acik }),
+  acilKapat: (kapali) => invoke('kanal:acil-kapat', { kapali }),
+}
+
+export const trendyolAyarApi = {
+  getir: () => invoke('trendyol-ayar:getir'),
+  kaydet: (veri) => invoke('trendyol-ayar:kaydet', veri),
+}
+
 export const faturaStokApi = {
   durum: (params) => invoke('fatura-stok:durum', params),
   hareketler: (params) => invoke('fatura-stok:hareketler', params),
