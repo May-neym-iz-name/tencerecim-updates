@@ -430,6 +430,9 @@ function createTables() {
     -- Meta (Facebook/Instagram) entegrasyon ayarları (anahtar-değer). ikas ile aynı model.
     -- app_id, app_secret (hassas), sayfa_id, ig_id, sayfa_token (hassas, uzun ömürlü),
     -- token_gecerlilik (epoch ms), otomatik_senk ('1'/'0'). Yerel *.db gitignore'da.
+    -- ig_dm_imlec (ISO tarih): en son görülen GELEN IG DM'i. Çekim turu konuşma listesinde
+    -- bunun gerisine düşene kadar iner → PC kapalıyken gelenler sonraki turda toplanır.
+    -- Boşsa ilk tur tavana (300 konuşma) kadar tarar; bu bilerek yapılan telafi turudur.
     CREATE TABLE IF NOT EXISTS meta_ayarlar (
       anahtar TEXT PRIMARY KEY,
       deger TEXT

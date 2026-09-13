@@ -6,6 +6,8 @@ const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const { getDb } = require('../db/database')
 const { _upsertMesaj, _silinenGonderileriIsaretle, _yanitlananlariKapat, _kartEkolariniBirlestir, _konusmayaAtaKisiden } = require('../db/sosyal-mesajlar')
 const { gorselDosyasi, onbellekDurum } = require('./gorsel-onbellek')
+const { _ayarlariGetir: _metaAyarlariGetir, _ayarKaydetTek: _metaAyarKaydetTek } = require('../db/meta-ayarlar')
+const { imlecIlerlet, telafiTakipci } = require('./ig-imlec')
 
 // Son çekme turunun özeti (arka plan polling + manuel). UI "sessiz hata göstergesi"
 // bunu okur: arka planda 120 sn'de bir çalışan senkron hataları console'a yutuyordu;
@@ -138,35 +140,48 @@ async function cekInstagramYorumlar() {
 }
 
 // IG conversations uç noktası ÇOK ağır: büyük limit → "reduce data" (kod 1), yanıt 20+ sn.
-// Bu yüzden IG için küçük limit + uzun timeout + savunmacı sayfalama kullanılır.
-const IG_KONUSMA_LIMIT = 1   // KANITLANDI: limit 1 ~25 sn'de döner; 2+ timeout/kod 1 riski
-const IG_MAX_SAYFA = 5       // tur başına en fazla sayfa (her sayfa ~25 sn)
+// Bu yüzden uzun timeout + savunmacı sayfalama kullanılır.
+//
+// LİMİT 1 → 25 (13.09.2026): eski "limit 1" kararı v1.2.92'de AĞIR alanlarla ölçülmüştü;
+// burada istenen tek alan `id`. Sabit 5 konuşmalık pencere kanıtlanmış bir kayıp
+// kaynağıydı — liste SON HAREKETE göre sıralı ve otomasyonun kendi giden kartları da
+// hareket sayıldığı için pencereyi bizim giden mesajlarımız dolduruyor, gerçek gelen
+// DM'ler altına düşüp bir daha okunmuyordu (ölçüm: giden/gelen oranı 8 Eyl 1,0 → 13 Eyl 6,2).
+// Büyük limit yine reddedilebilir; o yüzden düşünce limit 1'e İNEREK devam eder (aşağıda).
+const IG_KONUSMA_LIMIT = 25  // tek istekte hedeflenen konuşma sayısı
+const IG_MAX_SAYFA = 20      // tavan; asıl durdurucu imleç (bkz. ig-imlec.js)
 const IG_LISTE_OPTS = { timeout: 60000, deneme: 1 } // uzun timeout, retry yok (60 sn zaten pahalı)
 
-// IG konuşma id'lerini savunmacı çeker: sayfalama sık kod 1 verir → hata olunca eldekiyle döner.
-// Idempotent upsert + 120 sn polling sayesinde yeni gelen DM'ler zamanla yakalanır.
-async function igKonusmaIdleri(sayfaId) {
-  const idler = []
+// Hangi limitle çalıştığımız ÖLÇÜLEREK öğrenilsin — varsayımla yaşamayalım.
+let _igListeLimiti = IG_KONUSMA_LIMIT
+
+// IG konuşma id'lerini SAYFA SAYFA verir (async generator). Çağıran her sayfayı işleyip
+// yeterince geriye indiğinde döngüyü kırar → sessiz dönemde 1 sayfa, uzun kapalılıktan
+// sonra gerektiği kadar sayfa çekilir. Hata olursa sessizce biter: eldekiyle devam,
+// idempotent upsert sayesinde bir sonraki tur tamamlar.
+async function* igKonusmaSayfalari(sayfaId) {
   let after = null
   for (let sayfa = 0; sayfa < IG_MAX_SAYFA; sayfa++) {
-    const params = { platform: 'instagram', fields: 'id', limit: IG_KONUSMA_LIMIT }
+    const params = { platform: 'instagram', fields: 'id', limit: _igListeLimiti }
     if (after) params.after = after
     let r
     try {
       r = await client.get(`${sayfaId}/conversations`, params, IG_LISTE_OPTS)
     } catch (e) {
-      // "reduce data" (kod 1) → aynı sayfayı limit 1 ile bir kez daha dene, olmazsa dur.
-      if (IG_KONUSMA_LIMIT > 1 && /kod 1\b/.test(e.message)) {
+      // "reduce data" (kod 1) veya timeout → limit'i kalıcı olarak 1'e indir ve bu sayfayı
+      // bir kez daha dene. Böylece ağır hesapta da EN AZ eski davranış korunur.
+      if (_igListeLimiti > 1) {
+        _igListeLimiti = 1
+        console.warn(`[meta] IG konuşma listesi limit ${IG_KONUSMA_LIMIT} reddedildi (${e.message}) → limit 1'e inildi.`)
         try { r = await client.get(`${sayfaId}/conversations`, { ...params, limit: 1 }, IG_LISTE_OPTS) }
-        catch { break }
-      } else break
+        catch { return }
+      } else return
     }
     const d = r.data || []
-    for (const k of d) idler.push(k.id)
+    if (d.length) yield d.map(k => k.id)
     after = r.paging?.cursors?.after
-    if (!after || d.length === 0) break
+    if (!after || d.length === 0) return
   }
-  return idler
 }
 
 // DM mesaj alanları: metin dışı içerik (hikaye yanıtı, paylaşılan gönderi, görsel/video)
@@ -222,17 +237,31 @@ async function cekMesajlar(platform) {
   // Bizim taraf kimlikleri: FB'de sayfa_id, IG'de mesajların 'from'u IG hesabı id'si olur.
   const bizIdler = new Set([sayfaId, igMi ? client._igId() : null].filter(Boolean))
 
-  // 1) Konuşma id listesi. IG ağır olduğundan özel akış; FB tek hafif istek.
-  let konusmaIdleri
-  if (igMi) {
-    konusmaIdleri = await igKonusmaIdleri(sayfaId)
-  } else {
+  // 1) Konuşma id kaynağı. IG: sayfa sayfa (aşağıdaki imleç ne zaman duracağını söyler);
+  //    FB hacmi küçük, tek hafif istek yeter.
+  async function* idKaynagi() {
+    if (igMi) {
+      for await (const grup of igKonusmaSayfalari(sayfaId)) yield* grup
+      return
+    }
     const liste = await client.get(`${sayfaId}/conversations`, { fields: 'id', limit: 10 })
-    konusmaIdleri = (liste.data || []).map(k => k.id)
+    yield* (liste.data || []).map(k => k.id)
   }
 
+  // İMLEÇ (13.09.2026): en son görülen GELEN mesajın tarihi. Liste son harekete göre sıralı
+  // olduğu için, imlecin gerisine düşen birkaç konuşma ardarda görülünce listenin geri kalanı
+  // da eskidir → tarama biter. Sessiz dönemde 3-4 konuşma, uzun kapalılıktan sonra gerektiği
+  // kadar konuşma okunur; böylece PC kapalıyken gelenler artık KAYBOLMAZ.
+  //
+  // İmleç YALNIZ gelen mesajlardan ilerler. Giden de sayılsaydı otomasyonun az önce attığı
+  // kart imleci öne atar, henüz okunmamış daha eski müşteri mesajlarını "eski" gösterip
+  // kalıcı olarak atlardı — düzeltmeye çalıştığımız hatanın ta kendisi.
+  const imlec = igMi ? (_metaAyarlariGetir().ig_dm_imlec || null) : null
+  const takipci = igMi ? telafiTakipci({ imlec }) : null
+  let yeniImlec = imlec
+
   let n = 0
-  for (const konusmaId of konusmaIdleri) {
+  for await (const konusmaId of idKaynagi()) {
     // 2) Her konuşmanın mesajlarını AYRI, hafif istekle çek (bu çağrı hızlı, ~3-4 sn).
     let mesajlar
     try {
@@ -279,7 +308,16 @@ async function cekMesajlar(platform) {
       })
       n++
     }
+    // 3) İmleç ve durma kararı: YALNIZ gelen mesajlara bakılır (yukarıdaki nedenle).
+    if (takipci) {
+      const gelenler = (mesajlar.data || []).filter(m => !bizIdler.has(m.from?.id))
+      yeniImlec = imlecIlerlet(yeniImlec, gelenler)
+      if (takipci.kaydet(gelenler)) break
+    }
   }
+  // İmleç tur SONUNDA tek seferde yazılır: tur yarıda kalırsa imleç ilerlemez ve bir
+  // sonraki tur aynı yerden devam eder (idempotent upsert sayesinde kopya oluşmaz).
+  if (igMi && yeniImlec && yeniImlec !== imlec) _metaAyarKaydetTek('ig_dm_imlec', yeniImlec)
   return n
 }
 
