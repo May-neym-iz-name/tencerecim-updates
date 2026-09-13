@@ -5,26 +5,26 @@ const M = await import('./stok-senk-mantik.js')
 const { planUret, parcala, tersPlan, durumGecisi, tekrarKorumasiBitisi, partiSonucuIsle, miktarSinirla, partiTamamMi, urunDurumu } = M
 
 // Ölçülmüş gerçek bir satır (paralel oturumun eslesme.json çıktısından).
-const GERCEK = { barkod: '2004406300304', ad: 'Maxx Doria Steel Fusion 24 Cm Basık Tencere' }
+const GERCEK = { sku: 'TNC.MXD.00173', barkod: '2004406300304', ad: 'Maxx Doria Steel Fusion 24 Cm Basık Tencere' }
 
 describe('planUret', () => {
   test('kaynak adedini hedefe yazar (ikas 3 → Trendyol 1 ise gönderilir)', () => {
     const p = planUret({
       kaynak: [{ ...GERCEK, miktar: 3 }],
-      hedef: [{ barkod: GERCEK.barkod, miktar: 1, durum: 'onayli' }],
+      hedef: [{ sku: GERCEK.sku, barkod: GERCEK.barkod, miktar: 1, durum: 'onayli' }],
     })
-    expect(p.gonderilecek).toEqual([{ barkod: GERCEK.barkod, ad: GERCEK.ad, eski_miktar: 1, yeni_miktar: 3 }])
+    expect(p.gonderilecek).toEqual([{ sku: GERCEK.sku, barkod: GERCEK.barkod, ad: GERCEK.ad, eski_miktar: 1, yeni_miktar: 3 }])
     expect(p.ozet.artacak).toBe(1)
   })
 
   test('eşit olanı göndermez (gereksiz istek = 15 dk koruması riski)', () => {
-    const p = planUret({ kaynak: [{ barkod: 'B', miktar: 5 }], hedef: [{ barkod: 'B', miktar: 5, durum: 'onayli' }] })
+    const p = planUret({ kaynak: [{ sku: 'B', miktar: 5 }], hedef: [{ sku: 'B', barkod: 'b1', miktar: 5, durum: 'onayli' }] })
     expect(p.gonderilecek).toHaveLength(0)
     expect(p.degismeyen).toHaveLength(1)
   })
 
   test('kaynakta 0 ise hedefi sıfırlar ve AYRI sayar', () => {
-    const p = planUret({ kaynak: [{ barkod: 'B', miktar: 0 }], hedef: [{ barkod: 'B', miktar: 4, durum: 'onayli' }] })
+    const p = planUret({ kaynak: [{ sku: 'B', miktar: 0 }], hedef: [{ sku: 'B', barkod: 'b1', miktar: 4, durum: 'onayli' }] })
     expect(p.gonderilecek[0].yeni_miktar).toBe(0)
     expect(p.ozet.sifirlanacak).toBe(1)
     expect(p.ozet.azalacak).toBe(1)
@@ -32,11 +32,11 @@ describe('planUret', () => {
 
   test('onaylı olmayan ürün gönderime GİRMEZ, gerekçesiyle listelenir', () => {
     const p = planUret({
-      kaynak: [{ barkod: 'A', miktar: 3 }, { barkod: 'B', miktar: 3 }, { barkod: 'C', miktar: 3 }],
+      kaynak: [{ sku: 'A', miktar: 3 }, { sku: 'B', miktar: 3 }, { sku: 'C', miktar: 3 }],
       hedef: [
-        { barkod: 'A', miktar: 1, durum: 'onaysiz' },
-        { barkod: 'B', miktar: 1, durum: 'arsiv' },
-        { barkod: 'C', miktar: 1, durum: 'kilitli' },
+        { sku: 'A', barkod: 'a1', miktar: 1, durum: 'onaysiz' },
+        { sku: 'B', barkod: 'b1', miktar: 1, durum: 'arsiv' },
+        { sku: 'C', barkod: 'c1', miktar: 1, durum: 'kilitli' },
       ],
     })
     expect(p.gonderilecek).toHaveLength(0)
@@ -46,18 +46,23 @@ describe('planUret', () => {
   })
 
   test('hedefte olmayan barkod eşleşmeyen listesine düşer, plana girmez', () => {
-    const p = planUret({ kaynak: [{ barkod: 'YOK', miktar: 3 }], hedef: [] })
+    const p = planUret({ kaynak: [{ sku: 'YOK', miktar: 3 }], hedef: [] })
     expect(p.gonderilecek).toHaveLength(0)
-    expect(p.eslesmeyen).toEqual([{ barkod: 'YOK', ad: null, miktar: 3 }])
+    expect(p.eslesmeyen).toEqual([{ sku: 'YOK', ad: null, miktar: 3 }])
   })
 
-  test('barkod boşlukları kırpılır — aynı ürün iki kanalda eşleşir', () => {
-    const p = planUret({ kaynak: [{ barkod: ' 123 ', miktar: 2 }], hedef: [{ barkod: '123', miktar: 0, durum: 'onayli' }] })
+  test('stok kodu boşluk ve büyük/küçük harf farkına rağmen eşleşir', () => {
+    const p = planUret({ kaynak: [{ sku: ' tnc.abc.001 ', miktar: 2 }], hedef: [{ sku: 'TNC.ABC.001', barkod: 'b1', miktar: 0, durum: 'onayli' }] })
     expect(p.gonderilecek).toHaveLength(1)
   })
 
-  test('barkodsuz kaynak satırı hiçbir listeye girmez', () => {
-    const p = planUret({ kaynak: [{ barkod: null, miktar: 2 }, { barkod: '', miktar: 1 }], hedef: [] })
+  test('Trendyol barkodu YAZMA anahtarı olarak plana taşınır', () => {
+    const p = planUret({ kaynak: [{ sku: 'S1', barkod: 'ikas-barkodu', miktar: 2 }], hedef: [{ sku: 'S1', barkod: 'ty-barkodu', miktar: 0, durum: 'onayli' }] })
+    expect(p.gonderilecek[0].barkod).toBe('ty-barkodu')
+  })
+
+  test('stok kodsuz kaynak satırı hiçbir listeye girmez', () => {
+    const p = planUret({ kaynak: [{ sku: null, miktar: 2 }, { sku: '', miktar: 1 }], hedef: [] })
     expect(p.gonderilecek).toHaveLength(0)
     expect(p.eslesmeyen).toHaveLength(0)
   })
@@ -97,8 +102,8 @@ describe('parcala', () => {
 
 describe('tersPlan', () => {
   test('anlık görüntüdeki eski miktarı geri yazar', () => {
-    expect(tersPlan([{ barkod: 'B', ad: 'X', eski_miktar: 1, yeni_miktar: 3, sonuc: 'basarili' }]))
-      .toEqual([{ barkod: 'B', ad: 'X', eski_miktar: 3, yeni_miktar: 1 }])
+    expect(tersPlan([{ sku: 'S1', barkod: 'B', ad: 'X', eski_miktar: 1, yeni_miktar: 3, sonuc: 'basarili' }]))
+      .toEqual([{ sku: 'S1', barkod: 'B', ad: 'X', eski_miktar: 3, yeni_miktar: 1 }])
   })
   test('gönderilememiş kalemi geri ALMAZ (hedefte değişiklik olmadı)', () => {
     expect(tersPlan([{ barkod: 'B', eski_miktar: 1, yeni_miktar: 3, sonuc: 'hata' }])).toEqual([])

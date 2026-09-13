@@ -7,32 +7,76 @@ import Sayfalama from './Sayfalama'
 import { useSayfalama } from '../hooks/useSayfalama'
 import { usePersistentState } from '../hooks/usePersistentState'
 
-// Kanal Stok Senkronu — ikas ile Trendyol'un aynı sayıyı göstermesi.
+// Kanal Stok Senkronu — her kanal KENDİ listesi.
 // Karar kaydı: docs/superpowers/specs/2026-09-13-kanal-stok-senkronu-design.md
 //
-// Tasarım ilkeleri:
-//  · Kaynak ikas'tır. Trendyol adedi := ikas adedi. Kullanıcı tek tek ürün SEÇMEZ.
-//  · Mağaza sütunu GRİ ve karara girmez — sayım yapılmadığı için güvenilmez.
-//  · Sıfırlanacak ürünler ayrı vurgulanır: tek geri dönüşü zor sonuç odur
-//    (ürün Trendyol'da satıştan kalkar).
+// Tasarım ilkeleri (kullanıcı kararı 13.09.2026):
+//  · Üç kanal ÜÇ AYRI LİSTE. Tek karışık tablo değil.
+//  · Eşleşme stok kodu (SKU) ile — ölçüldü: 162/162 (barkodla 161/162).
+//  · Ana stok kaynağı SEÇİLEBİLİR ayardır, koda gömülü değil.
+//  · "Tazele" düğmesi YOK: okuma arka planda döner (main.js, 10 dk).
+//  · Onay HAFİFTİR; yazılı teyit YALNIZ ürün satıştan kalkacaksa istenir.
+//  · Mağaza listesi salt görüntü — sayım yapılmadığı için hiçbir şeyi etkilemez.
 
-const BOS_DURUM = { kimlikVar: false, senkKapali: false, yazmaAcik: false, sonOkuma: {}, sellerId: null }
+const KANAL_BILGI = {
+  ikas:     { ad: 'ikas',     ikon: '🛍️' },
+  trendyol: { ad: 'Trendyol', ikon: '🧡' },
+  magaza:   { ad: 'Mağaza',   ikon: '🏬' },
+}
 
-// Sayıyı kanal hücresinde gösterir. null = o kanalda ürün yok (eşleşmeyen).
+const DURUM_ETIKET = {
+  onaysiz: 'onay bekliyor', reddedildi: 'reddedildi', arsiv: 'arşivli', kilitli: 'kilitli',
+}
+
+function zamanKisa(s) {
+  if (!s) return 'henüz okunmadı'
+  const t = new Date(String(s).replace(' ', 'T'))
+  if (Number.isNaN(t.getTime())) return s
+  const dk = Math.round((Date.now() - t.getTime()) / 60000)
+  if (dk < 1) return 'az önce'
+  if (dk < 60) return `${dk} dk önce`
+  return t.toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+}
+
 function Adet({ deger, soluk }) {
   if (deger == null) return <span className="text-gray-300">—</span>
   return <span className={soluk ? 'text-gray-400' : 'font-medium text-gray-800'}>{deger}</span>
 }
 
-// ikas → Trendyol yönünü ve büyüklüğünü tek bakışta anlatır.
-function YonRozeti({ ikas, trendyol }) {
-  if (ikas == null || trendyol == null) return <span className="text-xs text-gray-400">eşleşmedi</span>
-  if (ikas === trendyol) return <span className="text-xs text-gray-400">aynı</span>
-  if (ikas === 0) return <span className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">satıştan kalkacak</span>
-  const fark = ikas - trendyol
-  return fark > 0
-    ? <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">▲ {fark}</span>
-    : <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">▼ {-fark}</span>
+// Ana kaynağın KENDİ listesinde: bu ürün hangi kanalda uyumsuz? Sütun boş kalmasın —
+// "kaynak" yazısı her satırda tekrarlanıp hiçbir şey anlatmıyordu.
+function NeredeUyumsuz({ satir, anaKanal, kanallar }) {
+  const sapan = kanallar
+    .filter(k => k !== anaKanal && k !== 'magaza')          // mağaza karara girmez
+    .map(k => ({ k, deger: satir[k] }))
+    .filter(x => x.deger != null && x.deger !== satir.miktar)
+  if (!sapan.length) return <span className="text-xs text-gray-300">—</span>
+  return (
+    <span className="flex gap-1 flex-wrap">
+      {sapan.map(({ k, deger }) => (
+        <span key={k} className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+          {KANAL_BILGI[k].ad}: {deger}
+        </span>
+      ))}
+    </span>
+  )
+}
+
+// Bu satır ana kaynağa göre ne olacak? (eşitlenecek kanalların listesinde)
+function Karsilastirma({ satir, anaKanal, buKanal }) {
+  if (buKanal === anaKanal) return null
+  const ana = satir[anaKanal]
+  const bu = satir.miktar
+  if (ana == null) return <span className="text-xs text-gray-400">{KANAL_BILGI[anaKanal].ad}'ta yok</span>
+  if (ana === bu) return <span className="text-xs text-emerald-600">eşit</span>
+  if (satir.durum && satir.durum !== 'onayli') return <span className="text-xs text-gray-400">gönderilemiyor</span>
+  if (ana === 0) {
+    return <span className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">satıştan kalkacak</span>
+  }
+  const renk = ana > bu
+    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+    : 'text-amber-700 bg-amber-50 border-amber-200'
+  return <span className={`text-xs font-semibold border rounded px-1.5 py-0.5 ${renk}`}>{bu} → {ana}</span>
 }
 
 export default function KanalSenkron() {
@@ -40,80 +84,72 @@ export default function KanalSenkron() {
   const kullanici = profil?.ad || profil?.email || ''
   const ayarYetkisi = yetkiVar('ayarlar_duzenle')
 
-  const [durum, setDurum] = useState(BOS_DURUM)
+  const [durum, setDurum] = useState(null)
+  const [kanal, setKanal] = usePersistentState('kanal_secili', 'ikas')
   const [satirlar, setSatirlar] = useState([])
-  const [yukleniyor, setYukleniyor] = useState(false)
-  const [plan, setPlan] = useState(null)          // hazırla çıktısı → doğrulama modalı
-  const [uyguluyor, setUyguluyor] = useState(false)
   const [arama, setArama] = usePersistentState('kanal_arama', '')
-  const [yalnizFarkli, setYalnizFarkli] = usePersistentState('kanal_yalniz_farkli', true)
+  const [yalnizFarkli, setYalnizFarkli] = usePersistentState('kanal_yalniz_farkli', false)
+  const [plan, setPlan] = useState(null)
+  const [mesgul, setMesgul] = useState(false)
 
   const durumYukle = useCallback(async () => {
     try { setDurum(await kanalApi.durum()) } catch (e) { toast.error(e.message) }
   }, [])
 
-  const listeYukle = useCallback(async () => {
-    try { setSatirlar(await kanalApi.karsilastir()) } catch (e) { toast.error(e.message) }
+  const listeYukle = useCallback(async (k) => {
+    try { setSatirlar(await kanalApi.liste(k)) } catch (e) { toast.error(e.message) }
   }, [])
 
-  useEffect(() => { durumYukle(); listeYukle() }, [durumYukle, listeYukle])
+  useEffect(() => { durumYukle() }, [durumYukle])
+  useEffect(() => { listeYukle(kanal) }, [listeYukle, kanal])
 
-  async function tazele() {
-    setYukleniyor(true)
-    try {
-      const r = await kanalApi.tazele()
-      if (r.hatalar?.length) r.hatalar.forEach(h => toast.error(h))
-      else toast.success(`Okundu — ikas ${r.ikas}, Trendyol ${r.trendyol} ürün`)
-      await Promise.all([durumYukle(), listeYukle()])
-    } catch (e) { toast.error(e.message) } finally { setYukleniyor(false) }
-  }
+  // Arka plan turu veriyi tazeliyor; ekran açıkken sessizce yakalansın diye 60 sn'de bir
+  // yeniden okunur. Bu bir AĞ isteği değil, yalnız yerel tablo okumasıdır.
+  useEffect(() => {
+    const t = setInterval(() => { durumYukle(); listeYukle(kanal) }, 60000)
+    return () => clearInterval(t)
+  }, [durumYukle, listeYukle, kanal])
 
-  async function hazirla() {
-    setYukleniyor(true)
+  const anaKanal = durum?.anaKanal || 'ikas'
+
+  async function esitle(hedef) {
+    setMesgul(true)
     try {
-      const p = await kanalApi.hazirla({ kullanici: kullanici || null })
-      if (!p.islem_id) { toast.success(p.mesaj || 'Fark yok.'); await listeYukle(); return }
-      setPlan(p)   // doğrulama modalı açılır
-      await listeYukle()
-    } catch (e) { toast.error(e.message) } finally { setYukleniyor(false) }
+      const p = await kanalApi.hazirla({ hedef, kullanici: kullanici || null })
+      if (!p.islem_id) { toast.success(p.mesaj || 'Fark yok.'); await listeYukle(kanal); return }
+      setPlan(p)
+    } catch (e) { toast.error(e.message) } finally { setMesgul(false) }
   }
 
   async function uygula() {
     if (!plan?.islem_id) return
-    setUyguluyor(true)
+    setMesgul(true)
     try {
       const r = await kanalApi.uygula(plan.islem_id)
-      toast.success(`${r.gonderilen} ürün Trendyol'a gönderildi.`)
+      toast.success(`${r.gonderilen} ürün gönderildi.`)
       setPlan(null)
-      await Promise.all([tazeleSonuc(r.islem_id), listeYukle()])
-    } catch (e) { toast.error(e.message) } finally { setUyguluyor(false) }
-  }
-
-  async function tazeleSonuc(islemId) {
-    try {
-      const s = await kanalApi.sonucTazele(islemId)
-      if (s.basarisiz) toast.error(`${s.basarisiz} üründe hata — İşlem geçmişinden bakın.`)
-      else if (s.tamam) toast.success('Trendyol tüm kalemleri kabul etti.')
-    } catch { /* sonuç birazdan hazır olur; sessiz geç */ }
+      try {
+        const s = await kanalApi.sonucTazele(r.islem_id)
+        if (s.basarisiz) toast.error(`${s.basarisiz} üründe hata oldu.`)
+      } catch { /* sonuç birazdan hazır olur */ }
+      await Promise.all([durumYukle(), listeYukle(kanal)])
+    } catch (e) { toast.error(e.message) } finally { setMesgul(false) }
   }
 
   const suzulmus = useMemo(() => satirlar.filter(s => {
-    if (yalnizFarkli && !(s.ikas != null && s.trendyol != null && s.ikas !== s.trendyol)) return false
-    return eslesirMi([s.ad, s.barkod, s.sku].filter(Boolean).join(' '), arama)
-  }), [satirlar, arama, yalnizFarkli])
+    // "Yalnız farklı" ANA KANALDA anlamsızdır (kendisiyle farkı olamaz) ve kutusu da
+    // orada gizlidir. Yine de uygulanırsa liste boş görünür ve kullanıcının düzeltme
+    // yolu kalmaz — görsel doğrulamada yaşandı (13.09.2026).
+    if (yalnizFarkli && kanal !== anaKanal) {
+      const ana = s[anaKanal]
+      if (ana == null || ana === s.miktar) return false
+    }
+    return eslesirMi([s.ad, s.sku, s.barkod].filter(Boolean).join(' '), arama)
+  }), [satirlar, arama, yalnizFarkli, anaKanal, kanal])
 
   const { dilim, ...sayfalama } = useSayfalama(suzulmus, 50)
 
-  const sayaclar = useMemo(() => {
-    let farkli = 0, eslesmeyen = 0
-    for (const s of satirlar) {
-      if (s.ikas == null || s.trendyol == null) eslesmeyen++
-      else if (s.ikas !== s.trendyol) farkli++
-    }
-    return { farkli, eslesmeyen, toplam: satirlar.length }
-  }, [satirlar])
-
-  // --- kapılar ------------------------------------------------------------
+  if (!durum) return <div className="text-sm text-gray-400 py-10 text-center">Yükleniyor…</div>
 
   if (!durum.kimlikVar) {
     return (
@@ -121,100 +157,135 @@ export default function KanalSenkron() {
         <h3 className="font-semibold text-amber-900 mb-1">Trendyol bağlı değil</h3>
         <p className="text-sm text-amber-800">
           Ayarlar &gt; Trendyol bölümünden Satıcı ID, API Key ve API Secret girin.
-          Bilgiler Trendyol Satıcı Paneli &gt; Hesap Bilgilerim &gt; Entegrasyon Bilgileri'nde.
         </p>
       </div>
     )
   }
 
+  const o = durum.ozet || {}
+  const buOzet = o[kanal] || {}
+  const yazilabilir = (durum.yazilabilir || []).includes(kanal) && kanal !== anaKanal
+
   return (
     <div>
-      {/* Durum şeridi: neyin ne zaman okunduğu ve yazmanın açık olup olmadığı */}
-      <div className="flex flex-wrap items-center gap-3 mb-4 text-sm">
-        <button onClick={tazele} disabled={yukleniyor}
-          className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50">
-          {yukleniyor ? 'Okunuyor…' : '↻ Tazele'}
-        </button>
-        <span className="text-gray-500">
-          ikas: {durum.sonOkuma?.ikas || 'hiç okunmadı'} · Trendyol: {durum.sonOkuma?.trendyol || 'hiç okunmadı'}
-        </span>
-        <span className="ml-auto flex items-center gap-2">
+      {/* Ana kaynak — sistemin en belirleyici ayarı, bu yüzden en üstte */}
+      <div className="flex flex-wrap items-center gap-3 mb-4 border rounded-xl bg-white px-4 py-3">
+        <span className="text-sm text-gray-600">Ana stok kaynağı:</span>
+        <div className="flex gap-1">
+          {durum.kanallar.map(k => {
+            const secili = k === anaKanal
+            const secilemez = k === 'magaza'
+            return (
+              <button key={k} disabled={!ayarYetkisi || secilemez}
+                onClick={async () => {
+                  try { setDurum(await kanalApi.anaKanalSec(k)); toast.success(`Ana kaynak: ${KANAL_BILGI[k].ad}`) }
+                  catch (e) { toast.error(e.message) }
+                }}
+                title={secilemez ? 'Mağaza sayımı yapılmadığı için ana kaynak olamaz' : ''}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${
+                  secili ? 'bg-blue-600 text-white border-blue-600'
+                         : secilemez ? 'text-gray-300 border-gray-200 cursor-not-allowed'
+                                     : 'text-gray-700 border-gray-300 hover:bg-gray-50'}`}>
+                {KANAL_BILGI[k].ikon} {KANAL_BILGI[k].ad}
+              </button>
+            )
+          })}
+        </div>
+        <span className="text-xs text-gray-400">Diğer kanallar buna eşitlenir.</span>
+        <span className="ml-auto flex items-center gap-2 text-xs">
           {durum.senkKapali && <span className="px-2 py-1 rounded bg-red-100 text-red-700 font-semibold">⛔ Acil kapalı</span>}
-          <span className={`px-2 py-1 rounded font-medium ${durum.yazmaAcik ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
-            {durum.yazmaAcik ? 'Yazma açık' : 'Yazma kapalı (salt okunur)'}
+          <span className={`px-2 py-1 rounded font-medium ${durum.yazmaAcik ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+            {durum.yazmaAcik ? 'Yazma açık' : 'Salt okunur'}
           </span>
         </span>
       </div>
 
-      {/* Sayaçlar — kompakt: ekranın yarısını kaplayan boş kartlar bilgi taşımıyordu */}
-      <div className="inline-flex items-stretch divide-x border rounded-lg bg-white mb-4 overflow-hidden">
-        {[['Farklı', sayaclar.farkli, 'text-amber-600'], ['Eşleşmeyen', sayaclar.eslesmeyen, 'text-gray-400'], ['Toplam', sayaclar.toplam, 'text-gray-700']].map(([l, v, renk]) => (
-          <div key={l} className="px-5 py-2">
-            <div className="text-[11px] uppercase tracking-wide text-gray-400">{l}</div>
-            <div className={`text-xl font-bold leading-tight ${renk}`}>{v}</div>
-          </div>
-        ))}
+      {/* Üç kanal, üç ayrı liste — seçilen kanalın listesi aşağıda görünür */}
+      <div className="flex gap-2 mb-4">
+        {durum.kanallar.map(k => {
+          const ozet = o[k] || {}
+          const secili = k === kanal
+          return (
+            <button key={k} onClick={() => setKanal(k)}
+              className={`flex-1 text-left border rounded-xl px-4 py-3 transition ${
+                secili ? 'border-blue-500 bg-blue-50/50 ring-1 ring-blue-200' : 'bg-white hover:bg-gray-50'}`}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>{KANAL_BILGI[k].ikon}</span>
+                <span className="font-semibold text-gray-800">{KANAL_BILGI[k].ad}</span>
+                {k === anaKanal && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-600 text-white font-medium">ANA KAYNAK</span>}
+                {k === 'magaza' && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-500">sayım bekliyor</span>}
+              </div>
+              <div className="mt-1 text-sm text-gray-500">
+                <b className="text-gray-800">{ozet.toplam ?? 0}</b> ürün
+                {k !== anaKanal && ozet.farkli > 0 && <> · <b className="text-amber-600">{ozet.farkli}</b> farklı</>}
+              </div>
+              <div className="text-[11px] text-gray-400 mt-0.5">{zamanKisa(ozet.sonOkuma)}</div>
+            </button>
+          )
+        })}
       </div>
 
-      {/* Arama + filtre */}
-      <div className="flex gap-3 mb-4 flex-wrap">
+      <div className="flex gap-3 mb-3 flex-wrap items-center">
         <input value={arama} onChange={e => setArama(e.target.value)}
-          placeholder="Ürün adı, barkod veya stok kodu ara..."
+          placeholder="Ürün adı, stok kodu veya barkod ara..."
           className="border rounded-lg px-3 py-2 text-sm flex-1 min-w-48" />
-        <label className="flex items-center gap-2 cursor-pointer border rounded-lg px-3 py-2 text-sm hover:bg-gray-50">
-          <input type="checkbox" checked={yalnizFarkli} onChange={e => setYalnizFarkli(e.target.checked)} />
-          <span>Yalnız farklı olanlar</span>
-        </label>
-        <button onClick={hazirla} disabled={yukleniyor || !durum.yazmaAcik || durum.senkKapali}
-          title={!durum.yazmaAcik ? 'Ayarlar > Trendyol bölümünden yazmayı açın' : ''}
-          className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
-          Trendyol'u ikas ile eşitle →
-        </button>
+        {kanal !== anaKanal && (
+          <label className="flex items-center gap-2 cursor-pointer border rounded-lg px-3 py-2 text-sm hover:bg-gray-50">
+            <input type="checkbox" checked={yalnizFarkli} onChange={e => setYalnizFarkli(e.target.checked)} />
+            <span>Yalnız farklı olanlar</span>
+          </label>
+        )}
+        {yazilabilir && (
+          <button onClick={() => esitle(kanal)} disabled={mesgul || !durum.yazmaAcik || durum.senkKapali}
+            title={!durum.yazmaAcik ? 'Ayarlar > Trendyol bölümünden yazmayı açın' : ''}
+            className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
+            {mesgul ? 'Hazırlanıyor…' : `${KANAL_BILGI[anaKanal].ad} ile eşitle`}
+          </button>
+        )}
       </div>
 
-      {/* Tablo */}
+      {kanal === 'magaza' && (
+        <div className="text-xs text-gray-500 bg-gray-50 border rounded-lg px-3 py-2 mb-3">
+          Mağaza sayımı yapılmadığı için bu liste <b>hiçbir şeyi etkilemez</b>; yalnızca görüntülenir.
+          Sayım tamamlandığında ana kaynak olarak seçilebilir hâle gelecek.
+        </div>
+      )}
+
       <div className="border rounded-xl overflow-hidden bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-600">
-            {/* Üst satır üç kanalı TEK GRUP olarak çerçeveler: "üçlü stok" bakışı budur. */}
-            <tr className="text-[11px] uppercase tracking-wide text-gray-400">
-              <th className="px-4 pt-2" />
-              <th colSpan={3} className="px-3 pt-2 text-center border-x bg-white/60">Kanallardaki adet</th>
-              <th className="px-3 pt-2" />
-            </tr>
             <tr>
-              <th className="text-left px-4 pb-2 font-medium">Ürün</th>
-              <th className="px-3 pb-2 font-medium w-28 text-right border-l bg-white/60" title="Mağaza sayımı yapılmadığı için bu sütun karara girmez">
-                <div>Mağaza</div>
-                <div className="text-[10px] font-normal text-gray-400 leading-none">sayım bekliyor</div>
+              <th className="text-left px-4 py-2 font-medium">Ürün</th>
+              <th className="text-right px-3 py-2 font-medium w-32">{KANAL_BILGI[kanal].ad} adedi</th>
+              <th className="text-left px-3 py-2 font-medium w-48">
+                {kanal === anaKanal ? 'Uyumsuz olduğu kanal' : `${KANAL_BILGI[anaKanal].ad}'a göre`}
               </th>
-              <th className="px-3 pb-2 font-medium w-24 text-right bg-white/60">
-                <div>ikas</div>
-                <div className="text-[10px] font-normal text-blue-500 leading-none">kaynak</div>
-              </th>
-              <th className="px-3 pb-2 font-medium w-24 text-right border-r bg-white/60">
-                <div>Trendyol</div>
-                <div className="text-[10px] font-normal text-gray-400 leading-none">hedef</div>
-              </th>
-              <th className="text-left px-3 pb-2 font-medium w-44">Olacak</th>
             </tr>
           </thead>
           <tbody>
             {dilim.map(s => (
-              <tr key={s.barkod} className={`border-t hover:bg-gray-50 ${s.ikas === 0 && s.trendyol > 0 ? 'bg-red-50/40' : ''}`}>
+              <tr key={s.sku}
+                className={`border-t hover:bg-gray-50 ${kanal !== anaKanal && s[anaKanal] === 0 && s.miktar > 0 ? 'bg-red-50/40' : ''}`}>
                 <td className="px-4 py-2">
                   <div className="text-gray-800">{s.ad || <span className="text-gray-400">(adsız)</span>}</div>
-                  <div className="text-xs text-gray-400">{s.sku ? `${s.sku} · ` : ''}{s.barkod}</div>
+                  <div className="text-xs text-gray-400">
+                    {s.sku}
+                    {s.durum && s.durum !== 'onayli' && (
+                      <span className="ml-2 text-amber-600">· {DURUM_ETIKET[s.durum] || s.durum}</span>
+                    )}
+                  </div>
                 </td>
-                <td className="px-3 py-2 text-right border-l"><Adet deger={s.magaza} soluk /></td>
-                <td className="px-3 py-2 text-right"><Adet deger={s.ikas} /></td>
-                <td className="px-3 py-2 text-right border-r"><Adet deger={s.trendyol} /></td>
-                <td className="px-3 py-2"><YonRozeti ikas={s.ikas} trendyol={s.trendyol} /></td>
+                <td className="px-3 py-2 text-right"><Adet deger={s.miktar} soluk={kanal === 'magaza'} /></td>
+                <td className="px-3 py-2">
+                  {kanal === anaKanal
+                    ? <NeredeUyumsuz satir={s} anaKanal={anaKanal} kanallar={durum.kanallar} />
+                    : <Karsilastirma satir={s} anaKanal={anaKanal} buKanal={kanal} />}
+                </td>
               </tr>
             ))}
             {!dilim.length && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">
-                {satirlar.length ? 'Bu filtreye uyan ürün yok.' : 'Henüz okuma yapılmadı — "Tazele" ile başlayın.'}
+              <tr><td colSpan={3} className="px-4 py-10 text-center text-gray-400">
+                {buOzet.toplam ? 'Bu filtreye uyan ürün yok.' : 'Bu kanal henüz okunmadı — arka plan turu birkaç dakika içinde dolduracak.'}
               </td></tr>
             )}
           </tbody>
@@ -222,10 +293,7 @@ export default function KanalSenkron() {
       </div>
       <Sayfalama {...sayfalama} />
 
-      {plan && (
-        <DogrulamaModali plan={plan} uyguluyor={uyguluyor}
-          onVazgec={() => setPlan(null)} onUygula={uygula} />
-      )}
+      {plan && <OnayKutusu plan={plan} mesgul={mesgul} onVazgec={() => setPlan(null)} onUygula={uygula} />}
 
       {ayarYetkisi && (
         <div className="mt-6 border rounded-xl bg-gray-50 px-4 py-3 flex flex-wrap gap-6 text-sm">
@@ -237,7 +305,7 @@ export default function KanalSenkron() {
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={durum.senkKapali}
               onChange={async e => { try { setDurum(await kanalApi.acilKapat(e.target.checked)) } catch (err) { toast.error(err.message) } }} />
-            <span className="text-red-600">⛔ Acil durdur (tüm gönderimleri kapatır)</span>
+            <span className="text-red-600">⛔ Acil durdur</span>
           </label>
         </div>
       )}
@@ -245,61 +313,47 @@ export default function KanalSenkron() {
   )
 }
 
-// Tek onay noktası. Kullanıcı buraya gelene kadar hiçbir şey Trendyol'a gitmemiştir;
-// bu ekrandan sonra gider. Bu yüzden özet burada TEKRAR gösterilir ve sıfırlanacaklar
-// ayrıca sayılır — "kaç ürün satıştan kalkacak" sorusunun cevabı görünmeden onay istenmez.
-function DogrulamaModali({ plan, uyguluyor, onVazgec, onUygula }) {
+// HAFİF onay. Sıradan eşitlemede tek cümle yeter; yazılı teyit YALNIZ ürün satıştan
+// kalkacaksa istenir — geri dönüşü zor olan tek sonuç odur (kullanıcı kararı 13.09).
+function OnayKutusu({ plan, mesgul, onVazgec, onUygula }) {
   const { ozet } = plan
   const sifir = ozet.sifirlanacak || 0
   const [teyit, setTeyit] = useState('')
-  const teyitGerekli = sifir > 0
-  const hazir = !teyitGerekli || teyit.trim() === String(sifir)
+  const hazir = sifir === 0 || teyit.trim() === String(sifir)
+  const hedefAd = KANAL_BILGI[plan.hedef]?.ad || plan.hedef
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-1">Trendyol stoğu güncellenecek</h3>
-        <p className="text-sm text-gray-500 mb-4">
-          ikas'taki adetler Trendyol'a yazılacak. Gönderimden önce Trendyol'un şu anki
-          adetleri kaydedildi — geri alabilirsiniz.
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={onVazgec}>
+      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5" onClick={e => e.stopPropagation()}>
+        <h3 className="font-bold text-gray-800 mb-1">Emin misiniz?</h3>
+        <p className="text-sm text-gray-600 mb-3">
+          <b>{ozet.toplam}</b> ürünün stoğu {hedefAd}'da güncellenecek
+          ({ozet.artacak} artacak, {ozet.azalacak} azalacak). Önceki değerler kaydedildi, geri alabilirsiniz.
         </p>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="border rounded-lg px-4 py-3">
-            <div className="text-xs text-gray-500">Güncellenecek ürün</div>
-            <div className="text-2xl font-bold text-gray-800">{ozet.toplam}</div>
-          </div>
-          <div className="border rounded-lg px-4 py-3">
-            <div className="text-xs text-gray-500">Artacak / Azalacak</div>
-            <div className="text-2xl font-bold"><span className="text-emerald-600">{ozet.artacak}</span> <span className="text-gray-300">/</span> <span className="text-amber-600">{ozet.azalacak}</span></div>
-          </div>
-        </div>
-
         {sifir > 0 && (
-          <div className="border border-red-200 bg-red-50 rounded-lg p-4 mb-4">
-            <div className="font-semibold text-red-800 mb-1">{sifir} ürün Trendyol'da satıştan kalkacak</div>
-            <p className="text-sm text-red-700 mb-3">
-              Bu ürünlerin ikas stoğu sıfır. Onaylamak için aşağıya <b>{sifir}</b> yazın.
-            </p>
+          <div className="border border-red-200 bg-red-50 rounded-lg p-3 mb-3">
+            <div className="font-semibold text-red-800 text-sm mb-1">{sifir} ürün satıştan kalkacak</div>
+            <p className="text-xs text-red-700 mb-2">Stoğu sıfıra inecek. Onaylamak için <b>{sifir}</b> yazın.</p>
             <input value={teyit} onChange={e => setTeyit(e.target.value)} inputMode="numeric"
-              placeholder={String(sifir)}
-              className="border border-red-300 rounded-lg px-3 py-2 text-sm w-28" />
+              placeholder={String(sifir)} autoFocus
+              className="border border-red-300 rounded-lg px-3 py-1.5 text-sm w-24" />
           </div>
         )}
 
         {(plan.gonderilemez?.length > 0 || plan.eslesmeyen?.length > 0) && (
-          <p className="text-xs text-gray-500 mb-4">
-            {plan.gonderilemez?.length > 0 && <>{plan.gonderilemez.length} ürün gönderilemiyor (Trendyol onayı/arşiv/kilit). </>}
-            {plan.eslesmeyen?.length > 0 && <>{plan.eslesmeyen.length} ürün Trendyol'da bulunamadı.</>}
+          <p className="text-xs text-gray-500 mb-3">
+            {plan.gonderilemez?.length > 0 && <>{plan.gonderilemez.length} ürün gönderilemiyor (onay/arşiv/kilit). </>}
+            {plan.eslesmeyen?.length > 0 && <>{plan.eslesmeyen.length} ürün karşı kanalda yok.</>}
           </p>
         )}
 
         <div className="flex gap-2 justify-end">
-          <button onClick={onVazgec} disabled={uyguluyor}
-            className="px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50">Vazgeç</button>
-          <button onClick={onUygula} disabled={!hazir || uyguluyor}
-            className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
-            {uyguluyor ? 'Gönderiliyor…' : 'Onayla ve gönder'}
+          <button onClick={onVazgec} disabled={mesgul}
+            className="px-4 py-2 rounded-lg border text-gray-700 hover:bg-gray-50 text-sm">Vazgeç</button>
+          <button onClick={onUygula} disabled={!hazir || mesgul}
+            className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm">
+            {mesgul ? 'Gönderiliyor…' : 'Evet, eşitle'}
           </button>
         </div>
       </div>

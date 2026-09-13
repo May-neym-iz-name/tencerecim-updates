@@ -451,17 +451,26 @@ function createTables() {
 
     -- Kanalların okunmuş stok fotoğrafı. KANAL BİR SATIRDIR, SÜTUN DEĞİL:
     -- üçüncü/dördüncü kanal (mağaza, Hepsiburada) eklenince şema değişmez.
-    -- Karşılaştırma barkod üzerinden self-join ile yapılır.
-    -- durum: Trendyol için 'onayli' | 'onaysiz' | 'arsiv' | 'kilitli' — onaylı
-    -- olmayan ürün gönderime GİRMEZ (bkz. stok-senk-mantik.js gonderilemez).
+    --
+    -- EŞLEŞME ANAHTARI SKU'DUR, BARKOD DEĞİL (13.09.2026'da ÖLÇÜLDÜ): Trendyol'daki
+    -- 162 ürünün 162'sinin stockCode'u bizim TNC.* stok kodumuz; barkodla 161/162
+    -- eşleşiyordu (barkodsuz ürünler ıskalanıyordu). SKU hem daha kapsayıcı hem de
+    -- kullanıcının zihnindeki anahtar.
+    --
+    -- barkod yine de TUTULUR: Trendyol'un stok YAZMA ucu barkodla çalışır, stok koduyla
+    -- değil. Yani eşleştirme SKU ile, yazma barkod ile yapılır.
+    --
+    -- durum: Trendyol için 'onayli' | 'onaysiz' | 'reddedildi' | 'arsiv' | 'kilitli' —
+    -- onaylı olmayan ürün gönderime GİRMEZ (bkz. stok-senk-mantik.js).
     CREATE TABLE IF NOT EXISTS kanal_stok (
-      barkod TEXT NOT NULL,
+      sku TEXT NOT NULL,
       kanal TEXT NOT NULL,            -- 'ikas' | 'trendyol' | 'magaza'
+      barkod TEXT,                    -- yazma anahtarı (Trendyol barkodla günceller)
       miktar INTEGER,
       ad TEXT,
       durum TEXT,
       son_okuma TEXT,
-      PRIMARY KEY (barkod, kanal)
+      PRIMARY KEY (sku, kanal)
     );
 
     -- Bir stok gönderim işlemi (kaynak kanaldan hedef kanala).
@@ -484,7 +493,8 @@ function createTables() {
     -- kalem yok, kalem yoksa gönderim yok — "yedek aldık mı?" sorusu hiç sorulmaz.
     CREATE TABLE IF NOT EXISTS stok_senk_kalem (
       islem_id INTEGER NOT NULL REFERENCES stok_senk_islem(id),
-      barkod TEXT NOT NULL,
+      barkod TEXT NOT NULL,           -- Trendyol'a bu gider
+      sku TEXT,                       -- insan tarafı: geçmişte ürünü bununla buluruz
       ad TEXT,
       eski_miktar INTEGER,
       yeni_miktar INTEGER,
@@ -612,6 +622,24 @@ function migrate() {
   // durumu yok (Kargoya Hazır → Teslim Edildi); bu alan set edilince arayüz teslim
   // edilene kadar "Gönderildi" gösterir, senkron bunu ezmez.
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN gonderildi_tarihi TEXT") } catch {}
+  // kanal_stok — eşleşme anahtarı barkod → SKU (v1.2.211). Bu tablo bir ÖNBELLEKTİR
+  // (kaynağı ikas/Trendyol/urun_stoklar), bu yüzden göç = düşür + yeniden kur; veri
+  // kaybı yok, bir sonraki arka plan turunda kendini doldurur.
+  // ALTER ile eklenemez: birincil anahtar değişiyor.
+  try {
+    const k = db.prepare("PRAGMA table_info(kanal_stok)").all()
+    if (k.length && !k.some(c => c.name === 'sku')) {
+      db.exec('DROP TABLE kanal_stok')
+      db.exec(`CREATE TABLE kanal_stok (
+        sku TEXT NOT NULL, kanal TEXT NOT NULL, barkod TEXT,
+        miktar INTEGER, ad TEXT, durum TEXT, son_okuma TEXT,
+        PRIMARY KEY (sku, kanal))`)
+    }
+  } catch (e) { console.error('kanal_stok göçü:', e.message) }
+  // stok_senk_kalem — geçmiş kayıtta ürünü SKU ile de bulabilelim (Trendyol'a giden
+  // anahtar barkod olarak kalır).
+  try { db.exec("ALTER TABLE stok_senk_kalem ADD COLUMN sku TEXT") } catch {}
+
   // online_siparisler — ikas'tan okunan kargo takip bilgisi (orderPackages.trackingInfo).
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_takip_no TEXT") } catch {}
   try { db.exec("ALTER TABLE online_siparisler ADD COLUMN kargo_firma TEXT") } catch {}

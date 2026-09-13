@@ -1,8 +1,12 @@
 // Kanal stok senkronu — IPC yüzü ve iş akışı.
 // Tasarım: docs/superpowers/specs/2026-09-13-kanal-stok-senkronu-design.md
 //
-// Akış: tazele → karşılaştır → hazırla (ANLIK GÖRÜNTÜ burada alınır) → doğrula → uygula
-//       → sonuç → (gerekirse) geri al
+// Model: bir ANA KANAL (stok gerçeğinin kaynağı) ve ona eşitlenen diğer kanallar.
+// Ana kanal AYARDIR, koda gömülü değildir — ilerde mağaza sayımı bitince oraya
+// çevrilebilsin diye.
+//
+// Kullanıcı "tazele" düğmesine BASMAZ: okuma arka planda döner (main.js). Ekran
+// kanal_stok'ta ne varsa onu gösterir.
 const { getDb } = require('../db/database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const { _ayarlariGetir, _ayarKaydetTek } = require('../db/trendyol-ayarlar')
@@ -12,94 +16,101 @@ const client = require('./client')
 const tyStok = require('./stok')
 const { ikasStokOku } = require('../ikas/kanal-stok')
 
-const KAYNAK = 'ikas'
-const HEDEF = 'trendyol'
+// Yazılabilir kanallar. 'magaza' BİLEREK yok: sayım yapılmadığı için sayıları kurgu
+// (ölçüm 13.09: 5.624 satır sıfır). Sayım bitince buraya eklenmesi yeterli olacak.
+const YAZILABILIR = new Set(['trendyol'])
+const OKUNABILIR = ['ikas', 'trendyol', 'magaza']
+const VARSAYILAN_ANA = 'ikas'
 
 function ayar(k) { return _ayarlariGetir()[k] }
-
-// Acil anahtar. ikas'taki stok_push_kapali ile aynı desen: tek satırla her gönderimi durdurur.
+function anaKanal() {
+  const a = ayar('ana_kanal')
+  return OKUNABILIR.includes(a) ? a : VARSAYILAN_ANA
+}
 function senkKapaliMi() { return ayar('senk_kapali') === '1' }
-
-// İlk yayında yazma KAPALI gelir — kullanıcı gerçek veriyle bir tur baksın, sonra açsın.
 function yazmaAcikMi() { return ayar('yazma_acik') === '1' }
 
-function kilitKontrol() {
+function kilitKontrol(hedef) {
   if (senkKapaliMi()) throw new Error('Kanal senkronu acil olarak kapatılmış (Ayarlar > Trendyol).')
-  if (!yazmaAcikMi()) throw new Error('Trendyol\'a yazma henüz açılmadı. Ayarlar > Trendyol bölümünden "Trendyol\'a yazmayı aç" seçeneğini işaretleyin.')
+  if (!yazmaAcikMi()) throw new Error('Trendyol\'a yazma kapalı. Ayarlar > Trendyol bölümünden açın.')
+  if (!YAZILABILIR.has(hedef)) throw new Error(`"${hedef}" kanalına yazılamaz.`)
+  if (anaKanal() === hedef) throw new Error('Ana stok kaynağı ile hedef aynı olamaz.')
   if (!client.kimlikVar()) throw new Error('Trendyol kimlik bilgileri eksik.')
 }
 
-// --- tazeleme ve karşılaştırma --------------------------------------------
+// --- okuma (arka planda çağrılır) -----------------------------------------
 
-// İki kanalı da okuyup kanal_stok'u yeniler. Biri patlarsa diğeri yazılmış kalır ve
-// hata döner: yarım fotoğrafla karşılaştırma yapılmasın diye durum ayrıca raporlanır.
+// Her kanalı ayrı try ile okur: biri patlarsa diğerleri yine tazelenir.
+// Mağaza yereldir, ağ gerektirmez — her turda ücretsiz tazelenir.
 async function tazele() {
-  const sonuc = { ikas: 0, trendyol: 0, hatalar: [] }
+  const sonuc = { ikas: 0, trendyol: 0, magaza: 0, hatalar: [] }
+  try { sonuc.magaza = kanalStok.magazaTazele().yazilan } catch (e) { sonuc.hatalar.push('mağaza: ' + e.message) }
   try {
-    const satirlar = await ikasStokOku()
-    kanalStok.kanaliYaz('ikas', satirlar)
-    sonuc.ikas = satirlar.length
+    const s = await ikasStokOku()
+    sonuc.ikas = kanalStok.kanaliYaz('ikas', s).yazilan
   } catch (e) { sonuc.hatalar.push('ikas: ' + e.message) }
-  try {
-    const satirlar = await tyStok.stokOku()
-    kanalStok.kanaliYaz('trendyol', satirlar)
-    sonuc.trendyol = satirlar.length
-  } catch (e) { sonuc.hatalar.push('trendyol: ' + e.message) }
+  if (client.kimlikVar()) {
+    try {
+      const s = await tyStok.stokOku()
+      sonuc.trendyol = kanalStok.kanaliYaz('trendyol', s).yazilan
+    } catch (e) { sonuc.hatalar.push('trendyol: ' + e.message) }
+  }
   return sonuc
 }
 
 function durum() {
-  const a = _ayarlariGetir()
   return {
     kimlikVar: client.kimlikVar(),
     senkKapali: senkKapaliMi(),
     yazmaAcik: yazmaAcikMi(),
-    sonOkuma: { ikas: kanalStok.sonOkuma('ikas'), trendyol: kanalStok.sonOkuma('trendyol') },
-    sellerId: a.seller_id || null,
+    anaKanal: anaKanal(),
+    kanallar: OKUNABILIR,
+    yazilabilir: [...YAZILABILIR],
+    ozet: kanalStok.ozet(anaKanal()),
   }
 }
 
 // --- işlem: hazırla -------------------------------------------------------
 
-// ANLIK GÖRÜNTÜ BURADA ALINIR. Trendyol TAZE okunur (kanal_stok'taki fotoğraf eski
-// olabilir) ve eski_miktar o okumadan yazılır. Yedek yoksa kalem yok, kalem yoksa
-// gönderim yok — "yedeğimiz var mıydı?" sorusu hiç sorulmaz.
-async function hazirla({ kullanici } = {}) {
+// ANLIK GÖRÜNTÜ BURADA ALINIR: hedef kanal TAZE okunur ve eski_miktar o okumadan yazılır.
+// Yedek yoksa kalem yok, kalem yoksa gönderim yok.
+async function hazirla({ hedef = 'trendyol', kullanici } = {}) {
   yetkiKontrol('stok_duzenle')
-  kilitKontrol()
-  const kaynak = kanalStok.kanalOku(KAYNAK)
-  if (!kaynak.length) throw new Error('Önce "Tazele" ile ikas stoğunu okuyun.')
-  const hedef = await tyStok.stokOku()          // TAZE — anlık görüntünün kaynağı
-  kanalStok.kanaliYaz(HEDEF, hedef)             // ekran da tazelensin
+  kilitKontrol(hedef)
+  const kaynakKanal = anaKanal()
+  const kaynak = kanalStok.kanalOku(kaynakKanal)
+  if (!kaynak.length) throw new Error(`Ana kaynak (${kaynakKanal}) henüz okunmadı — birkaç dakika sonra tekrar deneyin.`)
 
-  const plan = mantik.planUret({ kaynak, hedef })
+  const hedefSatirlar = await tyStok.stokOku()          // TAZE — anlık görüntünün kaynağı
+  kanalStok.kanaliYaz(hedef, hedefSatirlar)             // ekran da tazelensin
+
+  const plan = mantik.planUret({ kaynak, hedef: hedefSatirlar })
   if (!plan.gonderilecek.length) {
-    return { islem_id: null, ...plan, mesaj: 'Gönderilecek fark yok — iki kanal aynı.' }
+    return { islem_id: null, ...plan, kaynak: kaynakKanal, hedef, mesaj: 'Gönderilecek fark yok — iki kanal aynı.' }
   }
 
   const db = getDb()
   const islemId = db.transaction(() => {
     const r = db.prepare(`INSERT INTO stok_senk_islem (kaynak, hedef, durum, olusturan)
-      VALUES (?, ?, 'hazir', ?)`).run(KAYNAK, HEDEF, kullanici || null)
-    const ekle = db.prepare(`INSERT INTO stok_senk_kalem (islem_id, barkod, ad, eski_miktar, yeni_miktar)
-      VALUES (?, ?, ?, ?, ?)`)
-    for (const k of plan.gonderilecek) ekle.run(r.lastInsertRowid, k.barkod, k.ad, k.eski_miktar, k.yeni_miktar)
+      VALUES (?, ?, 'hazir', ?)`).run(kaynakKanal, hedef, kullanici || null)
+    const ekle = db.prepare(`INSERT INTO stok_senk_kalem (islem_id, barkod, sku, ad, eski_miktar, yeni_miktar)
+      VALUES (?, ?, ?, ?, ?, ?)`)
+    for (const k of plan.gonderilecek) ekle.run(r.lastInsertRowid, k.barkod, k.sku, k.ad, k.eski_miktar, k.yeni_miktar)
     return r.lastInsertRowid
   })()
 
-  return { islem_id: islemId, ...plan }
+  return { islem_id: islemId, ...plan, kaynak: kaynakKanal, hedef }
 }
 
 // --- işlem: uygula --------------------------------------------------------
 
 async function uygula({ islem_id }) {
   yetkiKontrol('stok_duzenle')
-  kilitKontrol()
   const db = getDb()
   const islem = db.prepare('SELECT * FROM stok_senk_islem WHERE id = ?').get(islem_id)
   if (!islem) throw new Error('İşlem bulunamadı.')
-  // Durum makinesi ikinci kez gönderimi engeller (bkz. stok-senk-mantik.durumGecisi).
-  mantik.durumGecisi(islem.durum, 'uygulandi')
+  kilitKontrol(islem.hedef)
+  mantik.durumGecisi(islem.durum, 'uygulandi')   // ikinci kez gönderimi engeller
 
   const kalemler = db.prepare('SELECT * FROM stok_senk_kalem WHERE islem_id = ?').all(islem_id)
   if (!kalemler.length) throw new Error('İşlemde kalem yok.')
@@ -119,8 +130,7 @@ async function uygula({ islem_id }) {
   return { islem_id, batchIdler, gonderilen: kalemler.length }
 }
 
-// Parti sonucunu sorar ve kalem sonuçlarını işler. Trendyol asenkron çalışır; arayüz
-// bu ucu tekrar çağırarak sonucu tazeler (otomatik yoklama yok — kullanıcı görsün).
+// Parti sonucunu sorar. Tamamlanma kapısı mantik.partiTamamMi'dedir.
 async function sonucTazele({ islem_id }) {
   yetkiKontrol('stok_duzenle')
   const db = getDb()
@@ -150,15 +160,12 @@ async function sonucTazele({ islem_id }) {
 
 // --- işlem: geri al -------------------------------------------------------
 
-// Anlık görüntüden ters işlem üretir. Yalnız GERÇEKTEN gitmiş kalemler geri alınır.
-// Trendyol'un 15 dakika tekrar koruması yüzünden hemen çalışmayabilir — arayüz bunu
-// sayaçla gösterir, hata olarak değil.
 async function geriAl({ islem_id, kullanici }) {
   yetkiKontrol('stok_duzenle')
-  kilitKontrol()
   const db = getDb()
   const islem = db.prepare('SELECT * FROM stok_senk_islem WHERE id = ?').get(islem_id)
   if (!islem) throw new Error('İşlem bulunamadı.')
+  kilitKontrol(islem.hedef)
   mantik.durumGecisi(islem.durum, 'geri_alindi')
 
   const kalemler = db.prepare('SELECT * FROM stok_senk_kalem WHERE islem_id = ?').all(islem_id)
@@ -168,9 +175,9 @@ async function geriAl({ islem_id, kullanici }) {
   const yeniId = db.transaction(() => {
     const r = db.prepare(`INSERT INTO stok_senk_islem (kaynak, hedef, durum, olusturan, geri_alindigi_islem_id, aciklama)
       VALUES (?, ?, 'hazir', ?, ?, ?)`)
-      .run(KAYNAK, HEDEF, kullanici || null, islem_id, `#${islem_id} işleminin geri alınması`)
-    const ekle = db.prepare('INSERT INTO stok_senk_kalem (islem_id, barkod, ad, eski_miktar, yeni_miktar) VALUES (?, ?, ?, ?, ?)')
-    for (const k of ters) ekle.run(r.lastInsertRowid, k.barkod, k.ad, k.eski_miktar, k.yeni_miktar)
+      .run(islem.kaynak, islem.hedef, kullanici || null, islem_id, `#${islem_id} işleminin geri alınması`)
+    const ekle = db.prepare('INSERT INTO stok_senk_kalem (islem_id, barkod, sku, ad, eski_miktar, yeni_miktar) VALUES (?, ?, ?, ?, ?, ?)')
+    for (const k of ters) ekle.run(r.lastInsertRowid, k.barkod, k.sku, k.ad, k.eski_miktar, k.yeni_miktar)
     return r.lastInsertRowid
   })()
 
@@ -205,14 +212,29 @@ module.exports = {
   _tazele: tazele,
 
   'kanal:durum': () => { yetkiKontrol('stok_duzenle'); return durum() },
+  'kanal:liste': ({ kanal } = {}) => {
+    yetkiKontrol('stok_duzenle')
+    if (!OKUNABILIR.includes(kanal)) throw new Error('Bilinmeyen kanal: ' + kanal)
+    return kanalStok.kanalListesi(kanal)
+  },
+  // Elle tazeleme UÇTAN KALDIRILMADI ama arayüzde düğmesi yok: arka plan turu
+  // beklenmeden bakmak isteyen için (ör. ayar girdikten hemen sonra) duruyor.
   'kanal:tazele': () => { yetkiKontrol('stok_duzenle'); return tazele() },
-  'kanal:karsilastir': () => { yetkiKontrol('stok_duzenle'); return kanalStok.karsilastir() },
   'kanal:hazirla': (p) => hazirla(p || {}),
   'kanal:uygula': (p) => uygula(p || {}),
   'kanal:sonuc-tazele': (p) => sonucTazele(p || {}),
   'kanal:geri-al': (p) => geriAl(p || {}),
   'kanal:islemler': (p) => { yetkiKontrol('stok_duzenle'); return islemler(p || {}) },
   'kanal:islem-detay': (p) => { yetkiKontrol('stok_duzenle'); return islemDetay(p || {}) },
+  'kanal:ana-kanal-sec': ({ kanal }) => {
+    yetkiKontrol('ayarlar_duzenle')
+    if (!OKUNABILIR.includes(kanal)) throw new Error('Bilinmeyen kanal: ' + kanal)
+    if (kanal === 'magaza') {
+      throw new Error('Mağaza stoğu ana kaynak olamaz: sayım yapılmadığı için sayılar gerçeği yansıtmıyor.')
+    }
+    _ayarKaydetTek('ana_kanal', kanal)
+    return durum()
+  },
   'kanal:yazma-ac': ({ acik }) => {
     yetkiKontrol('ayarlar_duzenle')
     _ayarKaydetTek('yazma_acik', acik ? '1' : '0')

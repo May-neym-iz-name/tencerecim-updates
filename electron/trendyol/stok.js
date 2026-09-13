@@ -24,10 +24,13 @@ async function sayfalariCek(sid, arsivli, ilerleme, birikim) {
     })
     const veri = r?.content || []
     for (const u of veri) {
+      // ÖLÇÜLDÜ (13.09.2026): 162 üründe 162 stockCode bizim TNC.* stok kodumuz.
+      // Eşleşme bununla yapılır; barkod yalnız YAZMA için taşınır.
+      const sku = String(u.stockCode || '').trim()
       const barkod = String(u.barcode || '').trim()
-      if (!barkod) continue
+      if (!sku || !barkod) continue
       birikim.push({
-        barkod,
+        sku, barkod,
         miktar: Number(u.quantity ?? 0) || 0,
         ad: u.title || u.productMainId || null,
         durum: urunDurumu({ ...u, archived: arsivli || !!u.archived }),

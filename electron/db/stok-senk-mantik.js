@@ -43,8 +43,15 @@ function urunDurumu(u) {
   return 'onayli'
 }
 
-// Barkod iki kanaldan farklı biçimde gelebilir (boşluk, sayı/metin). Tek biçime indirger;
-// aksi hâlde aynı ürün "eşleşmeyen" sayılıp sessizce senkron dışında kalır.
+// Stok kodu iki kanaldan farklı biçimde gelebilir (boşluk, büyük/küçük harf). Tek biçime
+// indirger; aksi hâlde aynı ürün "eşleşmeyen" sayılıp sessizce senkron dışında kalır.
+// ÖLÇÜLDÜ (13.09.2026): SKU ile 162/162, barkodla 161/162 eşleşiyor.
+function skuAnahtar(deger) {
+  if (deger == null) return ''
+  return String(deger).trim().toUpperCase()
+}
+
+// Barkod EŞLEŞME anahtarı değildir ama Trendyol'a YAZARKEN gerekir — ayrı tutulur.
 function barkodAnahtar(deger) {
   if (deger == null) return ''
   return String(deger).trim()
@@ -61,14 +68,14 @@ function miktarSinirla(deger) {
 /**
  * Gönderim planı üretir.
  *
- * @param kaynak  [{ barkod, miktar, ad }]            — ikas (gerçeği tutan taraf)
- * @param hedef   [{ barkod, miktar, ad, durum }]     — Trendyol
+ * @param kaynak  [{ sku, barkod, miktar, ad }]         — ana stok kaynağı
+ * @param hedef   [{ sku, barkod, miktar, ad, durum }]  — eşitlenecek kanal
  * @returns { gonderilecek, gonderilemez, eslesmeyen, degismeyen, ozet }
  */
 function planUret({ kaynak = [], hedef = [] } = {}) {
   const hedefHarita = new Map()
   for (const h of hedef) {
-    const k = barkodAnahtar(h && h.barkod)
+    const k = skuAnahtar(h && h.sku)
     if (k) hedefHarita.set(k, h)
   }
 
@@ -78,21 +85,23 @@ function planUret({ kaynak = [], hedef = [] } = {}) {
   const degismeyen = []
 
   for (const s of kaynak) {
-    const k = barkodAnahtar(s && s.barkod)
-    if (!k) continue // barkodsuz kaynak satırı eşleşemez, plana da giremez
+    const k = skuAnahtar(s && s.sku)
+    if (!k) continue // stok kodsuz kaynak satırı eşleşemez, plana da giremez
     const h = hedefHarita.get(k)
     if (!h) {
-      eslesmeyen.push({ barkod: k, ad: s.ad || null, miktar: miktarSinirla(s.miktar) })
+      eslesmeyen.push({ sku: k, ad: s.ad || null, miktar: miktarSinirla(s.miktar) })
       continue
     }
     const durum = h.durum || 'onayli'
     if (durum !== 'onayli') {
-      gonderilemez.push({ barkod: k, ad: s.ad || h.ad || null, sebep: GONDERILEMEZ_SEBEP[durum] || `Gönderilemez (${durum})` })
+      gonderilemez.push({ sku: k, ad: s.ad || h.ad || null, sebep: GONDERILEMEZ_SEBEP[durum] || `Gönderilemez (${durum})` })
       continue
     }
+    // Yazma anahtarı HEDEFİN barkodudur: Trendyol kendi kaydındaki barkodla günceller.
+    const barkod = barkodAnahtar(h.barkod)
     const yeni = miktarSinirla(s.miktar)
     const eski = miktarSinirla(h.miktar)
-    const satir = { barkod: k, ad: s.ad || h.ad || null, eski_miktar: eski, yeni_miktar: yeni }
+    const satir = { sku: k, barkod, ad: s.ad || h.ad || null, eski_miktar: eski, yeni_miktar: yeni }
     if (yeni === eski) degismeyen.push(satir)
     else gonderilecek.push(satir)
   }
@@ -130,7 +139,7 @@ function tersPlan(kalemler) {
   return (kalemler || [])
     .filter(k => k && (k.sonuc == null || k.sonuc === 'basarili'))
     .map(k => ({
-      barkod: barkodAnahtar(k.barkod), ad: k.ad || null,
+      sku: skuAnahtar(k.sku), barkod: barkodAnahtar(k.barkod), ad: k.ad || null,
       eski_miktar: miktarSinirla(k.yeni_miktar),
       yeni_miktar: miktarSinirla(k.eski_miktar),
     }))
@@ -180,7 +189,7 @@ function partiSonucuIsle(kalemler, basarisizlar) {
 
 module.exports = {
   PARTI_BOYUTU, STOK_TAVANI, TEKRAR_KORUMA_DK, GONDERILEMEZ_SEBEP,
-  barkodAnahtar, miktarSinirla,
+  skuAnahtar, barkodAnahtar, miktarSinirla,
   planUret, ozetle, parcala, tersPlan, durumGecisi, tekrarKorumasiBitisi, partiSonucuIsle,
   partiTamamMi, urunDurumu,
 }

@@ -394,6 +394,34 @@ function metaSosyalSenkBaslat() {
   setInterval(calistir, META_SENK_ARALIGI_MS)
 }
 
+// KANAL STOK OKUMA — arka planda döner, kullanıcı "Tazele" düğmesine BASMAZ.
+//
+// Neden 10 dakika: ikas listProduct 5 sayfa (~2 sn), Trendyol ürün listesi 1 sayfa
+// (~1 sn). Ucuz ama bedava değil; stok gün içinde dakikalar mertebesinde değişiyor,
+// 10 dk fazlasıyla taze. Ekran her açıldığında zaten kanal_stok'u okuyor.
+//
+// YALNIZ OKUR. Hiçbir şey göndermez — gönderim her zaman insan onaylıdır (1. aşama).
+const KANAL_OKUMA_ARALIGI_MS = 10 * 60 * 1000 * YOKLAMA_CARPANI
+
+function kanalStokOkumaBaslat() {
+  const trendyol = require('./trendyol')
+  let calisiyor = false
+  const calistir = async () => {
+    if (calisiyor) return
+    calisiyor = true
+    try {
+      const r = await trendyol._tazele()
+      if (r.hatalar.length) console.warn('[kanal] okuma uyarıları:', r.hatalar.join(' | '))
+    } catch (err) {
+      console.error('[kanal] okuma hatası:', err.message)
+    } finally {
+      calisiyor = false
+    }
+  }
+  setTimeout(calistir, 45 * 1000)  // açılış yoğunluğu geçsin, sonra ilk okuma
+  setInterval(calistir, KANAL_OKUMA_ARALIGI_MS)
+}
+
 // Meta veri silme talepleri — Worker kuyruğunu tüketip yerel kişisel veriyi siler.
 //
 // NEDEN AYRI VE SEYREK: bu bir yükümlülük turudur, bir özellik değil. Meta silme
@@ -470,6 +498,7 @@ if (tekOrnekKilidi) {
     ikasOlayYoklayiciBaslat()
     upsTakipBaslat()
     metaSosyalSenkBaslat()
+    kanalStokOkumaBaslat()
     metaVeriSilmeBaslat()
   }
 

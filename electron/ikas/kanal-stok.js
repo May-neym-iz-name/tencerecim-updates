@@ -12,10 +12,10 @@ const SORGU = `query K($p:Int!){ listProduct(pagination:{page:$p,limit:100}){
     variants { id sku isActive barcodeList stocks { stockLocationId stockCount } } } } }`
 
 /**
- * Tüm ikas varyantlarını barkod bazında döndürür.
+ * Tüm ikas varyantlarını SKU bazında döndürür.
  * @param stokLokasyonId  verilirse YALNIZ o lokasyonun stoğu sayılır; verilmezse
  *                        tüm lokasyonların toplamı alınır (ikas'ta satılabilir olan budur).
- * @returns [{ barkod, miktar, ad, sku }]
+ * @returns [{ sku, barkod, miktar, ad }] — eşleşme SKU ile, yazma barkod ile.
  */
 async function ikasStokOku({ stokLokasyonId = null, ilerleme } = {}) {
   const satirlar = []
@@ -25,19 +25,21 @@ async function ikasStokOku({ stokLokasyonId = null, ilerleme } = {}) {
     for (const u of d?.data || []) {
       for (const v of u.variants || []) {
         if (v.isActive === false) continue
-        // barcodeList çoklu olabilir (bkz. hafıza: çoklu barkod). İLKİ ana barkoddur;
-        // Trendyol eşleşmesi de ana barkod üzerinden kurulmuştur.
-        const barkod = (v.barcodeList || []).map(b => String(b || '').trim()).find(Boolean)
-        if (!barkod) continue
+        // SKU eşleşme anahtarıdır. Barkodsuz ürünler (ör. Sofram Nesta varyantlarının
+        // 8'i) barkod eşleşmesinde tamamen ıskalanıyordu; SKU ile yakalanırlar.
+        // barcodeList çoklu olabilir (bkz. hafıza: çoklu barkod) — İLKİ ana barkoddur
+        // ve yalnız Trendyol'a YAZARKEN kullanılır.
+        const sku = String(v.sku || '').trim()
+        if (!sku) continue
+        const barkod = (v.barcodeList || []).map(b => String(b || '').trim()).find(Boolean) || null
         const stoklar = v.stocks || []
         const miktar = stokLokasyonId
           ? (stoklar.find(s => s.stockLocationId === stokLokasyonId)?.stockCount ?? 0)
           : stoklar.reduce((t, s) => t + (Number(s.stockCount) || 0), 0)
         satirlar.push({
-          barkod,
+          sku, barkod,
           miktar: Math.max(0, Math.trunc(Number(miktar) || 0)),
           ad: u.name || null,
-          sku: v.sku || null,
         })
       }
     }

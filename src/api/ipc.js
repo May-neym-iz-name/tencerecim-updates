@@ -79,13 +79,14 @@ export const stokApi = {
 export const kanalApi = {
   durum: () => invoke('kanal:durum'),
   tazele: () => invoke('kanal:tazele'),
-  karsilastir: () => invoke('kanal:karsilastir'),
+  liste: (kanal) => invoke('kanal:liste', { kanal }),
   hazirla: (veri) => invoke('kanal:hazirla', veri),
   uygula: (islem_id) => invoke('kanal:uygula', { islem_id }),
   sonucTazele: (islem_id) => invoke('kanal:sonuc-tazele', { islem_id }),
   geriAl: (veri) => invoke('kanal:geri-al', veri),
   islemler: (p) => invoke('kanal:islemler', p),
   islemDetay: (islem_id) => invoke('kanal:islem-detay', { islem_id }),
+  anaKanalSec: (kanal) => invoke('kanal:ana-kanal-sec', { kanal }),
   yazmaAc: (acik) => invoke('kanal:yazma-ac', { acik }),
   acilKapat: (kapali) => invoke('kanal:acil-kapat', { kapali }),
 }
