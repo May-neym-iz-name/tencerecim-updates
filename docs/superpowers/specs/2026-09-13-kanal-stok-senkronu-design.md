@@ -103,9 +103,13 @@ Geri al          eski_miktar'lardan ters islem üretir (aynı doğrulamadan geç
 | Aynı istek tekrarı | **15 dk reddedilir** | geri alma sayaçla gösterilir, hata sayılmaz |
 | İstek hızı | 50 istek/10 sn | istemci sınırlar |
 | Sonuç | asenkron, batchRequestId | 4 saat sorgulanabilir |
+| 🔴 Parti `status` alanı | **stok partisinde HİÇ GELMİYOR** (ölçüldü) | tamamlanma kapısı `items.length >= itemCount`; `status==='COMPLETED'` beklenirse sonsuza kadar yoklanır (ürün YARATMA partisinde status var, karıştırma) |
 
-Uç noktalar (15 Eyl 2026 V2 geçişinden **etkilenmiyor**, ölçüldü):
-- Oku: `GET /integration/product/sellers/{id}/products/approved/inventory-and-price` (V2)
+Uç noktalar (15 Eyl 2026 V2 geçişinden **etkilenmiyor**):
+- Oku: `GET /integration/product/sellers/{id}/products?page&size&archived` + başlık
+  `x-api-version: 2` — **CANLIDA ÖLÇÜLDÜ**. `approved/inventory-and-price` KULLANILMADI:
+  o uç yalnız onaylı ürünü döndürür, "Trendyol'da yok" ile "onay bekliyor" ayrımı yapılamaz.
+  Arşivliler `archived=true` ile AYRI çekilir.
 - Yaz: `POST /integration/inventory/sellers/{id}/products/price-and-inventory` (V1-V2)
 - Sonuç: `GET /integration/product/sellers/{id}/products/batch-requests/{batchId}` (V2)
 

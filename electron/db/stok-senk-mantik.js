@@ -14,8 +14,33 @@ const TEKRAR_KORUMA_DK = 15    // aynı istek bu süre içinde reddedilir
 // düşürülmez, gerekçesiyle listelenir — sessiz kayıp teşhis edilemez.
 const GONDERILEMEZ_SEBEP = {
   onaysiz: 'Trendyol onayı bekliyor',
+  reddedildi: 'Trendyol reddetti',
   arsiv: 'Trendyol\'da arşivli',
   kilitli: 'Trendyol\'da kilitli',
+}
+
+// Parti bitti mi? 🔴 ÖLÇÜLDÜ (13.09.2026, canlı): stok/fiyat partisinde `status` alanı
+// HİÇ GELMİYOR (undefined). status==='COMPLETED' beklenirse sonsuza kadar yoklanır.
+// Tek güvenilir kapı: dönen kalem sayısı istenen kalem sayısına ulaştı mı.
+// (Ürün YARATMA partisinde status VAR; stok partisinde YOK — ikisini karıştırma.)
+function partiTamamMi(yanit) {
+  if (!yanit) return false
+  const istenen = Number(yanit.itemCount)
+  const gelen = Array.isArray(yanit.items) ? yanit.items.length : null
+  if (Number.isFinite(istenen) && gelen != null) return gelen >= istenen
+  // itemCount gelmediyse status'e düş (ürün yaratma partisi bu yoldan geçer).
+  return String(yanit.status || '').toUpperCase() === 'COMPLETED'
+}
+
+// Trendyol ürün listesi alanlarından gönderilebilirlik durumu türetir.
+// Sıra önemli: arşiv/kilit en kesin engel, onay durumu en sonda.
+function urunDurumu(u) {
+  if (!u) return 'onaysiz'
+  if (u.archived) return 'arsiv'
+  if (u.locked) return 'kilitli'
+  if (u.rejected) return 'reddedildi'
+  if (u.approved === false) return 'onaysiz'
+  return 'onayli'
 }
 
 // Barkod iki kanaldan farklı biçimde gelebilir (boşluk, sayı/metin). Tek biçime indirger;
@@ -157,4 +182,5 @@ module.exports = {
   PARTI_BOYUTU, STOK_TAVANI, TEKRAR_KORUMA_DK, GONDERILEMEZ_SEBEP,
   barkodAnahtar, miktarSinirla,
   planUret, ozetle, parcala, tersPlan, durumGecisi, tekrarKorumasiBitisi, partiSonucuIsle,
+  partiTamamMi, urunDurumu,
 }

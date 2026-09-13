@@ -1,53 +1,62 @@
 // Trendyol stok okuma / yazma / sonuç sorgulama.
 //
-// Uç noktalar (docs/trendyol-api-reference.md, 13.09.2026'da doğrulandı — 15 Eylül V2
-// geçişi bu üçünü ETKİLEMİYOR):
-//   oku  GET  /product/sellers/{id}/products/approved/inventory-and-price   (V2)
-//   yaz  POST /inventory/sellers/{id}/products/price-and-inventory          (V1-V2)
-//   sonuç GET /product/sellers/{id}/products/batch-requests/{batchId}       (V2)
+// Uç noktalar (13.09.2026'da CANLIDA ölçüldü — belgeye değil ölçüme dayanır):
+//   oku   GET  /product/sellers/{id}/products?page&size&archived   (x-api-version: 2)
+//   yaz   POST /inventory/sellers/{id}/products/price-and-inventory
+//   sonuç GET  /product/sellers/{id}/products/batch-requests/{batchId}
+//
+// NEDEN `/products` VE `/products/approved/inventory-and-price` DEĞİL: ikincisi yalnız
+// ONAYLI ürünleri döndürür; onay bekleyen/reddedilen/arşivli ürün orada hiç görünmez ve
+// "Trendyol'da yok" ile "onay bekliyor" ayrımı yapılamaz. `/products` hepsini alanlarıyla
+// birlikte verir (approved, rejected, archived, locked, onSale) → gönderilemez listesi
+// gerekçesiyle doldurulabilir.
 const client = require('./client')
-const { parcala } = require('../db/stok-senk-mantik')
+const { parcala, partiTamamMi, urunDurumu } = require('../db/stok-senk-mantik')
 
 const SAYFA_BOYUTU = 200
+const MAKS_SAYFA = 200 // güvenlik freni: totalPages gelmezse sonsuz döngüye girme
 
-// Onaylı ürünlerin barkod + stok + fiyatını sayfa sayfa çeker.
-// NOT: bu uç YALNIZ onaylı ürünleri döndürür. Onaysız/arşivli/kilitli ürünler burada
-// hiç görünmez; bu yüzden "Trendyol'da yok" ile "onay bekliyor" ayrımı bu uçtan
-// yapılamaz — ikisi de eşleşmeyen görünür. Bilinen sınır (bkz. spec).
+// Tek bir arşiv durumu için tüm sayfaları gezer.
+async function sayfalariCek(sid, arsivli, ilerleme, birikim) {
+  for (let sayfa = 0; sayfa < MAKS_SAYFA; sayfa++) {
+    const r = await client.get(`/product/sellers/${sid}/products`, {
+      page: sayfa, size: SAYFA_BOYUTU, archived: arsivli ? 'true' : 'false',
+    })
+    const veri = r?.content || []
+    for (const u of veri) {
+      const barkod = String(u.barcode || '').trim()
+      if (!barkod) continue
+      birikim.push({
+        barkod,
+        miktar: Number(u.quantity ?? 0) || 0,
+        ad: u.title || u.productMainId || null,
+        durum: urunDurumu({ ...u, archived: arsivli || !!u.archived }),
+      })
+    }
+    if (typeof ilerleme === 'function') ilerleme(birikim.length, r?.totalElements ?? null)
+    const toplamSayfa = Number(r?.totalPages)
+    if (veri.length === 0) return
+    if (Number.isFinite(toplamSayfa) && sayfa + 1 >= toplamSayfa) return
+  }
+}
+
+// Trendyol'daki TÜM ürünlerin barkod + adet + durumunu çeker.
+// Arşivliler ayrı bir istekle gelir (tek çağrıda ikisi birden dönmüyor — ölçüldü).
 async function stokOku({ ilerleme } = {}) {
   const sid = client.sellerId()
   if (!sid) throw new Error('Trendyol Satıcı ID yok.')
   const satirlar = []
-  let sayfa = 0
-  for (;;) {
-    const r = await client.get(`/product/sellers/${sid}/products/approved/inventory-and-price`, {
-      page: sayfa, size: SAYFA_BOYUTU,
-    })
-    const veri = r?.content || r?.items || []
-    for (const u of veri) {
-      const barkod = u.barcode || u.barkod
-      if (!barkod) continue
-      satirlar.push({
-        barkod: String(barkod).trim(),
-        miktar: Number(u.quantity ?? u.stock ?? 0) || 0,
-        ad: u.title || u.productName || null,
-        durum: 'onayli',
-      })
-    }
-    if (typeof ilerleme === 'function') ilerleme(satirlar.length, r?.totalElements ?? null)
-    const toplamSayfa = r?.totalPages
-    sayfa++
-    if (veri.length === 0) break
-    if (Number.isFinite(toplamSayfa) && sayfa >= toplamSayfa) break
-    // Güvenlik freni: totalPages gelmezse sonsuz döngüye girmeyelim.
-    if (sayfa > 500) break
-  }
+  await sayfalariCek(sid, false, ilerleme, satirlar)
+  await sayfalariCek(sid, true, ilerleme, satirlar)
   return satirlar
 }
 
 // Stok gönderir. Kalemler: [{ barkod, yeni_miktar }]. 1000'lik partilere bölünür.
-// Fiyat GÖNDERİLMEZ: bu modül yalnız stok senkronudur, fiyata dokunmak ayrı bir karar
-// (ve ikas'ta fiyat kaynağı zaten faturalardır — bkz. CLAUDE.md "Fiyat").
+//
+// FİYAT GÖNDERİLMEZ. Gövdede yalnız { barcode, quantity } var — fiyat alanı eklenirse
+// Trendyol fiyatı da günceller ve satış fiyatının tek kaynağı faturalardır
+// (bkz. CLAUDE.md "Fiyat"). 13.09'da bu şekilde gönderilip geri okundu: salePrice ve
+// listPrice değişmedi.
 async function stokYaz(kalemler) {
   const sid = client.sellerId()
   if (!sid) throw new Error('Trendyol Satıcı ID yok.')
@@ -61,14 +70,14 @@ async function stokYaz(kalemler) {
   return batchIdler
 }
 
-// Parti sonucunu sorar. Trendyol sonucu ASENKRON üretir; status COMPLETED olana kadar
-// bekler. Sonuçlar 4 saat saklanır.
+// Parti sonucunu sorar. Tamamlanma kapısı partiTamamMi'dedir — stok partisinde `status`
+// alanı GELMEDİĞİ ölçüldü, bu yüzden kalem sayısına bakılır.
 async function partiSonucu(batchRequestId) {
   const sid = client.sellerId()
   const r = await client.get(`/product/sellers/${sid}/products/batch-requests/${batchRequestId}`)
   const kalemler = r?.items || []
   return {
-    tamam: (r?.status || '').toUpperCase() === 'COMPLETED',
+    tamam: partiTamamMi(r),
     basarisizlar: kalemler
       .filter(i => (i.status || '').toUpperCase() === 'FAILED')
       .map(i => ({ barcode: i.requestItem?.barcode, failureReasons: i.failureReasons })),

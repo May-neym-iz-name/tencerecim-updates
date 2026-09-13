@@ -57,6 +57,8 @@ function istekTek(method, yol, { govde, sorgu } = {}) {
       headers: {
         Authorization: 'Basic ' + Buffer.from(`${a.api_key}:${a.api_secret}`).toString('base64'),
         'User-Agent': `${a.seller_id} - SelfIntegration`,
+        // ÖLÇÜLDÜ (13.09.2026): ürün listeleme V2 gövdesi bu başlık olmadan gelmiyor.
+        'x-api-version': '2',
         Accept: 'application/json',
       },
     }

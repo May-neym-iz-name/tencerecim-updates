@@ -2,7 +2,7 @@
 // olan ürünler var; 424 ikas varyantının 161'i Trendyol'da eşleşiyor.
 import { describe, test, expect } from 'vitest'
 const M = await import('./stok-senk-mantik.js')
-const { planUret, parcala, tersPlan, durumGecisi, tekrarKorumasiBitisi, partiSonucuIsle, miktarSinirla } = M
+const { planUret, parcala, tersPlan, durumGecisi, tekrarKorumasiBitisi, partiSonucuIsle, miktarSinirla, partiTamamMi, urunDurumu } = M
 
 // Ölçülmüş gerçek bir satır (paralel oturumun eslesme.json çıktısından).
 const GERCEK = { barkod: '2004406300304', ad: 'Maxx Doria Steel Fusion 24 Cm Basık Tencere' }
@@ -144,5 +144,50 @@ describe('partiSonucuIsle', () => {
   })
   test('hata listesi boşsa hepsi başarılı', () => {
     expect(partiSonucuIsle([{ barkod: 'A' }], []).every(k => k.sonuc === 'basarili')).toBe(true)
+  })
+})
+
+// 🔴 CANLIDA ÖLÇÜLDÜ (13.09.2026): stok/fiyat partisinde `status` alanı hiç gelmiyor.
+// status==='COMPLETED' bekleyen kod sonsuza kadar yoklar — bu testler o tuzağı kilitler.
+describe('partiTamamMi', () => {
+  test('status YOKken kalem sayısı dolunca tamam sayar', () => {
+    expect(partiTamamMi({ itemCount: 2, items: [{}, {}] })).toBe(true)
+  })
+
+  test('kalemler eksikken tamam SAYMAZ', () => {
+    expect(partiTamamMi({ itemCount: 2, items: [{}] })).toBe(false)
+  })
+
+  test('status COMPLETED olsa bile kalem eksikse tamam saymaz', () => {
+    expect(partiTamamMi({ status: 'COMPLETED', itemCount: 3, items: [{}] })).toBe(false)
+  })
+
+  test('itemCount yoksa status alanina duser (urun yaratma partisi)', () => {
+    expect(partiTamamMi({ status: 'COMPLETED' })).toBe(true)
+    expect(partiTamamMi({ status: 'PROCESSING' })).toBe(false)
+  })
+
+  test('boş yanıt tamam değildir', () => {
+    expect(partiTamamMi(null)).toBe(false)
+    expect(partiTamamMi({})).toBe(false)
+  })
+})
+
+describe('urunDurumu', () => {
+  test('normal onaylı ürün', () => {
+    expect(urunDurumu({ approved: true, onSale: true })).toBe('onayli')
+  })
+  test('arşiv ve kilit onay durumundan ÖNCE gelir', () => {
+    expect(urunDurumu({ archived: true, approved: true })).toBe('arsiv')
+    expect(urunDurumu({ locked: true, approved: true })).toBe('kilitli')
+  })
+  test('reddedilen ve onay bekleyen ayrı ayrı tanınır', () => {
+    expect(urunDurumu({ rejected: true })).toBe('reddedildi')
+    expect(urunDurumu({ approved: false })).toBe('onaysiz')
+  })
+  test('stok 0 olup satışta olmayan ürün yine de ONAYLIdır (yazılabilir)', () => {
+    // Trendyol stok 0'da onSale'i kendiliğinden false yapıyor (13.09'da ölçüldü);
+    // bu ürünü gönderilemez saymak stoğu geri yüklemeyi imkânsız kılardı.
+    expect(urunDurumu({ approved: true, onSale: false, quantity: 0 })).toBe('onayli')
   })
 })
