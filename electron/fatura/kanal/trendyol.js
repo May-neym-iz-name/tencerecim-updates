@@ -120,7 +120,25 @@ function paketiFaturayaCevir(paketId, depo) {
 
     // 🔴 birim_fiyat ZATEN BİRİM fiyattır (Trendyol'un lineUnitPrice'ı). Miktara
     // BÖLÜNMEZ — ikas tarafında bir kez yaşanmış hata.
-    const birim = Number(k.birim_fiyat) - Number(k.birim_indirim || 0)
+    //
+    // 🔴 birim_indirim BİLEREK DÜŞÜLMÜYOR (karar 14.09.2026). Sütun adı "birim" diyor
+    // ama kaynağı Trendyol'un `lineTotalDiscount` alanı (mantik:131) — yani muhtemelen
+    // SATIR TOPLAMI indirimi. İkisi aynı değil ve hangisi olduğu CANLI VERİYLE
+    // ÖLÇÜLEMEDİ: ölçüm anında tabloda indirimli tek kalem yoktu (2 kalem, ikisi de 0;
+    // kalem brütü paket toplamına birebir eşit).
+    //
+    // Yanlış yorumun bedeli simetrik DEĞİL:
+    //   - Satır toplamıysa ve biz birimden düşersek → fatura miktar katı kadar EKSİK
+    //     kesilir. Eksik fatura vergisel bir sorundur ve kesilmiş belge geri alınmaz.
+    //   - Gerçekten birimse ve biz düşmezsek → fatura indirim kadar FAZLA kesilir;
+    //     yanlıştır ama fark faturada görünür ve iade/düzeltme ile kapanır.
+    // Ölçülmemiş bir alanla sessizce eksik fatura kesmektense, indirimi hiç uygulamayıp
+    // farkı görünür bırakmak tercih edildi.
+    //
+    // ÇÖZÜM: ilk indirimli Trendyol siparişi geldiğinde birim_indirim'i paket toplamıyla
+    // karşılaştır; hangisi olduğu tek seferde belli olur. Sonra burası ve
+    // src/utils/trendyolTutar.js BİRLİKTE güncellenir (ikisi aynı varsayıma dayanıyor).
+    const birim = Number(k.birim_fiyat)
 
     // Önce ÜRÜN: eşleşme tekildir, set çözmeye göre daha kesin.
     const u = d.urunGetirSku(k.sku)

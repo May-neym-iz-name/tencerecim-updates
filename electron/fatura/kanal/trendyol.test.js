@@ -48,13 +48,23 @@ describe('paketiFaturayaCevir', () => {
     expect(g.kalemler[0].satir_toplam).toBe(27795)   // 3 × 9265, BÖLÜNMEZ
   })
 
-  test('birim indirim birim fiyattan düşülür', () => {
+  // Karar 14.09.2026: birim_indirim ÖLÇÜLMEMİŞ bir alan (kaynağı lineTotalDiscount,
+  // sütun adı "birim" — ikisi aynı değil). Ölçülene kadar faturaya KARIŞTIRILMAZ.
+  // Bu test o kararı savunur: birim_indirim dolu olsa bile fiyat değişmemeli.
+  test('birim_indirim faturaya KARIŞMAZ — ölçülmemiş alan fiyata dokunmaz', () => {
     const g = paketiFaturayaCevir('x', depo({
       siparis: PAKET, kalemler: [{ ...KALEM, miktar: 2, birim_indirim: 265 }],
       urunler: { 'TNC.MXD.00289': URUN },
     }))
-    expect(g.kalemler[0].birim_fiyat).toBe(9000)
-    expect(g.kalemler[0].satir_toplam).toBe(18000)
+    expect(g.kalemler[0].birim_fiyat).toBe(9265)
+    expect(g.kalemler[0].satir_toplam).toBe(18530)
+  })
+
+  test('indirimli ve indirimsiz kalem AYNI faturayı üretir (indirim yok sayılır)', () => {
+    const ortak = { siparis: PAKET, urunler: { 'TNC.MXD.00289': URUN } }
+    const indirimsiz = paketiFaturayaCevir('x', depo({ ...ortak, kalemler: [{ ...KALEM, miktar: 2 }] }))
+    const indirimli = paketiFaturayaCevir('x', depo({ ...ortak, kalemler: [{ ...KALEM, miktar: 2, birim_indirim: 500 }] }))
+    expect(indirimli.kalemler[0].satir_toplam).toBe(indirimsiz.kalemler[0].satir_toplam)
   })
 
   test('KDV oranı ÜRÜN kaydından gelir, Trendyol satırından değil', () => {
