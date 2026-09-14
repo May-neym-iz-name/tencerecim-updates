@@ -186,3 +186,37 @@ describe('yenidenDamgala: ebeveyn de tazelenir', () => {
     expect(d.prepare('SELECT senk_guncelleme g FROM istek_listeleri WHERE id=1').get().g).toBe(ESKI)
   })
 })
+
+// --- Satış ekranı hiyerarşisi kolonları (2026-09-14) ---
+// Bu testler [[setlerimiz]] "Bonus düzeltme" dersinin bekçisidir: web_link sütunu
+// v1.2.177'de açılmış ama senkron listesine YAZILMAMIŞTI → bir PC'de girilen link
+// diğerine hiç ulaşmıyordu (sessiz veri kaybı). Yeni kolon açan herkes buradan geçsin.
+describe('satış hiyerarşisi senkronu', () => {
+  test('kategoriler.ana_tip senkron kolonlarında', () => {
+    expect(TABLOLAR.kategoriler.kolonlar).toContain('ana_tip')
+  })
+
+  test('urunler.model ve setler.model senkron kolonlarında', () => {
+    expect(TABLOLAR.urunler.kolonlar).toContain('model')
+    expect(TABLOLAR.setler.kolonlar).toContain('model')
+  })
+
+  test('marka_modelleri senkronlanır', () => {
+    expect(TABLOLAR.marka_modelleri).toBeDefined()
+    expect(TABLOLAR.marka_modelleri.kolonlar).toEqual(['model_adi', 'oncelik', 'aktif'])
+  })
+
+  test('marka_modelleri.marka_id ZORUNLU FK — markasız model satırı anlamsız', () => {
+    expect(TABLOLAR.marka_modelleri.fk).toEqual({ marka_id: 'markalar' })
+    expect(TABLOLAR.marka_modelleri.zorunluFk).toEqual(['marka_id'])
+  })
+
+  test('marka_modelleri doğal çifti (marka_id, model_adi) — kopya satır üretilemez', () => {
+    expect(TABLOLAR.marka_modelleri.dogalCift).toEqual(['marka_id', 'model_adi'])
+  })
+
+  test('marka_modelleri SIRA içinde ve markalar\'dan SONRA', () => {
+    expect(SIRA).toContain('marka_modelleri')
+    expect(SIRA.indexOf('marka_modelleri')).toBeGreaterThan(SIRA.indexOf('markalar'))
+  })
+})

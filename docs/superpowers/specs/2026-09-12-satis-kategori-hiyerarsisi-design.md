@@ -1,7 +1,25 @@
 # Satış ekranı kategori hiyerarşisi — Marka → Ana Tip → Model → Ürün
 
 **Tarih:** 2026-09-12
-**Durum:** tasarım onaylandı, uygulama planı bekliyor
+**Durum:** ✅ **UYGULANDI — v1.2.216 (2026-09-14).** §5 sıralama kuralı uygulama
+sırasında düzeltildi; §2.2 kapsama sayısı yeniden ölçüldü (aşağı bak).
+
+**Uygulama haritası**
+
+| Ne | Nerede | Test |
+|---|---|---|
+| Ana tip haritası (48→21) | `electron/db/ana-tip.js` | `ana-tip.test.js` (9) |
+| Model çözümleme | `electron/db/model-coz.js` | `model-coz.test.js` (20) |
+| Sözlük tohumlama | `electron/db/model-sozluk-tohum.js` | `model-sozluk-tohum.test.js` (14) |
+| Şema + geri doldurma | `electron/db/database.js` `migrate()` | canlı kopyada doğrulandı |
+| Sözlük IPC | `electron/db/marka-modelleri.js` | — |
+| Ürün/set çözümlemesi | `urunler.js` `modelleriCozumle`, `setler.js` `setModelleriCozumle` | `urunler.test.js` (+9) |
+| Senkron | `electron/db/senk-sema.js` | `senk-sema.test.js` (+6) |
+| Gezinme mantığı | `src/utils/satis-hiyerarsi.js` | `satis-hiyerarsi.test.js` (21) |
+| Satış ekranı | `src/pages/Satis.jsx` | canlı doğrulandı |
+| Model Sözlüğü ekranı | `src/components/ModelSozlugu.jsx` | canlı doğrulandı |
+
+Kritik satırların tamamı **mutasyon testinden** geçirildi (satır bozulunca test kırmızı oluyor).
 **Kapsam:** satış (kasa) ekranı gezinme mantığı + onu besleyen veri modeli
 
 ---
@@ -74,6 +92,19 @@ kelimesi olmayan sözcükler model adayı sayılarak ölçüldü:
 |---|---|
 | Model bulunan ürün | **2.450 / 2.901 (%84,5)** |
 | "Diğer"e düşen | **451 (%15,5)** |
+
+> **🔴 UYGULAMA ÖLÇÜMÜ (14.09) — geçerli sayı bu:** gerçekleşen kapsama
+> **2.273 / 2.906 = %78,2**, "Diğer"de **633 ürün (%21,8)**.
+>
+> Bu bir gerileme DEĞİL, farklı bir durak listesinin sonucu. Yukarıdaki %84,5
+> ölçümünde `kizartma`, `sapli`, `matik`, `pilav`, `turkuaz` gibi tip/biçim/renk
+> kelimeleri de "model" sayılıyordu. Uygulanan tohumlayıcı ek olarak 3 harften kısa
+> ve **rakam içeren** token'ları da eler (Lava'nın `c28` kodu ÇAP bilgisidir).
+> Etki: LİNES sözlüğü 214 → **76**, ROLLERS 96 → **5**, LAVA 28 → **14** girdi.
+>
+> Takas bilinçli: **yanlış model sessiz bir hatadır, eksik model görünür bir hata.**
+> Sözlükte `spatula` olsaydı ürünler sessizce yanlış dala düşerdi; olmayınca ürün
+> "Diğer"de görünür ve Model Sözlüğü ekranı onu listeler. Kesinlik tarafına yaslanıldı.
 
 Marka bazında:
 
@@ -160,7 +191,7 @@ CREATE TABLE marka_modelleri (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   marka_id INTEGER NOT NULL REFERENCES markalar(id),
   model_adi TEXT NOT NULL,
-  oncelik INTEGER DEFAULT 0,      -- eşit uzunlukta eşleşmede sıralama
+  oncelik INTEGER DEFAULT 0,      -- eşleşme sıralaması; UZUNLUKTAN ÖNCE gelir (bkz. §5)
   aktif INTEGER DEFAULT 1,
   UNIQUE(marka_id, model_adi)
 );
@@ -208,20 +239,30 @@ Tek fonksiyon, tek yerde, test edilebilir. Sıra sabittir:
 
 ```
 1. urunler.model (veya setler.model) dolu mu   → onu kullan
-2. markanın aktif sözlüğünü ürün adında ara    → EN UZUN eşleşme kazanır
-                                                  (eşitlikte oncelik DESC)
+2. markanın aktif sözlüğünü ürün adında ara    → oncelik DESC, sonra EN UZUN,
+                                                  sonra ad (kararlı sıra)
 3. hiçbiri                                      → "Diğer"
 ```
+
+**Düzeltme (2026-09-14, uygulama sırasında ölçüldü).** Bu spec ilk hâlinde "EN UZUN
+eşleşme kazanır, eşitlikte oncelik" diyordu. **Yanlıştı ve kendi örneğini çözemiyordu:**
+`FOLK SABLE` adında `folk` (6 krkt) ile `sable` (7 krkt) **eşit uzunlukta değil**, o
+yüzden uzunluk önce gelseydi `sable` daima kazanır ve `oncelik` bu senaryoda hiç
+devreye girmezdi. Model Sözlüğü ekranından "Sable, Folk'un bir yüzeyidir" demek
+imkânsız olurdu — geriye 2.906 ürüne tek tek elle model girmek kalırdı ki bu §1'de
+**reddedilen** seçenektir. Kullanıcı kararı: **öncelik uzunluktan önce gelir.**
+Testi: `electron/db/model-coz.test.js`, "öncelik UZUNLUĞU yener".
 
 Karşılaştırma `electron/db/tr-arama.js` `trNormal()` ile yapılır — Türkçe harf
 katlaması (i/ı/İ/I, ş, ğ, ü, ö, ç) zaten orada çözülmüş ve ürün aramasıyla aynı
 davranışı verir ([[turkce-arama]]).
 
-**En uzun eşleşme neden şart:** Lava'da `FOLK SABLE GRİ` gibi adlar var ve
-`folk` ile `sable` ikisi de sözlükte olabilir. Kural olmadan hangisinin
-kazanacağı sorgu sırasına kalır. Sözlükte `folk sable` kaydı varsa o kazanır;
-yoksa `folk` ve `sable` arasında `oncelik` karar verir. Böylece "Sable ayrı bir
-model mi, Folk'un bir yüzeyi mi" sorusunu **veri** cevaplar, kod değil.
+**Kararlı sıra neden şart:** Lava'da `FOLK SABLE GRİ` gibi adlar var ve `folk` ile
+`sable` ikisi de sözlükte olabilir. Kural olmadan hangisinin kazanacağı sorgu sırasına
+kalır. Sıra şudur: önce **öncelik** (sözlük ekranından elle verilir), sonra **uzunluk**
+(`folk sable` birleşik kaydı ikisini de yener), sonra **ad**. Böylece "Sable ayrı bir
+model mi, Folk'un bir yüzeyi mi" sorusunu **veri** cevaplar, kod değil — ve cevap
+sözlük ekranından değiştirilebilir.
 
 ---
 
@@ -297,12 +338,16 @@ olmuyorsa test boştur ([[mutasyon-testi]]).
 
 ## 9. Riskler ve kabul edilmiş ödünler
 
-1. **451 ürün (%15,5) başlangıçta "Diğer"de.** Sözlük ayıklanınca düşer, ama ilk
-   sürümde bu dal dolu olacak.
+1. **633 ürün (%21,8) başlangıçta "Diğer"de** (ölçüm 14.09; ilk tahmin 451 / %15,5 idi).
+   Sözlük ayıklanınca düşer, ama ilk sürümde bu dal dolu olacak. Ayrıca sözlük
+   **tohumlanana kadar** oran %100'dür — tohumlama kullanıcı onayıyla yapılır,
+   otomatik değildir.
 2. **Rollers (145) ve Lines (692) sözlükleri gürültülü** — 96 ve 214 sözde model.
    Bu iki markada sözlük ayıklanana kadar model düzeyi işe yaramaz; uyarlanır
    derinlik burada kurtarmaz çünkü kart sayısı **fazla**, az değil.
 3. **Lacena ve Taç'ta hiç model yok.** Uyarlanır derinlik model düzeyini atlar.
+   Canlı doğrulandı (14.09): sözlük boşken LAVA > Tencere'ye girildiğinde model düzeyi
+   atlandı ve 543 ürün doğrudan listelendi — kullanıcı boşa dokunuş yapmadı.
 4. **Dört düzey kasada dokunuş sayısını artırır.** Uyarlanır derinlik hafifletir,
    tamamen gidermez. Hızlı satış için barkod ve arama yolları değişmiyor.
 5. **Malzeme ayrımı navigasyondan çıkıyor.** `Tencere` dalında 984 ürün malzemeye

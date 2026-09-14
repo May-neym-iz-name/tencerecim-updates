@@ -52,13 +52,41 @@ function sonrakiStokKodu(db, marka_id) {
 }
 
 const URUN_SELECT = `
-  SELECT u.*, m.ad as marka_adi, k.tam_yol as kategori_yol, t.ad as tedarikci_adi,
+  SELECT u.*, m.ad as marka_adi, k.tam_yol as kategori_yol, k.ana_tip as ana_tip, t.ad as tedarikci_adi,
     (SELECT COALESCE(SUM(us.miktar), 0) FROM urun_stoklar us WHERE us.urun_id = u.id) AS toplam_stok
   FROM urunler u
   LEFT JOIN markalar m ON u.marka_id = m.id
   LEFT JOIN kategoriler k ON u.kategori_id = k.id
   LEFT JOIN tedarikciler t ON u.tedarikci_id = t.id
 `
+
+// --- Satış ekranı hiyerarşisi: ana tip + model (2026-09-14) ---
+// Model çözümlemesi SUNUCUDA yapılır. Arayüze sözlüğü göndermek ve orada
+// çözmek, aynı mantığın ikinci bir kopyasını doğururdu — tam da tr-arama.js /
+// src/utils/arama.js ikizliğinin parite testiyle zor tutulan durumu.
+const { modelCoz, sozlukHazirla, DIGER } = require('./model-coz')
+
+// Sözlük MARKA BAŞINA bir kez hazırlanır, ürün başına DEĞİL. LAVA'da 726 ürün ×
+// 28 model = 20 bin karşılaştırma; sözlüğü ürün başına yeniden sıralamak bunu
+// gereksizce katlardı.
+function modelleriCozumle(db, urunler) {
+  if (!urunler.length) return urunler
+  const sozlukler = new Map()
+  const sorgu = db.prepare('SELECT model_adi, oncelik, aktif FROM marka_modelleri WHERE marka_id = ? AND aktif = 1')
+  for (const u of urunler) {
+    if (u.marka_id != null && !sozlukler.has(u.marka_id)) {
+      sozlukler.set(u.marka_id, sozlukHazirla(sorgu.all(u.marka_id)))
+    }
+  }
+  for (const u of urunler) {
+    // ana_tip NULL = kategori yok VEYA kategori haritada eksik. İkisi de "Diğer"
+    // dalına düşer; ürün KAYBOLMAZ (spec §3: kategorisiz 172 ürün).
+    u.ana_tip = u.ana_tip || DIGER
+    u.cozulen_model = u.marka_id == null ? DIGER
+      : modelCoz(u.ad, u.model, sozlukler.get(u.marka_id))
+  }
+  return urunler
+}
 
 // --- Takma ad barkodlar ---
 // urunler.barkod BİRİNCİL kalır; buradakiler ek "bu barkod da bu ürüne gider" kayıtlarıdır.
@@ -189,10 +217,10 @@ module.exports = {
     // boyut <= 0 => sınırsız (tüm ürünler). Aksi halde sayfalama uygulanır.
     if (!boyut || boyut <= 0) {
       const sorgu = `${URUN_SELECT} ${where} ORDER BY ${sira}`
-      return { toplam, urunler: db.prepare(sorgu).all(...params, ...siraParams) }
+      return { toplam, urunler: modelleriCozumle(db, db.prepare(sorgu).all(...params, ...siraParams)) }
     }
     const sorgu = `${URUN_SELECT} ${where} ORDER BY ${sira} LIMIT ? OFFSET ?`
-    return { toplam, urunler: db.prepare(sorgu).all(...params, ...siraParams, boyut, (sayfa - 1) * boyut) }
+    return { toplam, urunler: modelleriCozumle(db, db.prepare(sorgu).all(...params, ...siraParams, boyut, (sayfa - 1) * boyut)) }
   },
 
   'urunler:getir': (id) => {
@@ -309,6 +337,8 @@ module.exports = {
   },
 
   _barkodListe: barkodListe,
+  _modelleriCozumle: modelleriCozumle,
+  _URUN_SELECT: URUN_SELECT,
   _barkodEkle: barkodEkle,
   _barkodSil: barkodSil,
 

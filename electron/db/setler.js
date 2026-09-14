@@ -9,7 +9,29 @@
 // doğururdu → pazaryeri faturasını bulmak imkânsız hale gelirdi.
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
-const { kelimeKosulu } = require('./tr-arama')
+const { kelimeKosulu, trNormal } = require('./tr-arama')
+const { modelCoz, sozlukHazirla, DIGER } = require('./model-coz')
+
+// Setin ana tipi DAİMA 'Set' — setler tablosunda kategori alanı kullanılmıyor ve
+// kullanılması da gerekmiyor (spec §4.4). Satış ekranında tedarikçi setleriyle
+// (Granit Tencere Setleri vb.) aynı dalda listelenirler.
+const SET_ANA_TIP = 'Set'
+
+// Setlerin modeli ürünlerle AYNI sözlükten geçer (spec §4.4). Sözlük marka başına
+// bir kez hazırlanır; 23 set için önemsiz ama kural urunler.js ile aynı kalsın.
+function setModelleriCozumle(db, setler) {
+  if (!setler.length) return setler
+  const sozlukler = new Map()
+  const sorgu = db.prepare('SELECT model_adi, oncelik, aktif FROM marka_modelleri WHERE marka_id = ? AND aktif = 1')
+  for (const s of setler) {
+    if (s.marka_id != null && !sozlukler.has(s.marka_id)) sozlukler.set(s.marka_id, sozlukHazirla(sorgu.all(s.marka_id)))
+  }
+  for (const s of setler) {
+    s.ana_tip = SET_ANA_TIP
+    s.cozulen_model = s.marka_id == null ? DIGER : modelCoz(s.ad, s.model, sozlukler.get(s.marka_id))
+  }
+  return setler
+}
 
 // Set listesi + bileşenleri (Satış ekranı ve Setler yönetimi için).
 // arama verilmezse (boş/undefined) mevcut davranış aynen korunur: tüm aktif setler.
@@ -54,7 +76,7 @@ function listele({ arama, siteVar = false } = {}, db = getDb()) {
     `${where} ORDER BY ad`
   ).all(...params).map(({ icerik_metni, ...s }) => s)
   const bilesenStmt = db.prepare(BILESEN_SQL)
-  return setler.map(s => ({ ...s, bilesenler: bilesenStmt.all(s.id) }))
+  return setModelleriCozumle(db, setler.map(s => ({ ...s, bilesenler: bilesenStmt.all(s.id) })))
 }
 
 function kalemleriYaz(db, setId, kalemler) {
@@ -107,7 +129,7 @@ function barkodIleBul(barkod, db = getDb()) {
   if (!kod) return null
   const s = db.prepare(`SELECT ${SET_SUTUNLAR} ${SET_FROM} WHERE s.barkod = ? AND s.aktif = 1`).get(kod)
   if (!s) return null
-  return { ...s, bilesenler: db.prepare(BILESEN_SQL).all(s.id) }
+  return setModelleriCozumle(db, [{ ...s, bilesenler: db.prepare(BILESEN_SQL).all(s.id) }])[0]
 }
 
 // Formdan gelen "ürün alanlarını" doğrulayıp yazıma hazırlar.
@@ -131,16 +153,71 @@ function alanlariHazirla(db, veri, haricSetId = 0) {
     aciklama: bosNull(veri.aciklama),
     marka_id: veri.marka_id ? Number(veri.marka_id) : null,
     kategori_id: veri.kategori_id ? Number(veri.kategori_id) : null,
+    model: bosNull(veri.model),
   }
 }
 
+// --- Setlerin marka geri doldurması (spec §4.4) ---
+// Ölçüm 14.09: 23 aktif setin 21'inde marka_id BOŞ. Setler satış ekranında artık
+// markalarının altındaki "Set" ana tipinde çıkacağı için markasız set GÖRÜNMEZ olurdu.
+//
+// Eşleştirme setin adının BAŞ kısmına bakar (spec kararı): "Sofram Atlas…" → SOFRAM.
+// Adın ortasında geçen marka adı eşleşme sayılmaz — "Falez tipi Gülsan seti" gibi bir
+// ad yanlış markaya bağlanmasın. Uzun marka adı önce denenir ki "MAXX DORIA",
+// "MAXX" tarafından kapılmasın.
+function markaAdaylari(db) {
+  return db.prepare('SELECT id, ad FROM markalar WHERE aktif = 1').all()
+    .map(m => ({ ...m, desen: ' ' + trNormal(m.ad).split(/[^a-z0-9]+/).filter(Boolean).join(' ') + ' ' }))
+    .filter(m => m.desen.trim())
+    .sort((a, b) => b.desen.length - a.desen.length)
+}
+
+function markaOnerileri(db = getDb()) {
+  const markalar = markaAdaylari(db)
+  return db.prepare('SELECT id, ad, marka_id FROM setler WHERE aktif = 1 ORDER BY ad').all().map(s => {
+    const n = ' ' + trNormal(s.ad).split(/[^a-z0-9]+/).filter(Boolean).join(' ') + ' '
+    const bulunan = markalar.find(m => n.startsWith(m.desen)) || null
+    return {
+      id: s.id, ad: s.ad, mevcut_marka_id: s.marka_id,
+      onerilen_marka_id: bulunan ? bulunan.id : null,
+      onerilen_marka: bulunan ? bulunan.ad : null,
+    }
+  })
+}
+
 // Formun gönderdiği "ürün alanları" — güncellemede yalnız GÖNDERİLENLER yazılır.
-const URUN_ALANLARI = ['sku', 'barkod', 'kdv_orani', 'aciklama', 'marka_id', 'kategori_id']
+// model: satış ekranı hiyerarşisinin elle geçersiz kılma alanı (2026-09-14).
+// Setin ADI ikas ve bizimhesap ile eşleşmek zorunda olduğu için adı düzeltmek bir
+// çözüm değildi — bu yüzden ayrı kolon şart.
+const URUN_ALANLARI = ['sku', 'barkod', 'kdv_orani', 'aciklama', 'marka_id', 'kategori_id', 'model']
 
 module.exports = {
   _listele: listele,
   _barkodla: barkodIleBul,
   _alanlariHazirla: alanlariHazirla,
+  _markaOnerileri: markaOnerileri,
+  _SET_ANA_TIP: SET_ANA_TIP,
+
+  // ÖNİZLEME — hiçbir şey yazmaz. Kullanıcı listeyi görüp onaylamadan marka yazılmaz
+  // (spec §4.4: "yazmadan önce eşleşme listesi kullanıcıya gösterilir").
+  'setler:marka-onizleme': () => markaOnerileri(getDb()),
+
+  // Yalnız SEÇİLEN setlere yazar. Eşleşmeyen set elle bırakılır — tahminle yazılmaz.
+  'setler:marka-uygula': (idler) => {
+    yetkiKontrol('urun_duzenle')
+    if (!Array.isArray(idler) || !idler.length) throw new Error('En az bir set seçin')
+    const db = getDb()
+    const oneri = new Map(markaOnerileri(db).map(o => [o.id, o.onerilen_marka_id]))
+    const upd = db.prepare('UPDATE setler SET marka_id = ? WHERE id = ?')
+    let yazilan = 0
+    db.transaction(() => {
+      for (const id of idler) {
+        const markaId = oneri.get(Number(id))
+        if (markaId) yazilan += upd.run(markaId, Number(id)).changes
+      }
+    })()
+    return { yazilan }
+  },
 
   'setler:listele': (p) => listele(p || {}),
 

@@ -30,12 +30,14 @@ beforeEach(() => {
   db = bellekDb()
   db.exec(`
     CREATE TABLE setler (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT UNIQUE, fiyat REAL, aktif INTEGER DEFAULT 1,
-      sku TEXT, barkod TEXT, kdv_orani REAL, aciklama TEXT, marka_id INTEGER, kategori_id INTEGER, web_link TEXT);
+      sku TEXT, barkod TEXT, kdv_orani REAL, aciklama TEXT, marka_id INTEGER, kategori_id INTEGER, web_link TEXT, model TEXT);
     CREATE TABLE urunler (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, kdv_orani REAL DEFAULT 20, satis_fiyati REAL,
       aktif INTEGER DEFAULT 1, sku TEXT, barkod TEXT);
     CREATE TABLE set_urunler (id INTEGER PRIMARY KEY AUTOINCREMENT, set_id INTEGER, urun_id INTEGER, miktar REAL DEFAULT 1);
     CREATE TABLE urun_barkodlar (id INTEGER PRIMARY KEY AUTOINCREMENT, urun_id INTEGER, barkod TEXT);
-    CREATE TABLE markalar (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT);
+    CREATE TABLE markalar (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, aktif INTEGER DEFAULT 1);
+    CREATE TABLE marka_modelleri (id INTEGER PRIMARY KEY AUTOINCREMENT, marka_id INTEGER NOT NULL,
+      model_adi TEXT NOT NULL, oncelik INTEGER DEFAULT 0, aktif INTEGER DEFAULT 1, UNIQUE(marka_id, model_adi));
     CREATE TABLE kategoriler (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, tam_yol TEXT);
     INSERT INTO markalar (id, ad) VALUES (1, 'Sofram');
     INSERT INTO kategoriler (id, ad, tam_yol) VALUES (1, 'Setler', 'Mutfak > Setler');

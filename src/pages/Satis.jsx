@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { havuzKur, anaTipKartlari, modelKartlari, suz, gorunumHesapla } from '../utils/satis-hiyerarsi'
 import { urunlerApi, satisApi, musteriApi, lokasyonApi, markaApi, setApi, fisApi, kasaApi } from '../api/ipc'
 import { telefonHatasi, tcHatasi, vergiHatasi } from '../lib/girdiMaske'
 import { useAyarlar } from '../ayarlar/AyarlarContext'
@@ -50,7 +51,11 @@ export default function Satis() {
   // Ürün browser — hiyerarşik gezinme: Markalar → Kategoriler → Ürünler (hepsi kart).
   const [urunler, setUrunler] = useState([])
   const [urunArama, setUrunArama] = useState('')
-  const [secilenKategori, setSecilenKategori] = useState('') // ''=seçilmedi | 'tumu' | 'yok' | kategori id
+  // Gezinme: Marka > Ana Tip > Model > Ürün (v1.2.216). Eski Marka > Kategori düzeni
+  // kaldırıldı — kategoriler malzeme ile tipi birleştirdiği için marka altında 20'ye
+  // yakın kart çıkıyordu. Ana tip/model SUNUCUDA çözümlenir (u.ana_tip, u.cozulen_model).
+  const [secilenAnaTip, setSecilenAnaTip] = useState('')     // ''=seçilmedi
+  const [secilenModel, setSecilenModel] = useState('')       // ''=seçilmedi
   const [secilenMarka, setSecilenMarka] = useState('')       // ''=marka kartları görünümü
   const [markalar, setMarkalar] = useState([])
   const [setler, setSetler] = useState([]) // kendi setlerimiz (tek set fiyatlı paketler)
@@ -139,20 +144,21 @@ export default function Satis() {
   // aramaya bir karakter yazılınca setler de yeniden filtrelenip görünsün.
   const urunleriYukle = useCallback(async () => {
     setApi.listele({ arama: urunArama || undefined }).then(setSetler).catch(() => {})
-    if (!urunArama.trim() && (!secilenMarka || secilenMarka === '__setler__')) { setUrunler([]); return } // marka/set kartları görünümü
+    if (!urunArama.trim() && !secilenMarka) { setUrunler([]); return } // marka kartları görünümü
     setUrunYukleniyor(true)
     try {
+      // Ana tip ve model SÜZMESİ istemcide yapılır: markanın ürünleri zaten tek seferde
+      // (boyut: 0) geliyor ve düzeyler arasında gezinirken her adımda yeni sorgu atmak
+      // kasada gereksiz gecikme olurdu. Sunucu yalnız marka ile süzer.
       const r = await urunlerApi.listele({
         arama: urunArama || undefined,
         marka_id: (!urunArama.trim() && secilenMarka) || undefined,
-        // 'tumu'/'yok' özel değerleri backend'e gitmez (yok filtresi aşağıda client-side)
-        kategori_id: /^\d+$/.test(secilenKategori) ? secilenKategori : undefined,
         boyut: 0, // sınırsız — tüm ürünler listelensin
       })
       setUrunler(r.urunler)
     } catch {}
     setUrunYukleniyor(false)
-  }, [urunArama, secilenMarka, secilenKategori])
+  }, [urunArama, secilenMarka])
 
   useEffect(() => {
     const t = setTimeout(urunleriYukle, 200)
@@ -352,34 +358,37 @@ export default function Satis() {
 
   const sepetteVar = (id) => sepet.find(k => k.urun_id === id)
 
-  // --- Hiyerarşik gezinme görünümü: marka → kategori → ürün ---
+  // --- Hiyerarşik gezinme görünümü: marka → ana tip → model → ürün ---
+  // Türetmelerin tamamı src/utils/satis-hiyerarsi.js'te, saf fonksiyon olarak test edilir
+  // (özellikle uyarlanır derinlik — gözle doğrulanması en zor kısım).
   const aramaModu = urunArama.trim().length > 0
-  // Seçili markanın ürünlerinden kategori kartları türetilir (kategorisizler 'yok').
-  const markaKategorileri = (!aramaModu && secilenMarka && !secilenKategori)
-    ? [...new Map(urunler.filter(u => u.kategori_id).map(u => [u.kategori_id, u.kategori_yol || u.kategori || 'Kategori'])).entries()]
-        .sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'tr'))
-    : []
-  const kategorisizVar = !aramaModu && secilenMarka && !secilenKategori && urunler.some(u => !u.kategori_id)
-  // Görünüm: arama → ürün; marka seçilmedi → marka kartları; '__setler__' → set
-  // kartları; marka seçildi ve kategorileri varsa → kategori kartları; sonra ürünler.
-  const gorunum = aramaModu ? 'urun'
-    : secilenMarka === '__setler__' ? 'setler'
-    : !secilenMarka ? 'marka'
-    : (!secilenKategori && (markaKategorileri.length > 0)) ? 'kategori'
-    : 'urun'
-  // Ürün görünümünde gösterilecek liste ('yok' = kategorisiz ürünler, client-side).
-  const gosterilecekUrunler = (gorunum === 'urun' && secilenKategori === 'yok')
-    ? urunler.filter(u => !u.kategori_id) : urunler
-  const secilenMarkaAdi = secilenMarka === '__setler__' ? 'Setlerimiz'
-    : (markalar.find(m => String(m.id) === String(secilenMarka))?.ad || '')
-  const secilenKategoriEtiketi = secilenKategori === 'tumu' ? 'Tüm Ürünler'
-    : secilenKategori === 'yok' ? 'Kategorisiz'
-    : (markaKategorileri.find(([id]) => String(id) === secilenKategori)?.[1]
-       || urunler.find(u => String(u.kategori_id) === secilenKategori)?.kategori_yol || '')
+  // Seçili markanın kendi setleri, ürünlerle AYNI havuza girer: setler artık ayrı mor
+  // "🎁 Setlerimiz" kartında değil, markalarının altındaki "Set" ana tipinde çıkar.
+  const markaSetleri = (!aramaModu && secilenMarka)
+    ? setler.filter(x => String(x.marka_id) === String(secilenMarka)) : []
+  const havuz = (!aramaModu && secilenMarka) ? havuzKur(urunler, markaSetleri) : []
+  const { gorunum: dalGorunum, zimniAnaTip, zimniModel } =
+    gorunumHesapla(havuz, secilenAnaTip, secilenModel)
 
-  function markaSec(id) { setSecilenMarka(String(id)); setSecilenKategori('') }
+  const gorunum = aramaModu ? 'urun'
+    : !secilenMarka ? 'marka'
+    : dalGorunum
+
+  // '__tumu__' = "bu düzeyde süzme yapma" (Tüm Ürünler kartı). Süzgece null gider,
+  // ama secilenAnaTip dolu olduğu için gezinme bir düzey İLERLEMİŞ sayılır — kullanıcı
+  // "Tüm Ürünler"e bastığında model kartlarına değil, doğrudan ürünlere iner.
+  const TUMU = '__tumu__'
+  const etkinAnaTip = (secilenAnaTip === TUMU ? null : secilenAnaTip) || zimniAnaTip
+  const etkinModel = (secilenModel === TUMU ? null : secilenModel) || zimniModel
+  // Ürün görünümünde gösterilecek kalemler (ürün + set birlikte).
+  const gosterilecekKalemler = aramaModu ? urunler.map(u => ({ ...u, tur: 'urun' }))
+    : suz(havuz, etkinAnaTip, etkinModel)
+  const secilenMarkaAdi = markalar.find(m => String(m.id) === String(secilenMarka))?.ad || ''
+
+  function markaSec(id) { setSecilenMarka(String(id)); setSecilenAnaTip(''); setSecilenModel('') }
   function geriGit() {
-    if (secilenKategori) setSecilenKategori('')
+    if (secilenModel) setSecilenModel('')
+    else if (secilenAnaTip) setSecilenAnaTip('')
     else setSecilenMarka('')
   }
 
@@ -405,27 +414,39 @@ export default function Satis() {
         </div>
 
         {/* Gezinme şeridi: Markalar → Kategori → Ürünler (arama modunda gizli) */}
-        {!aramaModu && (secilenMarka || secilenKategori) && (
+        {!aramaModu && secilenMarka && (
           <div className="bg-white border-b px-3 py-2 flex gap-2 items-center flex-shrink-0 text-sm">
             <button onClick={geriGit}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-medium">
               ← Geri
             </button>
-            <button onClick={() => { setSecilenMarka(''); setSecilenKategori('') }}
+            <button onClick={() => { setSecilenMarka(''); setSecilenAnaTip(''); setSecilenModel('') }}
               className="text-gray-400 hover:text-blue-600 text-xs">Markalar</button>
             {secilenMarkaAdi && (
               <>
                 <span className="text-gray-300">›</span>
-                <button onClick={() => setSecilenKategori('')}
-                  className={`text-xs ${secilenKategori ? 'text-gray-400 hover:text-blue-600' : 'font-semibold text-gray-800'}`}>
+                <button onClick={() => { setSecilenAnaTip(''); setSecilenModel('') }}
+                  className={`text-xs ${secilenAnaTip ? 'text-gray-400 hover:text-blue-600' : 'font-semibold text-gray-800'}`}>
                   {secilenMarkaAdi}
                 </button>
               </>
             )}
-            {secilenKategori && (
+            {/* Şeritte YALNIZ kullanıcının seçtiği düzeyler görünür. Uyarlanır derinlikle
+                atlanan düzey (zimniAnaTip/zimniModel) buraya YAZILMAZ — kullanıcı onu
+                seçmedi, seçmiş gibi göstermek geri tuşunu da yanıltırdı. */}
+            {secilenAnaTip && (
               <>
                 <span className="text-gray-300">›</span>
-                <span className="text-xs font-semibold text-gray-800">{secilenKategoriEtiketi || 'Ürünler'}</span>
+                <button onClick={() => setSecilenModel('')}
+                  className={`text-xs ${secilenModel ? 'text-gray-400 hover:text-blue-600' : 'font-semibold text-gray-800'}`}>
+                  {secilenAnaTip === TUMU ? 'Tüm Ürünler' : secilenAnaTip}
+                </button>
+              </>
+            )}
+            {secilenModel && (
+              <>
+                <span className="text-gray-300">›</span>
+                <span className="text-xs font-semibold text-gray-800">{secilenModel === TUMU ? 'Tümü' : secilenModel}</span>
               </>
             )}
           </div>
@@ -444,15 +465,9 @@ export default function Satis() {
                 <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Marka bulunamadı</div>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-                {setler.length > 0 && (
-                  <button onClick={() => { setSecilenMarka('__setler__'); setSecilenKategori('') }}
-                    className="text-left rounded-xl border border-purple-200 bg-purple-50 p-2.5 transition-all hover:shadow-md hover:border-purple-400 active:scale-95 flex flex-col">
-                    <div className="text-xs text-purple-400 mb-1">Kendi Setlerimiz</div>
-                    <div className="text-sm font-semibold text-purple-800 leading-snug mb-2 flex-1"
-                      style={{ minHeight: '2.4em' }}>🎁 Setlerimiz</div>
-                    <div className="text-xs text-purple-600 mt-auto">{setler.length} set ›</div>
-                  </button>
-                )}
+                {/* Mor "🎁 Setlerimiz" kartı v1.2.216'da KALDIRILDI: kendi setlerimiz artık
+                    markalarının altındaki "Set" ana tipinde, tedarikçi setleriyle birlikte
+                    çıkıyor. Arama modundaki ayrı set bölümü ise AYNEN duruyor (aşağıda). */}
                 {markalar.map(m => (
                   <button key={m.id} onClick={() => markaSec(m.id)} title={m.ad}
                     className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
@@ -464,20 +479,6 @@ export default function Satis() {
                 ))}
               </div>
             </>
-          )}
-
-          {/* SET kartları — tıklayınca set tek kalem (set fiyatıyla) sepete girer */}
-          {gorunum === 'setler' && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-              {setler.map(s => (
-                <SetKart key={s.id} s={s} sepetKalem={sepetteVar('set:' + s.id)} onClick={() => setSepeteEkle(s)} />
-              ))}
-              {setler.length === 0 && (
-                <div className="col-span-full flex items-center justify-center h-32 text-gray-400 text-sm">
-                  Henüz set yok — Ürünler › 🎁 Setler sekmesinden oluşturun.
-                </div>
-              )}
-            </div>
           )}
 
           {/* Arama modunda eşleşen setler, ürün grid'inin ÜSTÜNDE ayrı bir bölüm olarak
@@ -493,51 +494,75 @@ export default function Satis() {
             </div>
           )}
 
-          {/* KATEGORİ kartları (seçili markanın ürünlerinden türetilir) */}
-          {!urunYukleniyor && gorunum === 'kategori' && (
+          {/* ANA TİP kartları — 48 kategori 21 genel tipe indirildi (kategoriler malzeme
+              ile tipi birleştirdiği için marka altında 20'ye yakın kart çıkıyordu).
+              Setler de buraya "Set" tipinde karışır. */}
+          {!urunYukleniyor && gorunum === 'anatip' && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-              <button onClick={() => setSecilenKategori('tumu')}
+              <button onClick={() => setSecilenAnaTip('__tumu__')}
                 className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
                 <div className="text-xs text-gray-400 mb-1">{secilenMarkaAdi}</div>
                 <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1" style={{ minHeight: '2.4em' }}>📦 Tüm Ürünler</div>
-                <div className="text-xs text-blue-600 mt-auto">{urunler.length} ürün ›</div>
+                <div className="text-xs text-blue-600 mt-auto">{havuz.length} kalem ›</div>
               </button>
-              {markaKategorileri.map(([id, yol]) => (
-                <button key={id} onClick={() => setSecilenKategori(String(id))} title={yol}
+              {anaTipKartlari(havuz).map(t => (
+                <button key={t.ad} onClick={() => { setSecilenAnaTip(t.ad); setSecilenModel('') }} title={t.ad}
                   className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
-                  <div className="text-xs text-gray-400 mb-1">Kategori</div>
+                  <div className="text-xs text-gray-400 mb-1">Ürün Tipi</div>
                   <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1"
                     style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.4em' }}>
-                    📂 {yol}
+                    📂 {t.ad}
                   </div>
-                  <div className="text-xs text-blue-600 mt-auto">
-                    {urunler.filter(u => String(u.kategori_id) === String(id)).length} ürün ›
-                  </div>
+                  <div className="text-xs text-blue-600 mt-auto">{t.adet} kalem ›</div>
                 </button>
               ))}
-              {kategorisizVar && (
-                <button onClick={() => setSecilenKategori('yok')}
-                  className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
-                  <div className="text-xs text-gray-400 mb-1">Kategori</div>
-                  <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1" style={{ minHeight: '2.4em' }}>📁 Diğer (kategorisiz)</div>
-                  <div className="text-xs text-blue-600 mt-auto">{urunler.filter(u => !u.kategori_id).length} ürün ›</div>
-                </button>
-              )}
             </div>
           )}
 
-          {/* ÜRÜN kartları — arama modunda "sonuç yok" mesajı SETLERİ de hesaba katar:
-              set eşleşmişse (yukarıda ayrıca render edilir) burada çelişkili bir
-              "bulunamadı" mesajı göstermeyiz. Arama modu DIŞINDaki (kategori gezinme)
-              davranış değişmedi. */}
-          {!urunYukleniyor && gorunum === 'urun' && gosterilecekUrunler.length === 0 && (!aramaModu || setler.length === 0) && (
+          {/* MODEL kartları — marka başına model sözlüğünden çözümlenir (sunucuda).
+              Sözlükte karşılığı olmayan ürünler "Diğer" kartında toplanır; o kart
+              Model Sözlüğü ekranına ne eklenmesi gerektiğini de gösterir. */}
+          {!urunYukleniyor && gorunum === 'model' && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+              <button onClick={() => setSecilenModel('__tumu__')}
+                className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
+                <div className="text-xs text-gray-400 mb-1">{etkinAnaTip}</div>
+                <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1" style={{ minHeight: '2.4em' }}>📦 Tüm {etkinAnaTip}</div>
+                <div className="text-xs text-blue-600 mt-auto">{suz(havuz, etkinAnaTip, null).length} kalem ›</div>
+              </button>
+              {modelKartlari(havuz, etkinAnaTip).map(m => (
+                <button key={m.ad} onClick={() => setSecilenModel(m.ad)} title={m.ad}
+                  className="text-left rounded-xl border border-gray-200 bg-white p-2.5 transition-all hover:shadow-md hover:border-blue-300 active:scale-95 flex flex-col">
+                  <div className="text-xs text-gray-400 mb-1">Model</div>
+                  <div className="text-sm font-semibold text-gray-800 leading-snug mb-2 flex-1"
+                    style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.4em' }}>
+                    🔖 {m.ad}
+                  </div>
+                  <div className="text-xs text-blue-600 mt-auto">{m.adet} kalem ›</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ÜRÜN + SET kartları. Arama modunda "sonuç yok" mesajı SETLERİ de hesaba
+              katar: set eşleşmişse (yukarıda ayrı bölümde render edilir) burada
+              çelişkili bir "bulunamadı" mesajı göstermeyiz — bu davranış v1.2.151'de
+              bir hata düzeltmesiyle kazanıldı, geri gitmemeli. */}
+          {!urunYukleniyor && gorunum === 'urun' && gosterilecekKalemler.length === 0 && (!aramaModu || setler.length === 0) && (
             <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
               {aramaModu ? 'Aramanızla eşleşen ürün ya da set bulunamadı' : 'Ürün bulunamadı'}
             </div>
           )}
           {gorunum === 'urun' && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
-            {gosterilecekUrunler.map(u => {
+            {gosterilecekKalemler.map(u => {
+              // Set, gezinmede ürünle aynı ızgarada çıkar ama SetKart ile çizilir ve
+              // sepete setSepeteEkle() ile girer (tek kalem, set fiyatıyla; bileşenlere
+              // setiAc() açar). Sepet anahtarı 'set:<id>' — ürün id'leriyle çakışmasın.
+              if (u.tur === 'set') {
+                return <SetKart key={'set:' + u.id} s={u} sepetKalem={sepetteVar('set:' + u.id)}
+                  onClick={() => setSepeteEkle(u)} />
+              }
               const sepetKalem = sepetteVar(u.id)
               return (
                 <button key={u.id} onClick={() => sepeteEkle(u)} title={u.ad}
@@ -548,9 +573,11 @@ export default function Satis() {
                       {sepetKalem.miktar}
                     </span>
                   )}
-                  {/* Marka / kategori */}
+                  {/* Marka · Model — gezinme artık modele göre olduğu için kartta da
+                      model gösterilir; "Diğer" yazmak bilgi taşımaz, gizlenir. */}
                   <div className="text-xs text-gray-400 mb-1 truncate w-full pr-5">
-                    {u.marka_adi || u.kategori_yol || '—'}
+                    {[u.marka_adi, u.cozulen_model !== 'Diğer' ? u.cozulen_model : null]
+                      .filter(Boolean).join(' · ') || u.kategori_yol || '—'}
                   </div>
                   {/* Ürün adı — sabit 2 satır yüksekliği */}
                   <div className="text-xs font-medium text-gray-800 leading-snug mb-2 flex-1"

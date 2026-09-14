@@ -21,6 +21,13 @@ const KANAL_YETKI = Object.freeze({
   'kategoriler:listele': 'urun_goruntule',
   'markalar:listele': 'urun_goruntule',
   'tedarikciler:listele': 'urun_goruntule',
+  // Model Sözlüğü — OKUMA kanalları. Satış ekranı da bunları okumaz (model
+  // çözümlemesi urunler:listele içinde sunucuda yapılır), yalnız yönetim ekranı okur.
+  'marka-modelleri:listele': 'urun_goruntule',
+  'marka-modelleri:ozet': 'urun_goruntule',
+  'marka-modelleri:diger-urunler': 'urun_goruntule',
+  'marka-modelleri:tohum-onizleme': 'urun_goruntule',
+  'setler:marka-onizleme': 'urun_goruntule',
 
   // Bildirimler
   'bildirim:liste': 'bildirim_goruntule',

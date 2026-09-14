@@ -212,6 +212,24 @@ export const setApi = {
   olustur: (veri) => invoke('setler:olustur', veri),
   guncelle: (veri) => invoke('setler:guncelle', veri),
   sil: (id) => invoke('setler:sil', id),
+  // Markası boş setler için tek seferlik geri doldurma (ölçüm 14.09: 21/23 boştu).
+  // Önizleme YAZMAZ; uygula yalnız SEÇİLEN setlere yazar.
+  markaOnizleme: () => invoke('setler:marka-onizleme'),
+  markaUygula: (idler) => invoke('setler:marka-uygula', idler),
+}
+
+// Model Sözlüğü: satış ekranındaki Marka > Ana Tip > MODEL gezinmesini besleyen,
+// marka başına model adı listesi. Model çözümlemesi SUNUCUDA yapılır — burada
+// yalnız sözlüğün kendisi yönetilir.
+export const modelSozlukApi = {
+  ozet: () => invoke('marka-modelleri:ozet'),
+  listele: (markaId) => invoke('marka-modelleri:listele', markaId),
+  digerUrunler: (markaId) => invoke('marka-modelleri:diger-urunler', markaId),
+  ekle: (veri) => invoke('marka-modelleri:ekle', veri),
+  guncelle: (veri) => invoke('marka-modelleri:guncelle', veri),
+  sil: (id) => invoke('marka-modelleri:sil', id),
+  tohumOnizleme: (markaId) => invoke('marka-modelleri:tohum-onizleme', markaId),
+  tohumla: (veri) => invoke('marka-modelleri:tohumla', veri),
 }
 
 export const excelApi = {

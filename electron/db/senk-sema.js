@@ -19,9 +19,25 @@ const TABLOLAR = {
   // --- Faz 1: referans + katalog ---
   markalar:     { kolonlar: ['ad', 'aktif'], fk: {}, dogal: ['ad'] },
   tedarikciler: { kolonlar: ['ad', 'telefon', 'email', 'aktif'], fk: {}, dogal: ['ad'] },
-  kategoriler:  { kolonlar: ['ad', 'tam_yol', 'aktif'], fk: { ust_kategori_id: 'kategoriler' }, dogal: [] },
+  // ana_tip (v1.2.216): satış ekranı hiyerarşisinin ikinci düzeyi. migrate() her PC'de
+  // AYNI haritadan geri doldurur, yani senkron olmadan da tutarlı olurdu — ama kullanıcı
+  // bir kategorinin ana tipini ELLE değiştirirse o değişiklik yalnız senkronla yayılır.
+  kategoriler:  { kolonlar: ['ad', 'tam_yol', 'aktif', 'ana_tip'], fk: { ust_kategori_id: 'kategoriler' }, dogal: [] },
+  // Model sözlüğü (v1.2.216). SENKRONLANMALI: sözlük satış ekranındaki gezinmeyi
+  // BELİRLER — bir PC'de ayıklanan sözlük diğerine ulaşmazsa iki kasada iki farklı
+  // ürün ağacı olur. marka_id ZORUNLU FK: markası çözülemeyen model satırı anlamsızdır
+  // (hangi markanın sözlüğüne ait olduğu bilinmeden eşleştirmede kullanılamaz),
+  // ertelensin ve markası geldiğinde yazılsın.
+  // dogalCift: bir markada bir model adı TEKTİR (yerel UNIQUE ile aynı kural) —
+  // olmazsa karşı PC her kaydedişte kopya satır üretirdi ([[sil-yeniden-yaz-tuzagi]]).
+  marka_modelleri: { kolonlar: ['model_adi', 'oncelik', 'aktif'], fk: { marka_id: 'markalar' },
+                     zorunluFk: ['marka_id'], dogalCift: ['marka_id', 'model_adi'] },
+
   musteriler:   { kolonlar: ['ad', 'soyad', 'telefon', 'email', 'tc_kimlik', 'vergi_no', 'vergi_dairesi', 'unvan', 'adres', 'il', 'ilce', 'iskonto_orani', 'aktif', 'ikas_musteri_id', 'ikas_siparis_sayisi', 'ikas_toplam_harcama', 'ikas_ilk_siparis', 'ikas_son_siparis'], fk: {}, dogal: ['telefon'] },
-  urunler:      { kolonlar: ['ad', 'barkod', 'sku', 'marka', 'kategori', 'aciklama', 'alis_fiyati', 'satis_fiyati', 'kdv_orani', 'aktif', 'ikas_urun_id', 'ikas_varyant_id'], fk: { marka_id: 'markalar', kategori_id: 'kategoriler', tedarikci_id: 'tedarikciler' }, dogal: ['barkod', 'sku'] },
+  // model (v1.2.216): ELLE girilen model geçersiz kılması. Senkrona girmezse bir PC'de
+  // düzeltilen model diğerine HİÇ ulaşmaz — setler.web_link'te birebir bu yaşandı
+  // ([[setlerimiz]] "Bonus düzeltme"). Yeni kolon açarken yazan tüm yolları say.
+  urunler:      { kolonlar: ['ad', 'barkod', 'sku', 'marka', 'kategori', 'aciklama', 'alis_fiyati', 'satis_fiyati', 'kdv_orani', 'aktif', 'ikas_urun_id', 'ikas_varyant_id', 'model'], fk: { marka_id: 'markalar', kategori_id: 'kategoriler', tedarikci_id: 'tedarikciler' }, dogal: ['barkod', 'sku'] },
   urun_stoklar: { kolonlar: ['lokasyon_id', 'miktar', 'minimum_stok'], fk: { urun_id: 'urunler' }, zorunluFk: ['urun_id'], dogalCift: ['urun_id', 'lokasyon_id'] },
   // Takma ad barkodlar: bir ürünün ek barkodları. Senkronlanmazsa diğer PC'de ek
   // barkod okutma sessizce çalışmaz (ön sipariş çalışmasında birebir aynısı yaşandı).
@@ -41,7 +57,9 @@ const TABLOLAR = {
   // hiç ulaşmıyordu (sessiz veri kaybı, [[senkron-mimarisi]]).
   // ikas_varyant_id senkrona DAHİL (urunler'deki emsaliyle aynı): fatura kesme her PC'de
   // çalışacak, eşleştirmeyi her PC'nin ayrı çalıştırması beklenemez.
-  setler:       { kolonlar: ['ad', 'fiyat', 'aktif', 'sku', 'barkod', 'kdv_orani', 'aciklama', 'web_link', 'ikas_varyant_id', 'ikas_urun_id'],
+  // model: urunler'deki emsaliyle aynı gerekçe. Setin ADI ikas/bizimhesap'la eşleşmek
+  // zorunda olduğu için adı düzeltmek bir çözüm değil — kolon şart, senkronu da şart.
+  setler:       { kolonlar: ['ad', 'fiyat', 'aktif', 'sku', 'barkod', 'kdv_orani', 'aciklama', 'web_link', 'ikas_varyant_id', 'ikas_urun_id', 'model'],
                   fk: { marka_id: 'markalar', kategori_id: 'kategoriler' }, dogal: ['ad'], sonradanEklendi: true },
   set_urunler:  { kolonlar: ['miktar'], fk: { set_id: 'setler', urun_id: 'urunler' }, zorunluFk: ['set_id', 'urun_id'], dogalCift: ['set_id', 'urun_id'] },
   // Sosyal medya otomasyon şablonları: içerik (metin/fiyat/link) — küçük, şişirmez.
@@ -157,7 +175,8 @@ const TABLOLAR = {
 // tehlikeydi (diğer PC kapalı sanıp ikinci otomasyon kurar). Çift gönderimi engelleyen şey
 // senkronun yokluğu değil, yürütücü kilidi (meta/yurutucu.js).
 const SIRA = [
-  'markalar', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar', 'urun_barkodlar',
+  // marka_modelleri markalar'a ZORUNLU FK ile bağlı → sırası markalar'dan SONRA olmalı.
+  'markalar', 'marka_modelleri', 'tedarikciler', 'kategoriler', 'musteriler', 'urunler', 'urun_stoklar', 'urun_barkodlar',
   'setler', 'set_urunler', 'sosyal_sablonlar',
   'sosyal_otomasyonlar', 'sosyal_otomasyon_sablonlar', 'sosyal_otomasyon_numaralar',
   // urunler/setler listenin başında → FK'ları bu satıra gelindiğinde çözülmüş olur.

@@ -1193,6 +1193,50 @@ function migrate() {
   db.exec("CREATE INDEX IF NOT EXISTS idx_urunler_aktif_marka ON urunler(aktif, marka_id)")
   // Sipariş listesi tarihe göre sıralanıyor.
   db.exec("CREATE INDEX IF NOT EXISTS idx_online_siparis_tarih ON online_siparisler(siparis_tarihi)")
+
+  // ---- Satış ekranı hiyerarşisi: Marka > Ana Tip > Model > Ürün (2026-09-14) ----
+  // Tasarım: docs/superpowers/specs/2026-09-12-satis-kategori-hiyerarsisi-design.md
+  //
+  // kategoriler.ana_tip: 48 kategoriyi 21 genel tipe indirir. urunler.kategori_id'ye
+  // DOKUNULMAZ — ikas kategori ağacı ve 42/42 SEO çalışması etkilenmez.
+  try { db.exec("ALTER TABLE kategoriler ADD COLUMN ana_tip TEXT") } catch {}
+  // Elle model geçersiz kılma. Normalde NULL; doluysa sözlüğü yener. Ürün ADINA
+  // dokunmadan düzeltme yapılabilsin diye şart: ad ikas ve muhasebeyle BİREBİR
+  // eşleşmek zorunda ([[sku-tek-kaynak-kurali]]).
+  try { db.exec("ALTER TABLE urunler ADD COLUMN model TEXT") } catch {}
+  // setler'e de eklenir: atlanırsa setlerde model elle düzeltilemez hale gelir ve
+  // setin adını değiştirmek de bir çözüm değildir (o ad da ikas/bizimhesap'la eşleşiyor).
+  try { db.exec("ALTER TABLE setler ADD COLUMN model TEXT") } catch {}
+
+  // Marka başına model sözlüğü. Konumsal ayrıştırma REDDEDİLDİ (Lava'nın adları
+  // markayla başlamıyor, model ortada) — bunun yerine sözlük + adın herhangi
+  // yerinde eşleştirme kullanılır. Bkz. electron/db/model-coz.js.
+  db.exec(`CREATE TABLE IF NOT EXISTS marka_modelleri (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    marka_id INTEGER NOT NULL REFERENCES markalar(id),
+    model_adi TEXT NOT NULL,
+    oncelik INTEGER DEFAULT 0,
+    aktif INTEGER DEFAULT 1,
+    UNIQUE(marka_id, model_adi)
+  )`)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_marka_modelleri_marka ON marka_modelleri(marka_id, aktif)")
+
+  // Ana tip geri doldurma. İDEMPOTENT ve yalnız BOŞ satırları yazar: kullanıcı bir
+  // kategorinin ana tipini elle değiştirdiyse her açılışta geri ezilmesin.
+  // Haritada olmayan kategori (sonradan açılmış) NULL kalır → satış ekranında
+  // "Diğer" dalına düşer, kaybolmaz.
+  try {
+    const { anaTip, HARITA } = require('./ana-tip')
+    const guncelle = db.prepare("UPDATE kategoriler SET ana_tip = ? WHERE id = ? AND COALESCE(ana_tip, '') = ''")
+    let yazilan = 0
+    db.transaction(() => {
+      for (const k of db.prepare('SELECT id, ad FROM kategoriler').all()) {
+        const t = anaTip(k.ad)
+        if (t) yazilan += guncelle.run(t, k.id).changes
+      }
+    })()
+    if (yazilan) console.log(`[migrate] ana_tip geri dolduruldu: ${yazilan} kategori (harita ${Object.keys(HARITA).length} tip)`)
+  } catch (e) { console.error('ana_tip geri doldurma:', e.message) }
 }
 
 function seedLokasyonlar() {

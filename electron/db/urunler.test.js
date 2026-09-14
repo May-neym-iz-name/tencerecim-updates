@@ -39,12 +39,12 @@ beforeEach(() => {
   db = bellekDb()
   db.exec(`
     CREATE TABLE markalar (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, aktif INTEGER DEFAULT 1);
-    CREATE TABLE kategoriler (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, tam_yol TEXT);
+    CREATE TABLE kategoriler (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, tam_yol TEXT, ana_tip TEXT);
     CREATE TABLE tedarikciler (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT);
     CREATE TABLE urunler (
       id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT, barkod TEXT UNIQUE, sku TEXT UNIQUE,
       marka_id INTEGER, kategori_id INTEGER, tedarikci_id INTEGER, aciklama TEXT,
-      alis_fiyati REAL, satis_fiyati REAL, kdv_orani REAL DEFAULT 20, aktif INTEGER DEFAULT 1);
+      alis_fiyati REAL, satis_fiyati REAL, kdv_orani REAL DEFAULT 20, aktif INTEGER DEFAULT 1, model TEXT);
     CREATE TABLE urun_barkodlar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       urun_id INTEGER NOT NULL REFERENCES urunler(id) ON DELETE CASCADE,
@@ -55,6 +55,10 @@ beforeEach(() => {
       urun_id INTEGER NOT NULL REFERENCES urunler(id) ON DELETE CASCADE,
       lokasyon_id INTEGER, miktar REAL DEFAULT 0, minimum_stok REAL DEFAULT 0);
     CREATE TABLE lokasyonlar (id INTEGER PRIMARY KEY AUTOINCREMENT, ad TEXT);
+    CREATE TABLE marka_modelleri (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, marka_id INTEGER NOT NULL,
+      model_adi TEXT NOT NULL, oncelik INTEGER DEFAULT 0, aktif INTEGER DEFAULT 1,
+      UNIQUE(marka_id, model_adi));
     INSERT INTO urunler (id, ad, barkod, sku, satis_fiyati) VALUES (1, 'Tencere 24', '8690000000001', 'TNC.LAV.00001', 100);
     INSERT INTO urunler (id, ad, barkod, sku, satis_fiyati) VALUES (2, 'Tava 20', '8690000000002', 'TNC.LAV.00002', 80);
   `)
@@ -232,5 +236,75 @@ describe('barkod tekilliği çift yönlü (TERS YÖN kontrolü)', () => {
     db.prepare('INSERT INTO urun_barkodlar (urun_id, barkod) VALUES (1, ?)').run('8690000000002')
     const sonuc = urunler._barkodla('8690000000002', db)
     expect(sonuc.id).toBe(2)
+  })
+})
+
+// --- Satış ekranı hiyerarşisi: ana tip + model çözümlemesi (2026-09-14) ---
+describe('ana tip ve model listeye eklenir', () => {
+  beforeEach(() => {
+    db.exec(`
+      INSERT INTO markalar (id, ad) VALUES (1, 'LAVA'), (2, 'SOFRAM');
+      INSERT INTO kategoriler (id, ad, tam_yol, ana_tip)
+        VALUES (10, 'Granit Tekli Tencereler', 'Granit Tekli Tencereler', 'Tencere'),
+               (11, 'Yeni Kategori', 'Yeni Kategori', NULL);
+      INSERT INTO marka_modelleri (marka_id, model_adi, oncelik, aktif)
+        VALUES (1, 'Folk', 0, 1), (1, 'Sable', 0, 1), (1, 'Trendy', 0, 0), (2, 'Atlas', 0, 1);
+      UPDATE urunler SET marka_id = 1, kategori_id = 10 WHERE id = 1;
+      UPDATE urunler SET marka_id = 1, kategori_id = 11 WHERE id = 2;
+    `)
+  })
+
+  const coz = (satirlar) => urunler._modelleriCozumle(db, satirlar)
+
+  test('SQL kategoriden ana_tip getirir (JOIN gerçekten kurulu)', () => {
+    const r = db.prepare(`${urunler._URUN_SELECT} WHERE u.id = 1`).get()
+    expect(r.ana_tip).toBe('Tencere')
+    expect(r.marka_adi).toBe('LAVA')
+  })
+
+  test('haritada olmayan kategori "Diğer"e düşer — ürün KAYBOLMAZ', () => {
+    const [u] = coz(db.prepare(`${urunler._URUN_SELECT} WHERE u.id = 2`).all())
+    expect(u.ana_tip).toBe('Diğer')
+  })
+
+  test('kategorisi olmayan ürün de "Diğer"e düşer', () => {
+    db.prepare('UPDATE urunler SET kategori_id = NULL WHERE id = 1').run()
+    const [u] = coz(db.prepare(`${urunler._URUN_SELECT} WHERE u.id = 1`).all())
+    expect(u.ana_tip).toBe('Diğer')
+  })
+
+  test('model markanın sözlüğünden çözümlenir', () => {
+    db.prepare("UPDATE urunler SET ad = 'YUVARLAK TENCERE Ç20 FOLK BEYAZ' WHERE id = 1").run()
+    const [u] = coz(db.prepare(`${urunler._URUN_SELECT} WHERE u.id = 1`).all())
+    expect(u.cozulen_model).toBe('Folk')
+  })
+
+  test('elle girilen model sözlüğü YENER', () => {
+    db.prepare("UPDATE urunler SET ad = 'YUVARLAK TENCERE Ç20 FOLK BEYAZ', model = 'Özel Seri' WHERE id = 1").run()
+    const [u] = coz(db.prepare(`${urunler._URUN_SELECT} WHERE u.id = 1`).all())
+    expect(u.cozulen_model).toBe('Özel Seri')
+  })
+
+  test('pasif sözlük satırı eşleşmez', () => {
+    db.prepare("UPDATE urunler SET ad = 'LAVA TRENDY 24 CM' WHERE id = 1").run()
+    const [u] = coz(db.prepare(`${urunler._URUN_SELECT} WHERE u.id = 1`).all())
+    expect(u.cozulen_model).toBe('Diğer')
+  })
+
+  test('BAŞKA markanın modeli bu markanın ürününe BULAŞMAZ', () => {
+    // Sözlük marka başınadır; Sofram'ın "Atlas"ı Lava ürününde eşleşmemeli.
+    db.prepare("UPDATE urunler SET ad = 'LAVA ATLAS 24 CM' WHERE id = 1").run()
+    const [u] = coz(db.prepare(`${urunler._URUN_SELECT} WHERE u.id = 1`).all())
+    expect(u.cozulen_model).toBe('Diğer')
+  })
+
+  test('markasız ürün "Diğer"e düşer, çökmez', () => {
+    db.prepare('UPDATE urunler SET marka_id = NULL WHERE id = 1').run()
+    const [u] = coz(db.prepare(`${urunler._URUN_SELECT} WHERE u.id = 1`).all())
+    expect(u.cozulen_model).toBe('Diğer')
+  })
+
+  test('boş liste çökmez', () => {
+    expect(coz([])).toEqual([])
   })
 })
