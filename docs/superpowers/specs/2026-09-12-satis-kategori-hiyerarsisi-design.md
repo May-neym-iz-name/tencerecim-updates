@@ -364,3 +364,91 @@ olmuyorsa test boştur ([[mutasyon-testi]]).
   ([[yapilacak-kategori-marka-duzenleme]] ayrı iş)
 - Malzeme süzgeci
 - Stok sayım / mal kabul ekranları (setler oralarda bilerek yok)
+
+---
+
+## 11. Tohumlama sonucu (2026-09-15, kullanıcıyla birlikte yapıldı)
+
+Sözlük canlı veritabanına yazıldı: **202 kayıt / 11 marka**. Kapsama **%0 → %91,8**
+(2.668 / 2.906 ürün). 21 setin `marka_id`'si geri dolduruldu (23/23 eşleşti,
+markası boş set kalmadı).
+
+### 11.1 🔴 Üçüncü düzeyin adı "model", işlevi ÜRÜNÜ BULMAK
+
+Kullanıcı kararı (15.09): *"olmayan noktalarda kategori gibi genel sınıflandırmalar
+kullanabiliriz… Önemli olan kullanıcıların barkodu okutamadığı senaryoda ürünü
+rahatça bulabilmesi."*
+
+Bu, §5'i genişletir: sözlük yalnız **seri adı** taşımak zorunda değildir. Model
+olmayan markalarda o markada ürünleri **gerçekten ayıran** eksen kullanılır.
+Hangi eksenin ayırdığı marka marka **ölçüldü**, tahmin edilmedi:
+
+| Marka | Kazanan eksen | Kapsama |
+|---|---|---|
+| SAFLON | MALZEME (granit 59, titanyum 47, seramik 25) | %85 |
+| BIGATTI | GEREÇ TÜRÜ (spatula 12, kaşık, kepçe, kevgir) | %87 |
+| LACENA | RENK (lacivert 8, pembe 6) | %79 |
+| TAÇ | BİÇİM (karnıyarık 7, derin 4) | %58 |
+| GÜLSAN | MALZEME (granit 24, çelik 24, döküm 13) | %91 |
+
+SAFLON, BIGATTI, TAÇ ve LACENA'da eşik ve uzunluk filtresi kapatılarak kelime
+kelime tarandı: **model adı diye bir şey yok**, ürünler kulp/renk/ölçü/tip ile
+adlandırılmış. Oradaki "Diğer" eksik sözlük değil, **doğru cevaptı**.
+
+⚠️ Bu, §1.1'in "malzeme ekseni navigasyonda YER ALMAYACAK" kararını **bozmaz**:
+malzeme *ana tip* düzeyine girmedi (Tencere dalı hâlâ 995 ürün, malzemeye
+bölünmüyor). Yalnız modeli olmayan markaların *model* düzeyinde etiket olarak
+kullanıldı.
+
+### 11.2 Üç öncelik katmanı
+
+`oncelik` alanı üç katmana ayrıldı — §5'teki "öncelik uzunluktan önce gelir"
+kuralı bunu mümkün kılıyor:
+
+| Katman | Öncelik | Ne | Örnek |
+|---|---|---|---|
+| üstün | 20 | kasiyerin ürüne **bakarak gördüğü** ayırt edici | LAVA renkleri, ROLLERS parça türü |
+| model | 10 | markanın gerçek seri adı | Flavia, Atlas, Black Line |
+| genel | 0 | modelsiz ürünler için genel sınıflandırma | Granit, Spatula, Lacivert |
+
+**LAVA'da renk seri adını YENER.** Gerekçe ölçüldü: Lava'nın serileri
+(Trendy/Folk/Glaze/Sable/Majolika) **yüzey desenleridir** — kasiyer ürüne bakarak
+hangisi olduğunu ayırt edemez, ama rengini anında görür. Renksiz hâlde
+`Tencere › Trendy` yaprağı **175 ürün** (kasiyer 35 satır kaydırır); renkle en
+büyük yaprak **65**. Aynı gerekçeyle ROLLERS'ta parça türü (çatal/kaşık/bıçak)
+seri adını yener.
+
+### 11.3 Kasiyer ölçütü: yaprak boyutu
+
+Gerçek ölçüt kapsama yüzdesi değil, **kasiyerin gördüğü son listedeki ürün sayısı**:
+
+| | Değer |
+|---|---|
+| Toplam yaprak (marka › ana tip › model) | **417** |
+| Ortanca yaprak boyutu | **4 ürün** |
+| ≤10 ürünlük yaprak | 347 (%83) |
+| 40'tan kalabalık yaprak | **6** |
+| En büyük yaprak | **65** (LAVA › Tencere › Siyah) — tohumlama öncesi 175 |
+
+### 11.4 Tohumlama sırasında bulunan gerçek hata
+
+Ürün adlarında `(LBS-0100)` gibi stok kodları var. Tokenizer doğrudan noktalamadan
+böldüğü için `lbs` + `0100` çıkıyordu; `0100` rakam diye eleniyor ama **`lbs` temiz
+bir kelime gibi görünüp sözlüğe MODEL olarak giriyordu**. Aynı kusur LST, LTK, LCM,
+GVC kodlarında da vardı. Düzeltme: önce boşluktan bölünür, **içinde rakam geçen
+kelime KODDUR** ve parçalarının hiçbiri aday olamaz. (`923f7c2`)
+
+### 11.5 🔔 Açık kalan: 172 ürün KATEGORİSİZ
+
+Kategorisi olmayan 172 aktif ürün ana tip düzeyinde "Diğer"e düşüyor. Dağılım:
+
+| Marka | Kategorisiz |
+|---|---|
+| **GÜLSAN** | **112 (markanın TAMAMI)** |
+| **TAÇ** | **19 (markanın TAMAMI)** |
+| FALEZ | 12 |
+| diğer | 29 |
+
+GÜLSAN ve TAÇ'ta ana tip düzeyi tek "Diğer" kartıdır, yani **hiç iş görmüyor** —
+tüm yük model düzeyinde. Genel etiketler bunu telafi eder ama **asıl çözüm kategori
+atamasıdır**. Bu spec'in kapsamı dışında, ayrı iş ([[yapilacak-kategori-marka-duzenleme]]).
