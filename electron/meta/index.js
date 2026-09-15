@@ -826,12 +826,60 @@ async function profilFotografi(konuId, boyut) {
     WHERE konu_id = ? AND tur = 'dm' AND gonderen_id IS NOT NULL
     ORDER BY id DESC LIMIT 1`).get(konuId)
   if (!satir || satir.platform !== 'instagram' || !satir.gonderen_id) return null
+  // Disk önbelleğinin hızlı yolu gorselDosyasi'nın içindedir ve DEĞİŞMEDİ: dosya
+  // yerindeyse buraya hiç gelinmez. Kapı yalnız GERÇEKTEN çağrı yapılacak anda işler.
   return gorselDosyasi(`profil:${satir.gonderen_id}`, null, async () => {
+    if (!_profilCagriIzni(satir.gonderen_id)) return null
     try {
       const d = await client.get(satir.gonderen_id, { fields: 'profile_pic' })
-      return d.profile_pic || null
-    } catch { return null }
+      if (d.profile_pic) { _profilBasarili(satir.gonderen_id); return d.profile_pic }
+      _profilBasarisiz(satir.gonderen_id) // alan boş = bu hesabın fotoğrafı alınamıyor
+      return null
+    } catch {
+      _profilBasarisiz(satir.gonderen_id)
+      return null
+    }
   }, boyut)
+}
+
+// --- PROFİL ÇAĞRI KAPISI (15.09.2026) -------------------------------------------
+// Ölçüm (Meta geliştirici paneli): uygulama seviyesi hız sınırını dolduran TEK uç
+// nokta buydu — `gr:get:IGBusinessScopedID`, 24 saatte 902 çağrı, sayaç %90 ve günde
+// birkaç kez %100. Kaynak arka plan yoklaması DEĞİL, gelen kutusu çizilirken istenen
+// avatarlar: 7.306 göndereninin 3.660'ının (%50,1) fotoğrafı hiç alınamıyor ve eski
+// kod bunları 30 dakikada bir, bellekten, sonsuza kadar yeniden soruyordu.
+//
+// Avatar süstür: kapı kapandığında harf-avatar gösterilir, mesaj akışı ETKİLENMEZ.
+const { denenebilirMi, butce } = require('./profil-butce')
+const _profilButce = butce()
+
+function _profilKayit(gonderenId) {
+  try {
+    return getDb().prepare('SELECT deneme, son_deneme FROM sosyal_profil_yok WHERE gonderen_id = ?').get(gonderenId) || null
+  } catch { return null }
+}
+
+// Çağrı yapılsın mı? İki kapı: kalıcı olumsuz önbellek + saatlik tavan.
+function _profilCagriIzni(gonderenId) {
+  if (!denenebilirMi(_profilKayit(gonderenId))) return false
+  if (!_profilButce.izinVar()) return false
+  _profilButce.dusur() // sınırı tüketen çağrının kendisidir, sonucu değil
+  return true
+}
+
+function _profilBasarisiz(gonderenId) {
+  try {
+    getDb().prepare(`
+      INSERT INTO sosyal_profil_yok (gonderen_id, deneme, son_deneme)
+      VALUES (?, 1, datetime('now'))
+      ON CONFLICT(gonderen_id) DO UPDATE SET
+        deneme = deneme + 1, son_deneme = datetime('now')`).run(gonderenId)
+  } catch { /* kayıt tutulamazsa en kötü ihtimalle eski davranışa döner */ }
+}
+
+function _profilBasarili(gonderenId) {
+  // Fotoğraf artık diskte; kaydı silmek hesabın "düzeldiğini" kalıcı kılar.
+  try { getDb().prepare('DELETE FROM sosyal_profil_yok WHERE gonderen_id = ?').run(gonderenId) } catch {}
 }
 
 module.exports = {

@@ -629,6 +629,21 @@ function createTables() {
       link TEXT,
       guncelleme TEXT DEFAULT (datetime('now','localtime'))
     );
+
+    -- Profili ALINAMAYAN IG gönderenleri kalıcı olarak hatırlar.
+    --
+    -- NEDEN (ölçüldü 15.09.2026, Meta geliştirici paneli): uygulama seviyesi hız
+    -- sınırını dolduran tek uç nokta avatar çekimiydi (gr:get:IGBusinessScopedID,
+    -- 24 saatte 902 çağrı, sayaç %90). 7.306 gönderenin 3.660'ının (%50,1) fotoğrafı
+    -- HİÇ alınamıyor — silinmiş/gizli hesaplar. Eski kod bunları yalnız 30 dakika ve
+    -- YALNIZ BELLEKTE hatırlıyordu, yani her yeniden başlatmada 3.660 çağrı baştan.
+    --
+    -- SENKRONLANMAZ: sosyal_mesajlar gibi her PC kendi çekimini yapar.
+    CREATE TABLE IF NOT EXISTS sosyal_profil_yok (
+      gonderen_id TEXT PRIMARY KEY,
+      deneme INTEGER NOT NULL DEFAULT 1,
+      son_deneme TEXT NOT NULL
+    );
   `)
 }
 
