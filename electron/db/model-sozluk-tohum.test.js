@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-const { adaylar, adayMi, DURAK } = require('./model-sozluk-tohum')
+const { adaylar, adayMi, DURAK, tokenlar } = require('./model-sozluk-tohum')
 
 // Eşik varsayılanı 3: bir kelimenin model sayılması için markada en az 3 üründe geçmeli.
 const kez = (ad, n) => Array.from({ length: n }, (_, i) => `${ad} ${i}`)
@@ -85,5 +85,42 @@ describe('sıralama ve kararlılık', () => {
   it('boş girdi çökmez', () => {
     expect(adaylar([], 'LAVA')).toEqual([])
     expect(adaylar(['TENCERE'], '')).toEqual([])
+  })
+})
+
+describe('stok kodu parçaları model sayılmaz', () => {
+  // 🔴 GERÇEK HATA (ölçüldü 14.09): ürün adında "(LBS-0100)" gibi stok kodları var.
+  // Doğrudan noktalamadan bölünce "lbs" + "0100" çıkıyor; "0100" rakam diye eleniyor
+  // ama "lbs" temiz bir kelime gibi görünüp sözlüğe MODEL olarak giriyordu.
+  // LİNES'in 76 adayının LBS/LST/LTK/LCM'si buydu.
+  it('rakam İÇEREN kelimenin hiçbir parçası aday olmaz', () => {
+    expect(tokenlar('LİNES LUCIANA CAM BARDAK SETİ 31 PCS-ALTIN (LBS-0100)')).not.toContain('lbs')
+    expect(tokenlar('LİNES DALYAN YEMEK KAŞIĞI 6 LI (LST-01022)')).not.toContain('lst')
+    expect(tokenlar('LİNES MERCAN ÇAYDANLIK (LCM-0101)')).not.toContain('lcm')
+  })
+
+  it('aynı addaki GERÇEK model kelimeleri korunur', () => {
+    const t = tokenlar('LİNES LUCIANA CAM BARDAK SETİ 31 PCS-ALTIN (LBS-0100)')
+    expect(t).toContain('luciana')
+    expect(t).toContain('lines')
+  })
+
+  it('kod parçası eşiğe ULAŞSA BİLE sözlüğe giremez', () => {
+    const adlar = Array.from({ length: 9 }, (_, i) => `LİNES DALYAN KAŞIK (LST-0100${i})`)
+    expect(adaylar(adlar, 'LİNES').map(x => x.model_adi)).not.toContain('lst')
+    expect(adaylar(adlar, 'LİNES').map(x => x.model_adi)).toContain('dalyan')
+  })
+
+  it('rakamsız parantezli kelime elenmez (aşırı temizlik yapmaz)', () => {
+    expect(tokenlar('FALEZ (VENTO) 24 CM')).toContain('vento')
+  })
+})
+
+describe('renk listesi canlı ölçümle genişletildi', () => {
+  // Tohum önizlemesinde (14.09, LAVA) model sanılan renkler. Renk EVRENSEL olarak
+  // model değildir — tek markaya özel ayar değil, listenin eksiğiydi.
+  it('canlıda model sanılan renkler durak listesinde', () => {
+    for (const r of ['turkuaz', 'suyesil', 'petrol', 'lila', 'mentol', 'paprika', 'seftali', 'terracotta'])
+      expect(DURAK.has(r)).toBe(true)
   })
 })

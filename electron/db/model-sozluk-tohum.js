@@ -69,6 +69,23 @@ function adayMi(token) {
   return !DURAK.has(token)
 }
 
+// Ürün adını model adaylarına böler.
+//
+// 🔴 İÇİNDE RAKAM GEÇEN BİR KELİME KODDUR, MODEL DEĞİL — ve parçalarının hiçbiri
+// aday olamaz. Önce BOŞLUKTAN bölünüp rakamlı kelimeler tamamen atılmasının sebebi
+// ölçüldü (14.09): stok kodları adın içinde "(LBS-0100)" gibi geçiyor ve doğrudan
+// noktalamadan bölünce "lbs" + "0100" çıkıyordu; "0100" rakam diye eleniyor ama
+// "lbs" temiz bir kelime gibi görünüp sözlüğe MODEL olarak giriyordu. Aynı kusur
+// LST, LTK, LCM, GVC kodlarında da vardı — LİNES'in 76 adayının önemli kısmı buydu.
+function tokenlar(ad) {
+  const cikan = []
+  for (const kelime of trNormal(ad).split(/\s+/)) {
+    if (/[0-9]/.test(kelime)) continue        // kod: parçaları dahil TAMAMEN atılır
+    for (const t of kelime.split(/[^a-z0-9]+/)) if (t) cikan.push(t)
+  }
+  return cikan
+}
+
 const ESIK = 3 // bir kelimenin model sayılması için markada en az kaç üründe geçmesi gerektiği
 
 /**
@@ -85,7 +102,7 @@ function adaylar(adlar, markaAdi, esik = ESIK) {
   for (const ad of adlar) {
     // Aynı ad içinde iki kez geçen kelime BİR sayılır — "geçiş" ürün sayısıdır,
     // kelime sayısı değil. Yoksa eşik anlamını yitirir.
-    const gorulen = new Set(trNormal(ad).split(/[^a-z0-9]+/).filter(Boolean))
+    const gorulen = new Set(tokenlar(ad))
     for (const t of gorulen) {
       if (markaKelimeleri.has(t) || !adayMi(t)) continue
       say.set(t, (say.get(t) || 0) + 1)
@@ -97,4 +114,5 @@ function adaylar(adlar, markaAdi, esik = ESIK) {
     .map(([t, n]) => ({ model_adi: t, gecis: n }))
 }
 
-module.exports = { adaylar, adayMi, DURAK, ESIK, _URUN_TIPI: URUN_TIPI, _RENK: RENK }
+module.exports = { adaylar, adayMi, DURAK, ESIK, tokenlar,
+  _URUN_TIPI: URUN_TIPI, _BICIM: BICIM, _RENK: RENK, _OLCU: OLCU, _MALZEME: MALZEME }
