@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   markaBul, skuNumaralari, aileHaritasi,
-  kuyrukSirala, planDogrula, slotUret, slotAni,
+  kuyrukSirala, planDogrula, slotUret, slotAni, cesitliSirala, YENILIK_AY,
 } from './plan.js'
 
 // Kısa yardımcı: test verisini okunur tutmak için.
@@ -202,5 +202,189 @@ describe('slotUret', () => {
     const s = slotUret(simdi, 2)
     expect(s[0].toISOString()).toBe('2026-09-07T06:00:00.000Z')
     expect(s[1].toISOString()).toBe('2026-09-07T12:00:00.000Z')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ÇEŞİTLİLİK SIRALAMASI (kullanıcı kararı 2026-09-11)
+// Kalite puanı sırası TERK EDİLDİ: aynı ürünler tekrar tekrar yayınlanıyordu
+// (Sofram 9'lu kase seti 4 kez, Maxx Doria Steel Fusion 4 kez).
+// ---------------------------------------------------------------------------
+
+// Çeşitlilik testleri için IG tarihli yardımcı.
+// SKU varsayilani NULL: bu bolumdeki testler urun ADI uzerinden kimlik
+// dogruluyor. Hepsine ayni sahte SKU vermek onlari tek AILEYE toplar ve
+// testin olctugu seyi bozar (12.09'da yasandi).
+function c(reel_kod, urun, ig_tarih, kalite = 50, sku = null) {
+  return { reel_kod, urun, ig_tarih, kalite, sku }
+}
+
+const SIMDI = new Date('2026-09-11T14:00:00Z')
+
+describe('cesitliSirala', () => {
+  it('ürünü daha önce yüklenmiş videoyu ELER', () => {
+    const havuz = [
+      c('r1', 'Sofram 9lu Kase Seti', '2026-08-01T00:00:00+0000'),
+      c('r2', 'Gülsan Mega Granit 40 cm', '2026-08-02T00:00:00+0000'),
+    ]
+    const s = cesitliSirala(havuz, { yuklenmisUrunler: ['Sofram 9lu Kase Seti'], simdi: SIMDI })
+    expect(s.plan.map(v => v.reel_kod)).toEqual(['r2'])
+    expect(s.elenen.urunYuklenmis).toBe(1)
+  })
+
+  it('pencereden eski Instagram gönderisini ELER', () => {
+    const havuz = [
+      c('eski', 'Sofram Grand 40x24', '2025-01-05T00:00:00+0000'),
+      c('yeni', 'Gülsan Mega Granit', '2026-08-02T00:00:00+0000'),
+    ]
+    const s = cesitliSirala(havuz, { simdi: SIMDI })
+    expect(s.plan.map(v => v.reel_kod)).toEqual(['yeni'])
+    expect(s.elenen.tarihEski).toBe(1)
+  })
+
+  it('sınırdaki günü İÇERİDE bırakır (pencere tam dolduğu gün geçerli)', () => {
+    // yenilikAy AÇIKÇA verilir: varsayılan değişse de bu test sınır davranışını
+    // ölçmeye devam etsin. 2026-09-11 eksi 9 ay = 2025-12-11, elenmemeli.
+    const s = cesitliSirala([c('sinir', 'Sofram Soft Sahan', '2025-12-11T23:00:00+0000')],
+      { simdi: SIMDI, yenilikAy: 9 })
+    expect(s.plan.map(v => v.reel_kod)).toEqual(['sinir'])
+  })
+
+  it('varsayılan pencere 18 aydır (12.09 kullanıcı kararı)', () => {
+    // Bu test bir SAYIYI kilitler: varsayılan sessizce değişirse kırmızı olur.
+    expect(YENILIK_AY).toBe(18)
+    // 12 ay öncesi gönderi varsayılanda ELENMEMELİ.
+    const s = cesitliSirala([c('onikiay', 'Falez Osteria Set', '2025-09-20T00:00:00+0000')], { simdi: SIMDI })
+    expect(s.plan.map(v => v.reel_kod)).toEqual(['onikiay'])
+  })
+
+  it('IG tarihi OLMAYANI eler ve ayrı sayar — tarihsizi geçerli saymaz', () => {
+    const s = cesitliSirala([c('yok', 'Falez Osteria', null)], { simdi: SIMDI })
+    expect(s.plan).toEqual([])
+    expect(s.elenen.tarihYok).toBe(1)
+  })
+
+  it('aynı üründen yalnız EN YENİ videoyu tutar', () => {
+    const havuz = [
+      c('a', 'Cem Döküm Fırın Kabı', '2026-02-07T00:00:00+0000'),
+      c('b', 'Cem Döküm Fırın Kabı', '2026-06-02T00:00:00+0000'),
+      c('d', 'Cem Döküm Fırın Kabı', '2026-03-01T00:00:00+0000'),
+    ]
+    const s = cesitliSirala(havuz, { simdi: SIMDI })
+    expect(s.plan.map(v => v.reel_kod)).toEqual(['b'])
+    expect(s.elenen.mukerrerUrun).toBe(2)
+  })
+
+  it('markaları DÖNÜŞÜMLÜ dizer — aynı marka peş peşe gelmez', () => {
+    const havuz = [
+      c('s1', 'Sofram Grand 40x24', '2026-07-17T00:00:00+0000'),
+      c('s2', 'Sofram Grand 32x20', '2026-06-24T00:00:00+0000'),
+      c('g1', 'Gülsan Mega Granit 40 cm', '2026-07-29T00:00:00+0000'),
+      c('g2', 'Gülsan Mega Granit 36 cm', '2026-06-01T00:00:00+0000'),
+    ]
+    const s = cesitliSirala(havuz, { simdi: SIMDI })
+    const markalar = s.plan.map(v => v.marka)
+    for (let i = 1; i < markalar.length; i++) expect(markalar[i]).not.toBe(markalar[i - 1])
+    expect(s.plan.length).toBe(4)
+  })
+
+  it('KALİTE PUANINA GÖRE SIRALAMAZ — tarih kazanır', () => {
+    // Bu testin tek işi eski kurala sessizce dönülmediğini kanıtlamak.
+    const havuz = [
+      c('dusukAmaYeni', 'Gülsan Mega Granit', '2026-08-02T00:00:00+0000', 10),
+      c('yuksekAmaEski', 'Sofram Grand 40x24', '2026-01-02T00:00:00+0000', 99),
+    ]
+    const s = cesitliSirala(havuz, { simdi: SIMDI })
+    expect(s.plan[0].reel_kod).toBe('dusukAmaYeni')
+  })
+
+  it('marka içinde YENİDEN ESKİYE dizer', () => {
+    const havuz = [
+      c('eski', 'Sofram Grand 32x20', '2026-03-01T00:00:00+0000'),
+      c('yeni', 'Sofram Grand 40x24', '2026-07-17T00:00:00+0000'),
+    ]
+    const s = cesitliSirala(havuz, { simdi: SIMDI })
+    expect(s.plan.map(v => v.reel_kod)).toEqual(['yeni', 'eski'])
+  })
+
+  it('havuz tükenince BOŞ döner ve tukendi bayrağını kaldırır — sessizce eskiye DÖNMEZ', () => {
+    const s = cesitliSirala([c('r1', 'Sofram Kase', '2026-08-01T00:00:00+0000')], {
+      yuklenmisUrunler: ['Sofram Kase'], simdi: SIMDI,
+    })
+    expect(s.plan).toEqual([])
+    expect(s.tukendi).toBe(true)
+  })
+
+  it('aynı girdi hep aynı planı verir (kararlı)', () => {
+    const havuz = [
+      c('b', 'Saflon Titanyum 34', '2026-06-19T00:00:00+0000'),
+      c('a', 'Falez Auris X', '2026-06-19T00:00:00+0000'),
+    ]
+    const bir = cesitliSirala(havuz, { simdi: SIMDI }).plan.map(v => v.reel_kod)
+    const iki = cesitliSirala([...havuz].reverse(), { simdi: SIMDI }).plan.map(v => v.reel_kod)
+    expect(bir).toEqual(iki)
+  })
+
+  it('yüklenmiş ürün adını Türkçe duyarlı ve boşluk toleranslı eşler', () => {
+    const s = cesitliSirala([c('r1', '  Gülsan Mega GRANİT 40 cm  ', '2026-08-01T00:00:00+0000')], {
+      yuklenmisUrunler: ['Gülsan Mega Granit 40 cm'], simdi: SIMDI,
+    })
+    expect(s.plan).toEqual([])
+  })
+})
+
+describe('cesitliSirala — SKU AİLESİ (12.09)', () => {
+  // Ürün adı serbest metindir: aynı ürün 'Saflon Titanyum 34 cm Karnıyarık' ve
+  // 'Saflon Titanyum Karnıyarık (Dolma) 28/30/32/34' diye iki türlü yazılmıştı ve
+  // ad eşleştirmesi bunları AYRI ürün sandı. SKU çakışması ise veriye dayalıdır.
+  function cs(reel_kod, urun, sku, ig_tarih) {
+    return { reel_kod, urun, sku, ig_tarih, kalite: 50 }
+  }
+
+  it('SKU’su çakışan iki videoyu AYNI ürün sayar (adları farklı olsa da)', () => {
+    const havuz = [
+      cs('genis', 'Saflon Titanyum Karnıyarık (Dolma) 28/30/32/34 cm', 'TNC.SFL.00240/244/247/249', '2026-07-07T00:00:00+0000'),
+      cs('dar', 'Saflon Titanyum 34 cm Karnıyarık Tenceresi', 'TNC.SFL.00249', '2026-06-19T00:00:00+0000'),
+    ]
+    const s = cesitliSirala(havuz, { simdi: SIMDI })
+    expect(s.plan.length).toBe(1)
+    expect(s.plan[0].reel_kod).toBe('genis') // daha yeni olan kazanır
+    expect(s.elenen.mukerrerUrun).toBe(1)
+  })
+
+  it('yüklenmiş SKU’nun AİLESİNDEKİ videoyu eler, adı farklı olsa bile', () => {
+    const havuz = [cs('dar', 'Saflon Titanyum 34 cm Karnıyarık', 'TNC.SFL.00249', '2026-06-19T00:00:00+0000')]
+    const s = cesitliSirala(havuz, {
+      simdi: SIMDI,
+      yuklenmisSkular: ['TNC.SFL.00240/244/247/249'],
+      yuklenmisUrunler: ['Saflon Titanyum Karnıyarık (Dolma) 28/30/32/34 cm'],
+    })
+    expect(s.plan).toEqual([])
+    expect(s.elenen.urunYuklenmis).toBe(1)
+  })
+
+  it('SKU marka kodu farklıysa numara aynı olsa da BİRLEŞTİRMEZ', () => {
+    const havuz = [
+      cs('a', 'Sofram bir ürün', 'TNC.SFR.00033', '2026-07-01T00:00:00+0000'),
+      cs('b', 'Saflon başka ürün', 'TNC.SFL.00033', '2026-07-02T00:00:00+0000'),
+    ]
+    const s = cesitliSirala(havuz, { simdi: SIMDI })
+    expect(s.plan.length).toBe(2)
+  })
+
+  it('SKU yoksa ada düşer — SKU’suz iki video adı aynıysa tekilleşir', () => {
+    const havuz = [
+      cs('a', 'Bürme Partner 45 Mangal', null, '2026-08-18T00:00:00+0000'),
+      cs('b', 'Bürme Partner 45 Mangal', '', '2026-08-01T00:00:00+0000'),
+    ]
+    const s = cesitliSirala(havuz, { simdi: SIMDI })
+    expect(s.plan.length).toBe(1)
+    expect(s.plan[0].reel_kod).toBe('a')
+  })
+
+  it('yalnız ad yasaklıysa (SKU bilinmiyorsa) yine eler', () => {
+    const havuz = [cs('a', 'Bürme Partner 45 Mangal', null, '2026-08-18T00:00:00+0000')]
+    const s = cesitliSirala(havuz, { simdi: SIMDI, yuklenmisUrunler: ['Bürme Partner 45 Mangal'] })
+    expect(s.plan).toEqual([])
   })
 })

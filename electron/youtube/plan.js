@@ -160,6 +160,145 @@ function planDogrula(plan) {
   return { adet: plan.length, aileIhlal, markaIhlal }
 }
 
+// ---------------------------------------------------------------------------
+// ÇEŞİTLİLİK SIRALAMASI (kullanıcı kararı 2026-09-11)
+//
+// NEDEN KALİTE PUANI TERK EDİLDİ: puan sırası aynı ürünü tekrar tekrar öne
+// çıkardı. 18 yayınlanan videonun 4'ü Sofram 9'lu kase seti, 4'ü Maxx Doria
+// Steel Fusion çıktı — kanal tek ürünü anlatır oldu. Yeni kural ÇEŞİTLİLİK:
+//   1. Ürünü daha önce YouTube'a yüklenmiş video ELENİR.
+//   2. Instagram gönderisi YENILIK_AY aydan eskiyse ELENİR.
+//   3. Aynı üründen yalnız EN YENİ Instagram gönderisi kalır.
+//   4. Sıralama MARKA DÖNÜŞÜMLÜ: her turda her markadan bir ürün; hem marka
+//      sırası hem marka içi sıra Instagram tarihine göre YENİDEN ESKİYE.
+//
+// HAVUZ TÜKENİRSE SESSİZCE ESKİYE DÖNÜLMEZ: fonksiyon boş plan + tukendi=true
+// döner, çağıran durur ve kullanıcıya söyler (kullanıcı kararı 2026-09-11).
+// "Kural sağlanamadı" ile "kural değişti" birbirine karıştırılmamalı.
+// Yenilik penceresi AY cinsinden. 12.09'da 9'dan 18'e cikarildi (kullanici
+// karari). OLCULDU: 9 ayda havuzda 4 aday kaliyordu (2 gunluk yayin), 18 ayda
+// 14 (7 gun). 12 ay HIC fark etmiyordu (yine 4), 24 ay yalnizca 1 video
+// ekliyordu. Yani pencereyi daraltmak tazeligi artirmiyor, havuzu kurutuyor.
+const YENILIK_AY = 18
+
+// Ürün adını karşılaştırma için normalleştirir.
+// Türkçe küçültme ŞART: düz toLowerCase 'GRANİT' -> 'granİt' üretir ve
+// 'granit' ile eşleşmez; aynı ürün yüklenmemiş sanılır (bkz. hafıza: turkce-arama).
+function urunAnahtari(urun) {
+  return String(urun || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('tr')
+}
+
+// 'simdi'den ay kadar geriye gider. Gün SABİT tutulur; 9 ay tam dolan gün
+// hâlâ GEÇERLİDİR (sınır içeride). Ay sonu taşması JS'in kendi normalizasyonuna
+// bırakılır — 31 Mayıs eksi 3 ay = 28/29 Şubat yerine 2/3 Mart olur; bu iş için
+// bir günlük kayma önemsiz, karmaşık ay-sonu mantığı ise sessiz hata kaynağı.
+function esikTarihi(simdi, ay) {
+  const d = new Date(simdi.getTime())
+  d.setUTCMonth(d.getUTCMonth() - ay)
+  d.setUTCHours(0, 0, 0, 0)
+  return d
+}
+
+/**
+ * Havuzdan yayına uygun adayları seçer ve çeşitlilik kuralına göre dizer.
+ *
+ * @param {Array<{reel_kod:string, urun:string, ig_tarih:string, sku:string}>} videolar
+ * @param {{yuklenmisUrunler?:string[], simdi?:Date, yenilikAy?:number}} secenekler
+ * @returns {{plan:Array, elenen:{urunYuklenmis:number,tarihYok:number,tarihEski:number,mukerrerUrun:number}, tukendi:boolean}}
+ *
+ * İDDİA DEĞİL ÖLÇÜM döndürür: kaç videonun neden elendiği sayılır, kararı
+ * çağıran verir (planDogrula ile aynı felsefe).
+ */
+function cesitliSirala(videolar, secenekler = {}) {
+  const {
+    yuklenmisUrunler = [],
+    yuklenmisSkular = [],
+    simdi = new Date(),
+    yenilikAy = YENILIK_AY,
+  } = secenekler
+
+  // KIMLIK ONCE SKU AILESI, sonra ad.
+  // NEDEN: urun adi SERBEST METINDIR. Ayni Saflon tenceresi listede hem
+  // 'Saflon Titanyum 34 cm Karniyarik' hem 'Saflon Titanyum Karniyarik
+  // (Dolma) 28/30/32/34' diye yaziliydi; ad eslestirmesi bunlari AYRI urun
+  // sandi ve ayni urun ust uste iki slota dusuyordu (12.09'da olculdu).
+  // SKU cakismasi ise veriye dayalidir: aileHaritasi 00249'u 00240/244/247/249
+  // ile birlestirir. Ad yalnizca SKU yokken kullanilir (ornegin katalogda
+  // kayitli olmayan urunler).
+  const tumSkular = videolar.map(v => v.sku).concat(yuklenmisSkular).filter(Boolean)
+  const aileler = aileHaritasi(tumSkular)
+  const kimlik = (v) => {
+    const a = v.sku ? aileler.get(v.sku) : null
+    return a ? 'aile:' + a : 'ad:' + urunAnahtari(v.urun)
+  }
+
+  const yasakli = new Set(yuklenmisUrunler.map(u => 'ad:' + urunAnahtari(u)))
+  for (const sku of yuklenmisSkular) {
+    const a = aileler.get(sku)
+    if (a) yasakli.add('aile:' + a)
+  }
+  const esik = esikTarihi(simdi, yenilikAy)
+  const elenen = { urunYuklenmis: 0, tarihYok: 0, tarihEski: 0, mukerrerUrun: 0 }
+
+  // 1-2. Eleme. Sıra ÖNEMLİ: önce "zaten yüklendi", sonra tarih. Böylece aynı
+  // video iki kez sayılmaz ve sayımlar toplanabilir kalır.
+  const aday = []
+  for (const v of videolar) {
+    // Hem aile hem ad yasagi bakilir: SKU'su olmayan bir video ADIYLA,
+    // adi baska yazilmis bir video AILESIYLE yakalanir.
+    if (yasakli.has(kimlik(v)) || yasakli.has('ad:' + urunAnahtari(v.urun))) {
+      elenen.urunYuklenmis++; continue
+    }
+    const t = v.ig_tarih ? new Date(v.ig_tarih) : null
+    if (!t || Number.isNaN(t.getTime())) { elenen.tarihYok++; continue }
+    if (t.getTime() < esik.getTime()) { elenen.tarihEski++; continue }
+    aday.push({ ...v, marka: markaBul(v.urun), _ts: t.getTime() })
+  }
+
+  // 3. Ürün başına tek video: en yeni kazanır. Eşit tarihte reel_kod kırar —
+  // yoksa her çalıştırmada başka video seçilir ve plan kararsız olur.
+  const enIyi = new Map()
+  for (const v of aday) {
+    const k = kimlik(v)
+    const mevcut = enIyi.get(k)
+    if (!mevcut) { enIyi.set(k, v); continue }
+    elenen.mukerrerUrun++
+    const dahaIyi = v._ts > mevcut._ts
+      || (v._ts === mevcut._ts && String(v.reel_kod).localeCompare(String(mevcut.reel_kod)) < 0)
+    if (dahaIyi) enIyi.set(k, v)
+  }
+
+  // 4. Marka dönüşümlü dizim.
+  const markaKovalari = new Map()
+  for (const v of enIyi.values()) {
+    if (!markaKovalari.has(v.marka)) markaKovalari.set(v.marka, [])
+    markaKovalari.get(v.marka).push(v)
+  }
+  const kovaSirala = (a, b) => (b._ts - a._ts)
+    || String(a.reel_kod).localeCompare(String(b.reel_kod))
+  for (const kova of markaKovalari.values()) kova.sort(kovaSirala)
+
+  // Marka sırası: en yeni ürünü olan marka önce. Eşitlikte marka adı kırar.
+  const markaSirasi = [...markaKovalari.keys()].sort((a, b) =>
+    (markaKovalari.get(b)[0]._ts - markaKovalari.get(a)[0]._ts)
+    || a.localeCompare(b, 'tr'))
+
+  const plan = []
+  for (let tur = 0; ; tur++) {
+    let kondu = false
+    for (const m of markaSirasi) {
+      const v = markaKovalari.get(m)[tur]
+      if (!v) continue
+      const { _ts, ...temiz } = v
+      plan.push(temiz)
+      kondu = true
+    }
+    if (!kondu) break
+  }
+
+  return { plan, elenen, tukendi: plan.length === 0 }
+}
+
 const YAYIN_SAATLERI = [9, 15]
 const SAAT_DILIMI = 'Europe/Istanbul'
 
@@ -223,6 +362,8 @@ module.exports = {
   skuNumaralari,
   aileHaritasi,
   kuyrukSirala,
+  cesitliSirala,
+  YENILIK_AY,
   planDogrula,
   slotUret,
   slotAni,
