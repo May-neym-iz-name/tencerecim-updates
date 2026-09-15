@@ -215,6 +215,82 @@ function yenidenDamgala(db, tablo) {
   db.exec(`UPDATE ${tablo} SET senk_guncelleme = ${NOWMS} WHERE senk_id IS NOT NULL`)
 }
 
+/**
+ * Bir tabloya SONRADAN eklenen senkron kolonlarını yayına sokar.
+ *
+ * Neden gerekli: push ölçütü "senk_guncelleme > imleç" (senk-veri.js). Satırın İÇERİĞİ
+ * değişince damga tazelenir, ama KOLON LİSTESİNE yeni bir alan eklendiğinde hiçbir
+ * satırın damgası değişmez → eski satırlar imlecin gerisinde kalır ve o alan karşı PC'ye
+ * HİÇ ULAŞMAZ. Sessizdir: senkron çalışıyor görünür, yalnız o sütun boş kalır.
+ *
+ * Yalnız yeni kolonu FİİLEN DOLU olan satırlar damgalanır. Kritik: iki PC de körü körüne
+ * damgalasa, alanı BOŞ olan PC son yazan olup dolu sürümü ezebilirdi. Dolu filtresi
+ * bilgiyi taşıyan tarafın kazanmasını garanti eder — yarış kalmaz. '0' da boş sayılır:
+ * kapalı bayrak karşı PC'nin zaten varsayılanıdır, damgalamak boş push üretir.
+ *
+ * varsayilanlar: kolonun ŞEMA VARSAYILANI ({ tur: 'urun' } gibi). Varsayılanda duran satır da
+ * bilgi taşımaz — karşı PC o değeri zaten kendi DEFAULT'undan üretir. Ölçüldü (15.09.2026):
+ * sosyal_sablonlar.tur 436 satırın 432'sinde varsayılan 'urun'; bu ayrım olmadan onarım 4 satır
+ * yerine 436 satır push ederdi ve aradaki pencerede karşı PC'de düzenlenmiş bir şablonu
+ * bayat kopyayla ezme riski doğardı.
+ *
+ * Ebeveynler de tazelenir — gerekçe yenidenDamgala()'daki ile aynı (pull imleci yalnız ileri gider).
+ */
+function yeniKolonDamgala(db, tablo, yeniKolonlar, varsayilanlar = {}) {
+  const cfg = TABLOLAR[tablo]
+  if (!cfg) return 0
+  const kolonlar = yeniKolonlar.filter(k => cfg.kolonlar.includes(k))
+  if (!kolonlar.length) return 0
+  const dolu = kolonlar.map(k => {
+    const bos = ["''", "'0'", ...(k in varsayilanlar ? [`'${String(varsayilanlar[k]).replace(/'/g, "''")}'`] : [])]
+    return `COALESCE(${k},'') NOT IN (${bos.join(', ')})`
+  }).join(' OR ')
+  for (const [kolon, ebeveyn] of Object.entries(cfg.fk || {})) {
+    if (!TABLOLAR[ebeveyn]) continue
+    db.exec(`UPDATE ${ebeveyn} SET senk_guncelleme = ${NOWMS}
+      WHERE senk_id IS NOT NULL
+        AND id IN (SELECT ${kolon} FROM ${tablo} WHERE ${kolon} IS NOT NULL AND (${dolu}))`)
+  }
+  return db.prepare(`UPDATE ${tablo} SET senk_guncelleme = ${NOWMS}
+    WHERE senk_id IS NOT NULL AND (${dolu})`).run().changes
+}
+
+// Tablonun senkron yükünün ŞEKLİ: veri kolonları + FK kolonları (satirYuku ikisini de yazar).
+function kolonImzasi(cfg) {
+  return [...cfg.kolonlar, ...Object.keys(cfg.fk || {})].sort().join(',')
+}
+
+/**
+ * Kolon imzası nöbeti: bir tablonun senkron kolon listesi değiştiğinde yeni alanları
+ * bir kez yayına sokar. Yukarıdaki sessiz kayıp sınıfı bu depoda EN AZ BEŞ KEZ yaşandı
+ * (setler.web_link, setler.ikas_urun_id, sosyal_otomasyonlar.ozel_aciklama/mesaj_tipi,
+ * sosyal_otomasyon_numaralar, sosyal_sablonlar.tur) — her seferinde elle bir "restamp"
+ * bloğu yazıldı ya da hiç yazılmadı. Artık mekanizma kolonu EKLEYEN kodu takip ediyor.
+ *
+ * İLK KURULUMDA (kayıt yok) damgalama YAPILMAZ, yalnız taban imza yazılır: aksi hâlde
+ * bu sürüme geçen her PC tüm katalogu (6.700+ satır) tek seferde push'a sokardı.
+ * Geçmişte kaybolan alanlar aşağıdaki tek seferlik onarımla kapatılır.
+ */
+function kolonImzaBakimi(db) {
+  for (const tablo of Object.keys(TABLOLAR)) {
+    const cfg = TABLOLAR[tablo]
+    const imza = kolonImzasi(cfg)
+    const anahtar = `kolimza_${tablo}`
+    try {
+      const kayit = db.prepare('SELECT deger FROM senk_durum WHERE anahtar = ?').get(anahtar)
+      if (kayit?.deger === imza) continue
+      if (kayit) {
+        const eski = new Set(String(kayit.deger).split(','))
+        const eklenen = cfg.kolonlar.filter(k => !eski.has(k))
+        const n = eklenen.length ? yeniKolonDamgala(db, tablo, eklenen) : 0
+        if (n) console.log(`kolon imzası değişti (${tablo}: +${eklenen.join(', ')}) → ${n} satır yeniden damgalandı`)
+      }
+      db.prepare(`INSERT INTO senk_durum (anahtar, deger) VALUES (?, ?)
+        ON CONFLICT(anahtar) DO UPDATE SET deger = excluded.deger`).run(anahtar, imza)
+    } catch (e) { console.error(`kolon imza bakımı (${tablo}):`, e.message) }
+  }
+}
+
 function kur(db) {
   for (const tablo of Object.keys(TABLOLAR)) {
     try { db.exec(`ALTER TABLE ${tablo} ADD COLUMN senk_id TEXT`) } catch {}
@@ -343,6 +419,35 @@ function kur(db) {
       db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('ebeveyn_temel_damga_onarim', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
     }
   } catch (e) { console.error('ebeveyn temel damga onarım:', e.message) }
+
+  // Bir kerelik: kolon imzası nöbeti KURULMADAN ÖNCE eklenmiş kolonların onarımı.
+  //
+  // Ölçüm (15.09.2026, yerel SQLite + Supabase birlikte sorgulandı):
+  //   setler              → buluttaki 25 satırın 25'inde ikas_urun_id ANAHTARI YOK
+  //                         (yerelde 23/23 dolu). Sonucu: diğer PC'de "Hızlı ürünler"
+  //                         paneli hiçbir SET bulamıyordu (siteVar süzgeci ikas_urun_id
+  //                         ister, bkz. db/setler.js listele).
+  //   sosyal_otomasyonlar → 40 satırın 39'unda ozel_aciklama/whatsapp/mesaj_tipi YOK.
+  //   sosyal_sablonlar    → bir bölümünde tur/serbest_metin YOK ('genel' şablon bozulur).
+  // Buluttaki yüklerin ANAHTAR LİSTESİ, onları üreten sürümün kolon listesiyle birebir
+  // örtüşüyordu — yani şekil, gönderen sürümün parmak izidir.
+  try {
+    if (!db.prepare("SELECT deger FROM senk_durum WHERE anahtar = 'kolon_gecmis_onarim_2026_09'").get()) {
+      const onarim = {
+        setler: [['ikas_urun_id', 'ikas_varyant_id', 'model'], {}],
+        sosyal_otomasyonlar: [['ozel_aciklama', 'whatsapp', 'mesaj_tipi', 'soru_yaniti_kapali'], { mesaj_tipi: 'kart' }],
+        sosyal_sablonlar: [['tur', 'serbest_metin'], { tur: 'urun' }],
+      }
+      for (const [tablo, [kolonlar, varsayilanlar]] of Object.entries(onarim)) {
+        const n = yeniKolonDamgala(db, tablo, kolonlar, varsayilanlar)
+        if (n) console.log(`geçmiş kolon onarımı (${tablo}): ${n} satır yeniden damgalandı`)
+      }
+      db.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('kolon_gecmis_onarim_2026_09', '1') ON CONFLICT(anahtar) DO UPDATE SET deger = '1'").run()
+    }
+  } catch (e) { console.error('geçmiş kolon onarımı:', e.message) }
+
+  // Bundan SONRA eklenen her kolon kendiliğinden yayına girer.
+  kolonImzaBakimi(db)
 }
 
-module.exports = { kur, TABLOLAR, SIRA, yenidenDamgala }
+module.exports = { kur, TABLOLAR, SIRA, yenidenDamgala, yeniKolonDamgala, kolonImzasi, kolonImzaBakimi }

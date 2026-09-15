@@ -220,3 +220,101 @@ describe('satış hiyerarşisi senkronu', () => {
     expect(SIRA.indexOf('marka_modelleri')).toBeGreaterThan(SIRA.indexOf('markalar'))
   })
 })
+
+// Kolon imzası nöbeti: senkron kolon listesine SONRADAN eklenen alanın eski satırlarda
+// hiç yayınlanmaması sınıfı ("sessiz kayıp") bu depoda beş kez yaşandı. 15.09.2026'da
+// ölçülen son vakası: buluttaki 25 set kaydının 25'inde ikas_urun_id ANAHTARI yoktu →
+// diğer PC'nin "Hızlı ürünler" panelinde hiçbir set çıkmıyordu.
+describe('kolon imzası nöbeti', () => {
+  const ESKI = '2000-01-01T00:00:00.000Z'
+
+  function db() {
+    const d = new DatabaseSync(':memory:')
+    d.exec(`CREATE TABLE senk_durum (anahtar TEXT PRIMARY KEY, deger TEXT);
+      CREATE TABLE markalar (id INTEGER PRIMARY KEY, ad TEXT, aktif INTEGER DEFAULT 1,
+        senk_id TEXT, senk_guncelleme TEXT);
+      CREATE TABLE kategoriler (id INTEGER PRIMARY KEY, ad TEXT, tam_yol TEXT, aktif INTEGER,
+        ana_tip TEXT, ust_kategori_id INTEGER, senk_id TEXT, senk_guncelleme TEXT);
+      CREATE TABLE setler (id INTEGER PRIMARY KEY, ad TEXT, fiyat REAL, aktif INTEGER DEFAULT 1,
+        sku TEXT, barkod TEXT, kdv_orani REAL, aciklama TEXT, web_link TEXT,
+        ikas_varyant_id TEXT, ikas_urun_id TEXT, model TEXT,
+        marka_id INTEGER, kategori_id INTEGER, senk_id TEXT, senk_guncelleme TEXT);`)
+    d.prepare(`INSERT INTO markalar (id, ad, senk_id, senk_guncelleme) VALUES (1,'Sofram','m1',?)`).run(ESKI)
+    // 1: ikas'a bağlı (bilgiyi TAŞIYAN satır) · 2: bağsız (boş) · 3: boş string
+    d.prepare(`INSERT INTO setler (id, ad, ikas_urun_id, marka_id, senk_id, senk_guncelleme)
+      VALUES (1,'Bağlı set','cd90503d',1,'s1',?)`).run(ESKI)
+    d.prepare(`INSERT INTO setler (id, ad, ikas_urun_id, senk_id, senk_guncelleme)
+      VALUES (2,'Bağsız set',NULL,'s2',?)`).run(ESKI)
+    d.prepare(`INSERT INTO setler (id, ad, ikas_urun_id, senk_id, senk_guncelleme)
+      VALUES (3,'Boş metin','','s3',?)`).run(ESKI)
+    return d
+  }
+  const damga = (d, id) => d.prepare('SELECT senk_guncelleme g FROM setler WHERE id = ?').get(id).g
+
+  test('yeniKolonDamgala YALNIZ o kolonu dolu olan satırı tazeler', () => {
+    // Kritik: boş satırı da damgalasaydık, alanı BOŞ olan PC son yazan olup karşı
+    // taraftaki DOLU değeri ezerdi (son-yazan-kazanır). Dolu filtresi yarışı kaldırır.
+    const d = db()
+    const n = sema.yeniKolonDamgala(d, 'setler', ['ikas_urun_id'])
+    expect(n).toBe(1)
+    expect(damga(d, 1)).not.toBe(ESKI)
+    expect(damga(d, 2)).toBe(ESKI)
+    expect(damga(d, 3)).toBe(ESKI)
+  })
+
+  test('ebeveyn de tazelenir — pull imleci yalnız ileri gider', () => {
+    const d = db()
+    sema.yeniKolonDamgala(d, 'setler', ['ikas_urun_id'])
+    expect(d.prepare("SELECT senk_guncelleme g FROM markalar WHERE id = 1").get().g).not.toBe(ESKI)
+  })
+
+  test('kolon listesinde OLMAYAN alan hiçbir satırı damgalamaz', () => {
+    const d = db()
+    expect(sema.yeniKolonDamgala(d, 'setler', ['boyle_bir_kolon_yok'])).toBe(0)
+    expect(damga(d, 1)).toBe(ESKI)
+  })
+
+  test('ilk kurulumda damgalama YOK — yalnız taban imza yazılır', () => {
+    // Aksi hâlde bu sürüme geçen her PC tüm katalogu tek seferde push'a sokardı.
+    const d = db()
+    sema.kolonImzaBakimi(d)
+    expect(damga(d, 1)).toBe(ESKI)
+    expect(d.prepare("SELECT deger FROM senk_durum WHERE anahtar='kolimza_setler'").get().deger)
+      .toBe(sema.kolonImzasi(sema.TABLOLAR.setler))
+  })
+
+  test('imza değişince yeni kolonu dolu satır yeniden damgalanır', () => {
+    const d = db()
+    // ikas_urun_id'nin HENÜZ eklenmediği bir geçmişi taklit et.
+    const eskiImza = sema.kolonImzasi(sema.TABLOLAR.setler)
+      .split(',').filter(k => k !== 'ikas_urun_id').join(',')
+    d.prepare("INSERT INTO senk_durum (anahtar, deger) VALUES ('kolimza_setler', ?)").run(eskiImza)
+    sema.kolonImzaBakimi(d)
+    expect(damga(d, 1)).not.toBe(ESKI)
+    expect(damga(d, 2)).toBe(ESKI)
+  })
+
+  test('imza aynıysa hiçbir satıra dokunulmaz (her açılışta push üretmez)', () => {
+    const d = db()
+    sema.kolonImzaBakimi(d)
+    sema.kolonImzaBakimi(d)
+    expect(damga(d, 1)).toBe(ESKI)
+  })
+
+  test('imza FK kolonlarını da kapsar — FK eklemek de yayın gerektirir', () => {
+    expect(sema.kolonImzasi(sema.TABLOLAR.setler)).toContain('marka_id')
+  })
+
+  test('şema varsayılanında duran satır bilgi taşımaz — damgalanmaz', () => {
+    // sosyal_sablonlar.tur DEFAULT 'urun': 436 satırın 432'si varsayılanda. Bu ayrım
+    // olmadan onarım 4 yerine 436 satır push eder, karşı PC'deki taze düzenlemeyi
+    // bayat kopyayla ezme penceresi açardı (ölçüm 15.09.2026).
+    const d = db()
+    d.prepare("UPDATE setler SET model = 'Atlas' WHERE id = 2").run()
+    d.prepare("UPDATE setler SET model = 'yok' WHERE id = 3").run()
+    d.prepare('UPDATE setler SET senk_guncelleme = ?').run(ESKI)
+    expect(sema.yeniKolonDamgala(d, 'setler', ['model'], { model: 'yok' })).toBe(1)
+    expect(damga(d, 2)).not.toBe(ESKI)
+    expect(damga(d, 3)).toBe(ESKI)
+  })
+})
