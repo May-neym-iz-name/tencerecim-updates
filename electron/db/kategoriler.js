@@ -1,6 +1,7 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
-const { HARITA, anaTip } = require('./ana-tip')
+const { anaTip } = require('./ana-tip')
+const { trBuyuk } = require('./tr-buyuk')
 
 // ana_tip_ver: çağıran açıkça bir ana tip verdiyse o yazılır; vermediyse ana-tip.js
 // haritasından türetilir. Harita yeni kategori adını tanımıyorsa NULL kalır → satış
@@ -35,37 +36,10 @@ module.exports = {
 
   'kategoriler:olustur': ({ ad, ust_kategori_id, ana_tip }) => {
     yetkiKontrol('urun_duzenle')
-    return getOrCreate(ad.trim(), ust_kategori_id || null, ana_tip)
-  },
-
-  // Satış ekranı 2. düzeyi için seçenek listesi: ana-tip.js haritasındaki tipler +
-  // veritabanında FİİLEN kullanılan tipler (harita dışı, elle açılmış olanlar dahil).
-  // İkisinin birleşimi alınır ki elle açılan bir tip listeden kaybolmasın.
-  'kategoriler:ana-tipler': () => {
-    const kullanilan = getDb().prepare(
-      `SELECT ana_tip, COUNT(*) AS n FROM kategoriler
-       WHERE aktif = 1 AND COALESCE(ana_tip,'') <> '' GROUP BY ana_tip`).all()
-    const sayi = Object.fromEntries(kullanilan.map(r => [r.ana_tip, r.n]))
-    const tumu = [...new Set([...Object.keys(HARITA), ...kullanilan.map(r => r.ana_tip)])]
-    return tumu.map(t => ({ ad: t, kategori_sayisi: sayi[t] || 0 }))
-      .sort((a, b) => a.ad.localeCompare(b.ad, 'tr'))
-  },
-
-  // Bir kategorinin ana tipini değiştirir.
-  // 🔴 YAN ETKİ: ana tip KATEGORİYE aittir, ürüne değil — bu çağrı o kategorideki
-  // TÜM ürünlerin satış ekranındaki yerini değiştirir. Çağıran arayüz etkilenen
-  // ürün sayısını kullanıcıya göstermek zorundadır.
-  'kategoriler:ana-tip-guncelle': ({ id, ana_tip }) => {
-    yetkiKontrol('urun_duzenle')
-    const db = getDb()
-    const kat = db.prepare('SELECT * FROM kategoriler WHERE id = ?').get(id)
-    if (!kat) throw new Error('Kategori bulunamadı')
-    // Boş değer GEÇERLİ: "ana tipi yok" demek (satış ekranında Diğer dalı).
-    const yeni = String(ana_tip || '').trim() || null
-    db.prepare('UPDATE kategoriler SET ana_tip = ? WHERE id = ?').run(yeni, id)
-    const etkilenen = db.prepare(
-      'SELECT COUNT(*) AS n FROM urunler WHERE kategori_id = ? AND aktif = 1').get(id).n
-    return { ...db.prepare('SELECT * FROM kategoriler WHERE id=?').get(id), etkilenen_urun: etkilenen }
+    // Kategori adı DAİMA büyük saklanır (kullanıcı kararı 16.09). Senkronun doğal
+    // anahtarı da 'ad' olduğu için bu aynı zamanda eşleşmeyi sağlamlaştırır:
+    // "Granit Tavalar" ile "GRANİT TAVALAR" artık ayrı satır doğuramaz.
+    return getOrCreate(trBuyuk(ad.trim()), ust_kategori_id || null, ana_tip)
   },
 
   // Kategori adını değiştirir; kendi tam_yol'unu ve TÜM alt kategorilerin
@@ -75,7 +49,7 @@ module.exports = {
     const db = getDb()
     const kat = db.prepare('SELECT * FROM kategoriler WHERE id=?').get(id)
     if (!kat) throw new Error('Kategori bulunamadı')
-    const yeniAd = (ad || '').trim()
+    const yeniAd = trBuyuk((ad || '').trim())
     if (!yeniAd) throw new Error('Kategori adı boş olamaz')
     const ust = kat.ust_kategori_id
       ? db.prepare('SELECT tam_yol FROM kategoriler WHERE id=?').get(kat.ust_kategori_id) : null

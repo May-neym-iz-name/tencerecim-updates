@@ -4,7 +4,8 @@
 //  - veri-senk:uygula      → uzak satırları yerele upsert (son-yazan-kazanır + dedup)
 //  - veri-senk:imlec-al/yaz→ push/pull imleçleri (senk_durum)
 const { getDb } = require('./database')
-const { TABLOLAR, SIRA } = require('./senk-sema')
+const { trBuyuk } = require('./tr-buyuk')
+const { TABLOLAR, SIRA, BUYUK_ALANLAR } = require('./senk-sema')
 
 // FK'sı çözülemediği için uygulanamayan uzak satırların KALICI kuyruğu.
 //
@@ -142,6 +143,12 @@ module.exports = {
         const cols = {}
         for (const c of cfg.kolonlar) cols[c] = k.veri[c] ?? null
         Object.assign(cols, fkLocal)
+        // Gelen satır YEREL yazım kuralına sokulur. Doğal anahtar eşleşmesi bunun
+        // ARDINDAN yapılır (aşağıda) — sırası önemli: normalize edilmemiş bir 'ad'
+        // yereldeki büyük harfli eşini bulamaz ve kopya INSERT ederdi.
+        for (const alan of (BUYUK_ALANLAR[tablo] || [])) {
+          if (cols[alan] != null) cols[alan] = trBuyuk(cols[alan])
+        }
         const kolonAdlari = Object.keys(cols)
 
         if (mevcut) {

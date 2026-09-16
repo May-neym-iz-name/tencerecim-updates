@@ -1,5 +1,6 @@
 const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
+const { trBuyuk } = require('./tr-buyuk')
 
 // Marka SKU kısaltması: otomatik stok kodunun (TNC.<KISALTMA>.00001) tek kaynağı.
 // Kodun kendisi ASCII'dir, bu yüzden Türkçe harfler katlanır (İMZA → IMZ). Aksi hâlde
@@ -36,7 +37,7 @@ module.exports = {
   'markalar:olustur': ({ ad, sku_kisaltma }) => {
     yetkiKontrol('urun_duzenle')
     const db = getDb()
-    const yeni = String(ad || '').trim()
+    const yeni = trBuyuk(String(ad || '').trim())
     if (!yeni) throw new Error('Marka adı boş olamaz')
     // Aynı ad (büyük/küçük harf duyarsız) zaten varsa: pasifse yeniden aktive et,
     // aktifse onu döndür — UNIQUE ihlaliyle çökme yerine akıllı davran.
@@ -70,7 +71,7 @@ module.exports = {
   'markalar:guncelle': ({ id, ad }) => {
     yetkiKontrol('urun_duzenle')
     const db = getDb()
-    const yeni = String(ad || '').trim()
+    const yeni = trBuyuk(String(ad || '').trim())
     if (!yeni) throw new Error('Marka adı boş olamaz')
     const hedef = db.prepare('SELECT * FROM markalar WHERE lower(ad) = lower(?) AND id != ?').get(yeni, id)
     if (hedef) {

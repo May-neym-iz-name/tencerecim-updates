@@ -86,9 +86,15 @@ describe('urunler.model — undefined / boş ayrımı', () => {
     expect(modelOku()).toBeNull()
   })
 
-  test('model dolu gönderilirse yazılır', () => {
+  test('model dolu gönderilirse BÜYÜK yazılır', () => {
     urunGuncelle(db, urunId, { ad: 'a', satis_fiyati: 500, model: 'Trendy' })
-    expect(modelOku()).toBe('Trendy')
+    expect(modelOku()).toBe('TRENDY')
+  })
+
+  test('🔴 model Türkçe harflerle doğru büyütülür (i→İ, ı→I)', () => {
+    // Düz toUpperCase() 'çiğdem' → 'ÇIĞDEM' yapardı ('i' → 'I').
+    urunGuncelle(db, urunId, { ad: 'a', satis_fiyati: 500, model: 'çiğdem ışıl' })
+    expect(modelOku()).toBe('ÇİĞDEM IŞIL')
   })
 
   test('model gönderilmeyen çağrı web_link mantığını bozmaz', () => {

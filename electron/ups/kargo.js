@@ -1,5 +1,6 @@
 // UPS kargo işlemleri: gönderi oluşturma, takip, iptal, kurye çağırma.
 const { getDb } = require('../db/database')
+const { trBuyuk } = require('../db/tr-buyuk')
 const { _ayarlariGetir } = require('../db/ups-ayarlar')
 const { _gondericiGetir, _tanimliLokasyonIdler } = require('../db/lokasyon-gonderici')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
@@ -31,9 +32,10 @@ function musteriKaydet(db, veri) {
       const kargoTel = veri.aliciTelefon || veri.aliciCep
       if (bos(m.telefon) && !bos(kargoTel)) yeni.telefon = kargoTel
       if (bos(m.email) && !bos(veri.aliciEmail)) yeni.email = veri.aliciEmail
-      if (bos(m.adres) && !bos(veri.aliciAdres)) yeni.adres = veri.aliciAdres
-      if (bos(m.il) && !bos(veri.il)) yeni.il = veri.il
-      if (bos(m.ilce) && !bos(veri.ilce)) yeni.ilce = veri.ilce
+      // Adres alanları BÜYÜK saklanır (kullanıcı kararı 16.09, bkz. tr-buyuk.js).
+      if (bos(m.adres) && !bos(veri.aliciAdres)) yeni.adres = trBuyuk(veri.aliciAdres)
+      if (bos(m.il) && !bos(veri.il)) yeni.il = trBuyuk(veri.il)
+      if (bos(m.ilce) && !bos(veri.ilce)) yeni.ilce = trBuyuk(veri.ilce)
       const alanlar = Object.keys(yeni)
       if (alanlar.length) {
         const set = alanlar.map(a => `${a}=@${a}`).join(', ')
@@ -60,8 +62,8 @@ function musteriKaydet(db, veri) {
     const r = db.prepare(`
       INSERT INTO musteriler (ad, soyad, telefon, email, adres, il, ilce, aktif)
       VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    `).run(ad, soyad, veri.aliciTelefon || veri.aliciCep || null, veri.aliciEmail || null,
-           veri.aliciAdres || null, veri.il || null, veri.ilce || null)
+    `).run(trBuyuk(ad), trBuyuk(soyad), veri.aliciTelefon || veri.aliciCep || null, veri.aliciEmail || null,
+           trBuyuk(veri.aliciAdres) || null, trBuyuk(veri.il) || null, trBuyuk(veri.ilce) || null)
     return r.lastInsertRowid
   } catch { return null } // müşteri kaydı kargoyu asla engellemesin
 }
@@ -196,11 +198,14 @@ module.exports = {
       online_siparis_id: veri.onlineSiparisId || null,
       lokasyon_id: veri.gondericiLokasyonId || null,
       ikas_siparis_id: ikasSiparisId,
-      alici_ad: veri.aliciAd,
+      // Kargo kaydındaki ad/adres BÜYÜK saklanır. UPS'e GÖNDERİLEN istek (yukarıda
+      // zaten gönderildi) değiştirilmez — UPS'in il/ilçe eşleşmesi kendi kodlarıyla
+      // yapılıyor ve oraya dokunmanın etkisi ölçülmedi.
+      alici_ad: trBuyuk(veri.aliciAd),
       alici_telefon: veri.aliciTelefon || veri.aliciCep || '',
-      alici_adres: veri.aliciAdres,
-      il: veri.il || '',
-      ilce: veri.ilce || '',
+      alici_adres: trBuyuk(veri.aliciAdres),
+      il: trBuyuk(veri.il) || '',
+      ilce: trBuyuk(veri.ilce) || '',
       il_kodu: veri.ilKodu || null,
       ilce_kodu: veri.ilceKodu || null,
       koli_adedi: veri.koliAdedi || 1,

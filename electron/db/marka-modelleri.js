@@ -7,6 +7,7 @@ const { getDb } = require('./database')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 const { modelCoz, sozlukHazirla, DIGER } = require('./model-coz')
 const { adaylar } = require('./model-sozluk-tohum')
+const { trBuyuk } = require('./tr-buyuk')
 
 // Bir markanın hazır sözlüğü. modelCoz() bunu ürün başına DEĞİL, marka başına ister.
 function markaSozlugu(db, markaId) {
@@ -74,7 +75,8 @@ module.exports = {
 
   'marka-modelleri:ekle': ({ marka_id, model_adi, oncelik }) => {
     yetkiKontrol('urun_duzenle')
-    const ad = (model_adi || '').trim()
+    // Model adı DAİMA büyük saklanır; satış ekranındaki kart yazısı da budur.
+    const ad = trBuyuk((model_adi || '').trim())
     if (!marka_id) throw new Error('Marka seçin')
     if (!ad) throw new Error('Model adı boş olamaz')
     const db = getDb()
@@ -98,7 +100,7 @@ module.exports = {
     if (!id) throw new Error('Model id gerekli')
     const db = getDb()
     if (veri.model_adi !== undefined) {
-      const ad = String(veri.model_adi).trim()
+      const ad = trBuyuk(String(veri.model_adi).trim())
       if (!ad) throw new Error('Model adı boş olamaz')
       try { db.prepare('UPDATE marka_modelleri SET model_adi = ? WHERE id = ?').run(ad, id) }
       catch { throw new Error('Bu markada bu adda bir model zaten var') }
@@ -144,7 +146,7 @@ module.exports = {
     let eklenen = 0
     db.transaction(() => {
       for (const m of modeller) {
-        const ad = String(m || '').trim()
+        const ad = trBuyuk(String(m || '').trim())
         if (ad) eklenen += ins.run(marka_id, ad).changes
       }
     })()

@@ -1262,18 +1262,23 @@ function migrate() {
   // temizlenir. ASIL kayıt = ürünü olan (eşitlikte en küçük id). Ürünler ve setler
   // silmeden ÖNCE asıla taşınır, sonra kopya satır silinir.
   try {
-    const gruplar = db.prepare(`
-      SELECT ad FROM kategoriler GROUP BY ad HAVING COUNT(*) > 1
-    `).all()
+    // Gruplama BÜYÜK HARFE göre (v1.2.220): "Granit Tavalar" ile "GRANİT TAVALAR"
+    // aynı kategoridir. SQL'de upper() ASCII-only olduğu için gruplama JS'te yapılır.
+    const { trBuyuk: _trB } = require('./tr-buyuk')
+    const _sayac = {}
+    for (const r of db.prepare('SELECT ad FROM kategoriler').all()) {
+      const a = _trB(r.ad); _sayac[a] = (_sayac[a] || 0) + 1
+    }
+    const gruplar = Object.keys(_sayac).filter(a => _sayac[a] > 1).map(ad => ({ ad }))
     let silinen = 0, tasinan = 0
     db.transaction(() => {
       for (const g of gruplar) {
         const satirlar = db.prepare(`
-          SELECT k.id, k.aktif,
+          SELECT k.id, k.ad, k.aktif,
             (SELECT COUNT(*) FROM urunler u WHERE u.kategori_id = k.id) AS n
-          FROM kategoriler k WHERE k.ad = ?
+          FROM kategoriler k
           ORDER BY n DESC, k.aktif DESC, k.id ASC
-        `).all(g.ad)
+        `).all().filter(k => _trB(k.ad) === g.ad)
         const [asil, ...kopyalar] = satirlar
         for (const kop of kopyalar) {
           tasinan += db.prepare('UPDATE urunler SET kategori_id = ? WHERE kategori_id = ?').run(asil.id, kop.id).changes
@@ -1314,6 +1319,65 @@ function migrate() {
     })()
     if (dolan) console.log(`[migrate] marka SKU kısaltması geri dolduruldu: ${dolan} marka`)
   } catch (e) { console.error('marka sku_kisaltma geri doldurma:', e.message) }
+
+  // --- Mevcut kayıtları BÜYÜK harfe çevir (v1.2.220, tek seferlik) ---
+  // Kullanıcı kararı 16.09.2026: marka/kategori/model/müşteri/kargo alanları daima
+  // büyük. Yazma yolları tr-buyuk.js ile normalize edildi; burada GEÇMİŞ kapatılır.
+  //
+  // Neden gerekli: ölçüldü (16.09) "Burak GÜL" ve "BURAK GÜL" AYRI iki müşteri
+  // satırıydı. Yalnız yeni kayıtları normalize etmek listeyi karışık bırakırdı.
+  //
+  // upper() KULLANILAMAZ (ASCII-only, 'şığü' değişmez) → JS tarafında dönüştürülür.
+  // Yalnız FİİLEN değişen satır yazılır: gereksiz UPDATE senk_guncelleme'yi tazeler
+  // ve 6.700 satırlık boş bir push üretirdi ([[senk-kolon-imzasi]] dersi).
+  //
+  // KAPSAM DIŞI: musteriler.email (büyütülmez), urunler.ad (ikas vitrin başlığı),
+  // kargolar.aciklama (serbest not). Gerekçeler tr-buyuk.js içinde.
+  try {
+    const { trBuyuk, MUSTERI_ALANLAR, KARGO_ALANLAR } = require('./tr-buyuk')
+    const isler = [
+      ['markalar', ['ad']],
+      ['kategoriler', ['ad', 'tam_yol', 'ana_tip']],
+      ['marka_modelleri', ['model_adi']],
+      ['urunler', ['model']],
+      ['setler', ['model']],
+      ['musteriler', MUSTERI_ALANLAR],
+      ['kargolar', KARGO_ALANLAR],
+    ]
+    let toplam = 0
+    const ozet = []
+    db.transaction(() => {
+      for (const [tablo, alanlar] of isler) {
+        // Tabloda olmayan kolonu atla (setler.model gibi sonradan eklenenler).
+        const varOlan = new Set(db.prepare(`PRAGMA table_info(${tablo})`).all().map(c => c.name))
+        const kolonlar = alanlar.filter(a => varOlan.has(a))
+        if (!kolonlar.length) continue
+        const kosul = kolonlar.map(k => `COALESCE(${k},'') <> ''`).join(' OR ')
+        const satirlar = db.prepare(`SELECT id, ${kolonlar.join(', ')} FROM ${tablo} WHERE ${kosul}`).all()
+        const upd = db.prepare(`UPDATE ${tablo} SET ${kolonlar.map(k => `${k}=@${k}`).join(', ')} WHERE id=@id`)
+        let n = 0, atlanan = 0
+        for (const r of satirlar) {
+          const yeni = {}
+          let degisti = false
+          for (const k of kolonlar) {
+            yeni[k] = trBuyuk(r[k])
+            if (yeni[k] !== r[k]) degisti = true
+          }
+          if (!degisti) continue
+          // Satır bazında korumalı: bu tabloların bir kısmında UNIQUE(ad,...) var
+          // (kategoriler, markalar, marka_modelleri). Büyütülen ad zaten başka bir
+          // satırda duruyorsa o TEK satır atlanır — tek çakışma yüzünden bütün göç
+          // geri alınmasın. Ölçüldü (16.09): kategori kopya temizliğinden sonra
+          // çakışma 0, yani bu dal bugünkü veride boş geçiyor.
+          try { upd.run({ ...yeni, id: r.id }); n++ }
+          catch { atlanan++ }
+        }
+        if (n) { ozet.push(`${tablo}:${n}`); toplam += n }
+        if (atlanan) console.warn(`[migrate] büyük harf: ${tablo} tablosunda ${atlanan} satır UNIQUE çakışması yüzünden atlandı`)
+      }
+    })()
+    if (toplam) console.log(`[migrate] büyük harfe çevrildi: ${toplam} satır (${ozet.join(', ')})`)
+  } catch (e) { console.error('büyük harf göçü:', e.message) }
 }
 
 function seedLokasyonlar() {

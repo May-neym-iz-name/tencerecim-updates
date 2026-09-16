@@ -93,6 +93,7 @@ const URUN_SELECT = `
 // çözmek, aynı mantığın ikinci bir kopyasını doğururdu — tam da tr-arama.js /
 // src/utils/arama.js ikizliğinin parite testiyle zor tutulan durumu.
 const { modelCoz, sozlukHazirla, DIGER } = require('./model-coz')
+const { trBuyuk } = require('./tr-buyuk')
 
 // Sözlük MARKA BAŞINA bir kez hazırlanır, ürün başına DEĞİL. LAVA'da 726 ürün ×
 // 28 model = 20 bin karşılaştırma; sözlüğü ürün başına yeniden sıralamak bunu
@@ -265,6 +266,9 @@ module.exports = {
   'urunler:olustur': (veri, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
     let { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani, model } = veri
+    // model DAİMA büyük saklanır — satış ekranındaki kart yazısı budur ve model
+    // sözlüğündeki kayıtlar da büyük. (Ürün ADI kapsam dışı: ikas vitrinine gidiyor.)
+    model = trBuyuk(model)
     // SKU boş bırakıldıysa marka şablonundan otomatik türet (TNC.XXX.00001+).
     if ((!sku || !String(sku).trim()) && marka_id) {
       sku = sonrakiStokKodu(db, marka_id)
@@ -304,7 +308,9 @@ module.exports = {
 
   'urunler:guncelle': ({ id, ...veri }, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
-    const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani, web_link, model } = veri
+    const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani, web_link } = veri
+    // trBuyuk undefined'ı undefined bırakır → "alanı göndermeyen çağrı dokunmaz" korunur.
+    const model = trBuyuk(veri.model)
     // Satış fiyatı değişiyorsa ayrıca fiyat_degistir yetkisi gerekir.
     const mevcut = db.prepare('SELECT satis_fiyati, alis_fiyati FROM urunler WHERE id = ?').get(id)
     if (mevcut && Number(mevcut.satis_fiyati) !== Number(satis_fiyati)) {

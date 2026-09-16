@@ -9,6 +9,22 @@
 
 const NOWMS = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 
+// Senkronla GELEN satırda büyük harfe çevrilecek alanlar (v1.2.220).
+// 🔴 ZORUNLU, kozmetik değil: bu tabloların doğal anahtarı 'ad' ve SQLite'ın '='
+// karşılaştırması Türkçe'de harf duyarlıdır. Sürümü eski bir PC "Granit Tavalar"
+// gönderdiğinde yereldeki "GRANİT TAVALAR" ile EŞLEŞMEZ ve kopya satır doğar —
+// tam olarak 16.09'da temizlenen çift kategori sınıfı ([[kategori-cift-kayit-senkron]]).
+// Gelen satır yerel kurala sokulunca iki sürüm bir arada çalışabilir.
+const BUYUK_ALANLAR = {
+  markalar: ['ad'],
+  kategoriler: ['ad', 'tam_yol', 'ana_tip'],
+  marka_modelleri: ['model_adi'],
+  urunler: ['model'],
+  setler: ['model'],
+  musteriler: ['ad', 'soyad', 'unvan', 'adres', 'il', 'ilce', 'vergi_dairesi'],
+  kargolar: ['alici_ad', 'alici_adres', 'il', 'ilce'],
+}
+
 // Senkronlanacak tablolar + senkron alanları + FK eşlemesi + doğal (tekil) anahtarlar.
 // kolonlar: kopyalanacak veri alanları (FK kolonları AYRI tutulur). fk: { kolon: referansTablo }.
 // dogal: çakışma birleştirme (dedup) için aday tekil sütunlar.
@@ -458,4 +474,4 @@ function kur(db) {
   kolonImzaBakimi(db)
 }
 
-module.exports = { kur, TABLOLAR, SIRA, yenidenDamgala, yeniKolonDamgala, kolonImzasi, kolonImzaBakimi }
+module.exports = { kur, TABLOLAR, SIRA, BUYUK_ALANLAR, yenidenDamgala, yeniKolonDamgala, kolonImzasi, kolonImzaBakimi }

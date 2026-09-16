@@ -1,6 +1,7 @@
 // ikas senkron: lokasyon eşleştirme, stok gönderme (yerel→ikas) ve
 // sipariş çekme (ikas→yerel). client.js token/GraphQL'i yönetir.
 const { getDb } = require('../db/database')
+const { trBuyuk } = require('../db/tr-buyuk')
 const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
 const { haritalariKur, slugCoz } = require('./web-link')
@@ -251,17 +252,19 @@ function takipBilgisi(sip) {
 // shipping: teslimat adresi (adres/il/ilçe), billing: fatura (vergi/ünvan/TC). musteri_id döner.
 function musteriUpsert(db, customer, shipping, billing) {
   const tel = (customer.phone || shipping?.phone || '').trim() || null
+  // email BÜYÜTÜLMEZ (bkz. tr-buyuk.js kapsam notu) — diğer ad/adres alanları
+  // kullanıcı kararıyla daima büyük saklanır, ikas'tan küçük gelse bile.
   const email = (customer.email || '').trim() || null
-  const ad = (customer.firstName || '').trim()
-  const soyad = (customer.lastName || '').trim()
+  const ad = trBuyuk((customer.firstName || '').trim())
+  const soyad = trBuyuk((customer.lastName || '').trim())
   if (!tel && !email && !ad) return null
 
-  const adres = adresBirlestir(shipping)
-  const il = (shipping?.city?.name || '').trim() || null
-  const ilce = (shipping?.district?.name || '').trim() || null
-  const unvan = (billing?.company || '').trim() || null
+  const adres = trBuyuk(adresBirlestir(shipping))
+  const il = trBuyuk((shipping?.city?.name || '').trim()) || null
+  const ilce = trBuyuk((shipping?.district?.name || '').trim()) || null
+  const unvan = trBuyuk((billing?.company || '').trim()) || null
   const vergiNo = (billing?.taxNumber || '').trim() || null
-  const vergiDairesi = (billing?.taxOffice || '').trim() || null
+  const vergiDairesi = trBuyuk((billing?.taxOffice || '').trim()) || null
   const tc = (billing?.identityNumber || '').trim() || null
 
   let mevcut = null
@@ -282,7 +285,7 @@ function musteriUpsert(db, customer, shipping, billing) {
   const r = db.prepare(`INSERT INTO musteriler
     (ad, soyad, telefon, email, adres, il, ilce, unvan, vergi_no, vergi_dairesi, tc_kimlik)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(ad || 'Online', soyad || 'Müşteri', tel, email, adres, il, ilce, unvan, vergiNo, vergiDairesi, tc)
+    .run(ad || 'ONLINE', soyad || 'MÜŞTERİ', tel, email, adres, il, ilce, unvan, vergiNo, vergiDairesi, tc)
   return r.lastInsertRowid
 }
 

@@ -1,4 +1,5 @@
 const { getDb } = require('./database')
+const { buyukAlanlar, MUSTERI_ALANLAR } = require('./tr-buyuk')
 const { kelimeKosulu } = require('./tr-arama')
 const { _yetkiKontrol: yetkiKontrol } = require('../yetki')
 
@@ -47,9 +48,12 @@ module.exports = {
     return getDb().prepare('SELECT * FROM musteriler WHERE id = ?').get(id)
   },
 
-  'musteriler:olustur': (veri) => {
+  'musteriler:olustur': (ham) => {
     yetkiKontrol('musteri_duzenle')
     const db = getDb()
+    // Ad/adres alanları DAİMA büyük yazılır — aynı kişinin "Burak GÜL" ve
+    // "BURAK GÜL" diye iki kez kaydolmasını engeller (bkz. tr-buyuk.js).
+    const veri = buyukAlanlar(ham, MUSTERI_ALANLAR)
     const kolonlar = guvenliKolonlar(veri)
     const placeholders = kolonlar.map(k => `@${k}`).join(', ')
     const result = db.prepare(
@@ -58,9 +62,10 @@ module.exports = {
     return db.prepare('SELECT * FROM musteriler WHERE id = ?').get(result.lastInsertRowid)
   },
 
-  'musteriler:guncelle': ({ id, ...veri }) => {
+  'musteriler:guncelle': ({ id, ...ham }) => {
     yetkiKontrol('musteri_duzenle')
     const db = getDb()
+    const veri = buyukAlanlar(ham, MUSTERI_ALANLAR)
     const alanlar = guvenliKolonlar(veri).map(k => `${k} = @${k}`).join(', ')
     db.prepare(`UPDATE musteriler SET ${alanlar} WHERE id = @id`).run({ ...veri, id })
     return db.prepare('SELECT * FROM musteriler WHERE id = ?').get(id)

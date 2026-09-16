@@ -5,6 +5,7 @@
 //  #6 paket durumu     → updateOrderPackageStatus / cancelFulfillment
 // client.js token/GraphQL'i yönetir.
 const { getDb } = require('../db/database')
+const { trBuyuk } = require('../db/tr-buyuk')
 const { setVaryantEslestir } = require('./set-varyant')
 const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
@@ -258,7 +259,10 @@ async function pullMusteriler() {
           guncelle.run(m.id, sayi, harcama, ilk, son, email, mevcut.id)
           eslesen++
         } else if (tel || email) {
-          const r = ekle.run((m.firstName || 'Online').trim() || 'Online', (m.lastName || 'Müşteri').trim() || 'Müşteri',
+          // Ad/soyad BÜYÜK saklanır (kullanıcı kararı 16.09) — ikas panelinde
+          // küçük kalır, bizim listelerimizde tutarlı görünür.
+          const r = ekle.run(trBuyuk((m.firstName || '').trim()) || 'ONLINE',
+            trBuyuk((m.lastName || '').trim()) || 'MÜŞTERİ',
             tel, email, m.id, sayi, harcama, ilk, son)
           if (telK) telHarita.set(telK, r.lastInsertRowid)
           eklenen++

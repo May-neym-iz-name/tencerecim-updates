@@ -204,9 +204,6 @@ export const kategoriApi = {
   olustur: (veri) => invoke('kategoriler:olustur', veri),
   guncelle: (id, ad) => invoke('kategoriler:guncelle', { id, ad }),
   sil: (id) => invoke('kategoriler:sil', id),
-  // Satış ekranı hiyerarşisinin 2. düzeyi (ana tip) — ürün penceresinden düzenlenir.
-  anaTipler: () => invoke('kategoriler:ana-tipler'),
-  anaTipGuncelle: (id, ana_tip) => invoke('kategoriler:ana-tip-guncelle', { id, ana_tip }),
 }
 
 // Kendi setlerimiz (tek set fiyatlı ürün paketleri).
