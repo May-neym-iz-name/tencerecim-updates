@@ -2,6 +2,7 @@
 // sipariş çekme (ikas→yerel). client.js token/GraphQL'i yönetir.
 const { getDb } = require('../db/database')
 const { trBuyuk } = require('../db/tr-buyuk')
+const { telSon10 } = require('../db/telefon')
 const { _ayarlariGetir: ayarGetir } = require('../db/ikas-ayarlar')
 const { graphql } = require('./client')
 const { haritalariKur, slugCoz } = require('./web-link')
@@ -268,7 +269,16 @@ function musteriUpsert(db, customer, shipping, billing) {
   const tc = (billing?.identityNumber || '').trim() || null
 
   let mevcut = null
-  if (tel) mevcut = db.prepare('SELECT id FROM musteriler WHERE telefon = ?').get(tel)
+  // 🔴 KÖK NEDEN DÜZELTMESİ (v1.2.221): burası eskiden `WHERE telefon = ?` ile TAM
+  // eşleştiriyordu. ikas "+905538638657", yerel "5538638657" yazınca eşleşme kurulmuyor
+  // ve aynı kişi HER senkronda yeniden ekleniyordu. Artık ekstra.js ile aynı kural:
+  // son 10 hane ([[mukerrer-musteri-birlestirme]]).
+  const telK = telSon10(tel)
+  if (telK) {
+    mevcut = db.prepare(`SELECT id FROM musteriler
+      WHERE replace(replace(replace(replace(COALESCE(telefon,''),' ',''),'-',''),'(',''),')','') LIKE ?
+      ORDER BY id LIMIT 1`).get('%' + telK)
+  }
   if (!mevcut && email) mevcut = db.prepare('SELECT id FROM musteriler WHERE email = ?').get(email)
 
   if (mevcut) {

@@ -20,11 +20,8 @@ function ayarKaydet(anahtar, deger) {
   ).run(anahtar, deger == null ? '' : String(deger))
 }
 
-// Telefonu son 10 haneye indirger (eşleştirme için; +90/0 ön ekleri elenir).
-function telSon10(tel) {
-  const d = String(tel || '').replace(/\D/g, '')
-  return d.length >= 10 ? d.slice(-10) : (d || null)
-}
+// telSon10 ortak modülde (db/telefon.js) — ikas/index.js ile AYNI kuralı kullanmalı.
+const { telSon10 } = require('../db/telefon')
 
 // =====================================================================
 // #1 FİYAT SENKRONU — saveVariantPrices

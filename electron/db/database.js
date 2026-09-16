@@ -1378,6 +1378,40 @@ function migrate() {
     })()
     if (toplam) console.log(`[migrate] büyük harfe çevrildi: ${toplam} satır (${ozet.join(', ')})`)
   } catch (e) { console.error('büyük harf göçü:', e.message) }
+
+  // --- Mükerrer müşterileri birleştir (v1.2.221, tek seferlik) ---
+  // ANA BELİRLEYİCİ TELEFON (kullanıcı kararı 16.09). Aynı telefon + AYNI isim
+  // birleşir; aynı telefon + FARKLI isim DOKUNULMAZ (aynı hattı paylaşan iki kişi
+  // olabilir — ölçüldü: TUTKU TURKAN / EMİNE BİRÇEK, ikisinin de kargosu var).
+  //
+  // Bu göç BÜYÜK HARF göçünden SONRA koşar: isim karşılaştırması normalize edilmiş
+  // veri üzerinde yapılsın.
+  try {
+    const mb = require('./musteri-birlestir')
+    // Kullanıcının tek tek onayladığı istisnalar (farklı isim olmasına rağmen birleşir).
+    // id DEĞİL telefon+ad ile hedeflenir: id'ler PC'ler arasında farklıdır.
+    // 16.09: klavye çöpü olan kayıt, sahibiyle aynı hatta duruyordu.
+    const ELLE_ONAYLI = new Set(['5357350352|DSNPFN JODSFJOPD'])
+    const musteriler = db.prepare('SELECT * FROM musteriler').all()
+    let grupSayisi = 0, birlesen = 0
+    const tasinanToplam = { satislar: 0, kargolar: 0, online_siparisler: 0 }
+    db.transaction(() => {
+      for (const [anahtar, grup] of mb.telefonGruplari(musteriler)) {
+        const aday = mb.birlestirilebilir(anahtar, grup, ELLE_ONAYLI)
+        if (aday.length < 2) continue
+        const asil = mb.asilSec(aday)
+        const digerleri = aday.filter(m => m.id !== asil.id)
+        if (!digerleri.length) continue
+        const r = mb.uygula(db, asil, digerleri)
+        grupSayisi++; birlesen += r.birlesen
+        for (const t of Object.keys(tasinanToplam)) tasinanToplam[t] += r.tasinan[t]
+      }
+    })()
+    if (birlesen) {
+      console.log(`[migrate] mükerrer müşteri birleştirildi: ${grupSayisi} grup, ${birlesen} kayıt pasifleşti ` +
+        `(taşınan: ${tasinanToplam.satislar} satış, ${tasinanToplam.kargolar} kargo, ${tasinanToplam.online_siparisler} online sipariş)`)
+    }
+  } catch (e) { console.error('mükerrer müşteri birleştirme:', e.message) }
 }
 
 function seedLokasyonlar() {
