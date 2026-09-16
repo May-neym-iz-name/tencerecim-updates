@@ -1252,6 +1252,68 @@ function migrate() {
     })()
     if (yazilan) console.log(`[migrate] ana_tip geri dolduruldu: ${yazilan} kategori (harita ${Object.keys(HARITA).length} tip)`)
   } catch (e) { console.error('ana_tip geri doldurma:', e.message) }
+
+  // --- Kategori kopyalarını teke indir (v1.2.219) ---
+  // Ürün ekleme ekranındaki kategori listesi her adı 2-4 kez gösteriyordu. Kaynak
+  // arayüz DEĞİL veriydi: senk-sema'da kategoriler'in doğal anahtarı yoktu, bu yüzden
+  // karşı PC'den gelen her kategori satırı yerel eşini bulamayıp INSERT ediliyordu
+  // ([[sil-yeniden-yaz-tuzagi]]). Ölçüldü 16.09.2026: 95 satırın 24 adı çoklu.
+  // Kök neden senk-sema.js'te dogal:['ad'] ile kapatıldı; burada mevcut kopyalar
+  // temizlenir. ASIL kayıt = ürünü olan (eşitlikte en küçük id). Ürünler ve setler
+  // silmeden ÖNCE asıla taşınır, sonra kopya satır silinir.
+  try {
+    const gruplar = db.prepare(`
+      SELECT ad FROM kategoriler GROUP BY ad HAVING COUNT(*) > 1
+    `).all()
+    let silinen = 0, tasinan = 0
+    db.transaction(() => {
+      for (const g of gruplar) {
+        const satirlar = db.prepare(`
+          SELECT k.id, k.aktif,
+            (SELECT COUNT(*) FROM urunler u WHERE u.kategori_id = k.id) AS n
+          FROM kategoriler k WHERE k.ad = ?
+          ORDER BY n DESC, k.aktif DESC, k.id ASC
+        `).all(g.ad)
+        const [asil, ...kopyalar] = satirlar
+        for (const kop of kopyalar) {
+          tasinan += db.prepare('UPDATE urunler SET kategori_id = ? WHERE kategori_id = ?').run(asil.id, kop.id).changes
+          db.prepare('UPDATE setler SET kategori_id = ? WHERE kategori_id = ?').run(asil.id, kop.id)
+          db.prepare('UPDATE kategoriler SET ust_kategori_id = ? WHERE ust_kategori_id = ?').run(asil.id, kop.id)
+          silinen += db.prepare('DELETE FROM kategoriler WHERE id = ?').run(kop.id).changes
+        }
+        // Asıl kayıt aktif olmalı ve tam_yol'u kendi adı olmalı (kopyalarda
+        // "Tavalar > Granit Tavalar" gibi tutarsız yollar vardı; hiyerarşi bu
+        // uygulamada ust_kategori_id ile tutuluyor, hepsi NULL).
+        db.prepare('UPDATE kategoriler SET aktif = 1 WHERE id = ?').run(asil.id)
+      }
+    })()
+    if (silinen) console.log(`[migrate] kategori kopyaları silindi: ${silinen} satır (${gruplar.length} ad), ${tasinan} ürün asıl kategoriye taşındı`)
+  } catch (e) { console.error('kategori kopya temizliği:', e.message) }
+
+  // --- Marka SKU kısaltması (v1.2.219) ---
+  // Otomatik stok kodu (TNC.<KISALTMA>.00001) artık markanın ürünlerinden ÖĞRENİLMİYOR,
+  // markanın kendi alanından okunuyor: yeni markanın hiç ürünü olmadığı için eski yol
+  // ilk kodu üretemiyordu ve kullanıcı her yeni markada ilk SKU'yu elle yazmak zorundaydı.
+  try { db.exec('ALTER TABLE markalar ADD COLUMN sku_kisaltma TEXT') } catch {}
+  // Geri doldurma: markanın mevcut TNC.<X>.<N> kodlarındaki EN SIK kullanılan ön ekten
+  // türetilir. Ölçüldü 16.09.2026: 25 markanın 25'inde tek ve tutarlı ön ek var.
+  try {
+    const bos = db.prepare("SELECT id, ad FROM markalar WHERE COALESCE(sku_kisaltma,'') = ''").all()
+    let dolan = 0
+    db.transaction(() => {
+      for (const m of bos) {
+        const r = db.prepare(`
+          SELECT rtrim(sku, '0123456789') AS onek, COUNT(*) AS n
+          FROM urunler WHERE marka_id = ? AND sku LIKE 'TNC.%.%'
+          GROUP BY onek ORDER BY n DESC LIMIT 1
+        `).get(m.id)
+        const eslesme = /^TNC\.([^.]+)\.$/.exec(r?.onek || '')
+        if (!eslesme) continue
+        dolan += db.prepare('UPDATE markalar SET sku_kisaltma = ? WHERE id = ?').run(eslesme[1], m.id).changes
+      }
+    })()
+    if (dolan) console.log(`[migrate] marka SKU kısaltması geri dolduruldu: ${dolan} marka`)
+  } catch (e) { console.error('marka sku_kisaltma geri doldurma:', e.message) }
 }
 
 function seedLokasyonlar() {

@@ -186,8 +186,10 @@ export const lokasyonApi = {
 
 export const markaApi = {
   listele: () => invoke('markalar:listele'),
-  olustur: (ad) => invoke('markalar:olustur', { ad }),
+  // sku_kisaltma zorunlu: stok kodu (TNC.<KISALTMA>.00001) bu alandan üretilir.
+  olustur: (ad, sku_kisaltma) => invoke('markalar:olustur', { ad, sku_kisaltma }),
   guncelle: (id, ad) => invoke('markalar:guncelle', { id, ad }),
+  kisaltmaGuncelle: (id, sku_kisaltma) => invoke('markalar:kisaltma-guncelle', { id, sku_kisaltma }),
   sil: (id) => invoke('markalar:sil', id),
 }
 
@@ -202,6 +204,9 @@ export const kategoriApi = {
   olustur: (veri) => invoke('kategoriler:olustur', veri),
   guncelle: (id, ad) => invoke('kategoriler:guncelle', { id, ad }),
   sil: (id) => invoke('kategoriler:sil', id),
+  // Satış ekranı hiyerarşisinin 2. düzeyi (ana tip) — ürün penceresinden düzenlenir.
+  anaTipler: () => invoke('kategoriler:ana-tipler'),
+  anaTipGuncelle: (id, ana_tip) => invoke('kategoriler:ana-tip-guncelle', { id, ana_tip }),
 }
 
 // Kendi setlerimiz (tek set fiyatlı ürün paketleri).

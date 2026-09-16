@@ -17,12 +17,20 @@ const NOWMS = "strftime('%Y-%m-%dT%H:%M:%fZ','now')"
 // çakışabilir) suffix eklenir — iki farklı kayıt yanlışlıkla BİRLEŞTİRİLMEZ.
 const TABLOLAR = {
   // --- Faz 1: referans + katalog ---
-  markalar:     { kolonlar: ['ad', 'aktif'], fk: {}, dogal: ['ad'] },
+  // sku_kisaltma (v1.2.219): otomatik stok kodunun (TNC.<KISALTMA>.00001) tek kaynağı.
+  // Senkrona GİRMELİ — yoksa bir PC'de tanımlanan kısaltma diğerine ulaşmaz ve iki kasa
+  // aynı marka için farklı SKU öneki üretir ([[senk-kolon-imzasi]]).
+  markalar:     { kolonlar: ['ad', 'aktif', 'sku_kisaltma'], fk: {}, dogal: ['ad'] },
   tedarikciler: { kolonlar: ['ad', 'telefon', 'email', 'aktif'], fk: {}, dogal: ['ad'] },
   // ana_tip (v1.2.216): satış ekranı hiyerarşisinin ikinci düzeyi. migrate() her PC'de
   // AYNI haritadan geri doldurur, yani senkron olmadan da tutarlı olurdu — ama kullanıcı
   // bir kategorinin ana tipini ELLE değiştirirse o değişiklik yalnız senkronla yayılır.
-  kategoriler:  { kolonlar: ['ad', 'tam_yol', 'aktif', 'ana_tip'], fk: { ust_kategori_id: 'kategoriler' }, dogal: [] },
+  // dogal: ['ad'] (v1.2.219) — ZORUNLU. Doğal anahtarsızken karşı PC'den gelen her
+  // kategori satırı yerel eşini bulamayıp INSERT ediliyordu: ölçüldü 16.09, 95 satırın
+  // 24 adı çift/üç/dörtlüydü ve ürün ekleme listesi her kategoriyi mükerrer gösteriyordu
+  // ([[sil-yeniden-yaz-tuzagi]]). Kategori adı bu uygulamada TEKTİR (getOrCreate de ada
+  // göre dedup eder), bu yüzden markalar/tedarikciler ile aynı anahtar kullanılır.
+  kategoriler:  { kolonlar: ['ad', 'tam_yol', 'aktif', 'ana_tip'], fk: { ust_kategori_id: 'kategoriler' }, dogal: ['ad'] },
   // Model sözlüğü (v1.2.216). SENKRONLANMALI: sözlük satış ekranındaki gezinmeyi
   // BELİRLER — bir PC'de ayıklanan sözlük diğerine ulaşmazsa iki kasada iki farklı
   // ürün ağacı olur. marka_id ZORUNLU FK: markası çözülemeyen model satırı anlamsızdır

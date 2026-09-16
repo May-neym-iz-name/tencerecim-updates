@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi, setApi, ikasApi } from '../api/ipc'
+import { urunlerApi, markaApi, tedarikciApi, kategoriApi, excelApi, setApi, ikasApi, modelSozlukApi } from '../api/ipc'
 import { useAuth } from '../auth/AuthContext'
 import BarkodModal from '../components/BarkodModal'
 import Sayfalama from '../components/Sayfalama'
@@ -21,7 +21,9 @@ import { kdvDahil, paraYaz } from '../utils/kdv'
 const kategoriSecenekleri = (kategoriler) =>
   kategoriHiyerarsik(kategoriler).map(k => ({ deger: k.id, etiket: '   '.repeat(k.derinlik) + k.ad }))
 
-const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20, web_link: '' }
+// model: satış ekranı hiyerarşisinin 3. düzeyi. BOŞ bırakılırsa sunucu ürün adını
+// markanın model sözlüğünde arar; dolu ise elle girilen değer sözlüğü EZER.
+const BOSH = { ad: '', barkod: '', sku: '', marka_id: '', kategori_id: '', tedarikci_id: '', aciklama: '', alis_fiyati: '', satis_fiyati: '', kdv_orani: 20, web_link: '', model: '' }
 
 // Kategorileri ağaç sırasına dizip her birinin derinliğini (girinti için) hesaplar.
 function kategoriHiyerarsik(kategoriler) {
@@ -30,12 +32,16 @@ function kategoriHiyerarsik(kategoriler) {
     .map(k => ({ ...k, derinlik: ((k.tam_yol || '').match(/>/g) || []).length }))
 }
 
-function InlineEkle({ label, onEkle }) {
+// ikinciAlan: zorunlu ikinci girdi (marka için SKU kısaltması). Verilmezse bileşen
+// eskisi gibi tek alanlı çalışır — tedarikçi/kategori etkilenmez.
+function InlineEkle({ label, onEkle, ikinciAlan }) {
   const [deger, setDeger] = useState('')
+  const [ikinci, setIkinci] = useState('')
   async function submit() {
     if (!deger.trim()) return
-    await onEkle(deger.trim())
-    setDeger('')
+    if (ikinciAlan && !ikinci.trim()) return toast.error(ikinciAlan.hata)
+    await onEkle(deger.trim(), ikinci.trim())
+    setDeger(''); setIkinci('')
   }
   // İç içe <form> HTML'de geçersiz (dış ürün formunun içindeyiz); bu yüzden form değil
   // div + type="button" kullanıyoruz. Enter'ı elle yakalayıp dış formun submit'ini engelliyoruz.
@@ -44,6 +50,12 @@ function InlineEkle({ label, onEkle }) {
       <input value={deger} onChange={e => setDeger(e.target.value)} placeholder={`Yeni ${label}...`}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submit() } }}
         className="flex-1 border rounded px-2 py-1 text-xs" />
+      {ikinciAlan && (
+        <input value={ikinci} onChange={e => setIkinci(e.target.value)} placeholder={ikinciAlan.placeholder}
+          title={ikinciAlan.title} maxLength={ikinciAlan.maxLength || 6}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submit() } }}
+          className="w-24 border rounded px-2 py-1 text-xs font-mono uppercase" />
+      )}
       <button type="button" onClick={submit} className="bg-blue-600 text-white px-2 py-1 rounded text-xs hover:bg-blue-700">+</button>
     </div>
   )
@@ -70,6 +82,11 @@ export default function Urunler() {
   const [markalar, setMarkalar] = useState([])
   const [tedarikciler, setTedarikciler] = useState([])
   const [kategoriler, setKategoriler] = useState([])
+  // --- Satış ekranı sınıflandırması (Marka › Ana Tip › Model) ---
+  const [anaTipler, setAnaTipler] = useState([])
+  const [seciliAnaTip, setSeciliAnaTip] = useState('')   // formdaki kategorinin ana tipi
+  const [markaModelleri, setMarkaModelleri] = useState([])
+  const [cozulenModel, setCozulenModel] = useState('')   // düzenlenen üründe sunucunun çözdüğü model
   const [excelYukleniyor, setExcelYukleniyor] = useState(false)
   const [webLinkMesgul, setWebLinkMesgul] = useState(false)
   const [webLinkSonuc, setWebLinkSonuc] = useState(null)
@@ -120,9 +137,29 @@ export default function Urunler() {
   }, [setleriGoster, geciktirilmisArama])
 
   const yukleYardimcilar = useCallback(async () => {
-    const [m, t, k] = await Promise.all([markaApi.listele(), tedarikciApi.listele(), kategoriApi.listele()])
-    setMarkalar(m); setTedarikciler(t); setKategoriler(k)
+    const [m, t, k, at] = await Promise.all([
+      markaApi.listele(), tedarikciApi.listele(), kategoriApi.listele(),
+      kategoriApi.anaTipler().catch(() => []),
+    ])
+    setMarkalar(m); setTedarikciler(t); setKategoriler(k); setAnaTipler(at)
   }, [])
+
+  // Formdaki kategori değişince o kategorinin ana tipi forma yansır. Ana tip
+  // KATEGORİYE aittir (ürüne değil) — bu yüzden kaynağı kategori listesidir.
+  const formKategorisi = kategoriler.find(k => String(k.id) === String(form.kategori_id)) || null
+  useEffect(() => {
+    setSeciliAnaTip(formKategorisi?.ana_tip || '')
+  }, [formKategorisi?.id, formKategorisi?.ana_tip])
+
+  // Formdaki marka değişince o markanın model sözlüğü yüklenir (model seçicisini besler).
+  useEffect(() => {
+    if (!formAcik || !form.marka_id) { setMarkaModelleri([]); return }
+    let iptal = false
+    modelSozlukApi.listele(Number(form.marka_id))
+      .then(r => { if (!iptal) setMarkaModelleri(r?.modeller || []) })
+      .catch(() => { if (!iptal) setMarkaModelleri([]) })
+    return () => { iptal = true }
+  }, [formAcik, form.marka_id])
 
   useEffect(() => { yukle() }, [yukle])
   useEffect(() => { yukleYardimcilar() }, [yukleYardimcilar])
@@ -143,18 +180,59 @@ export default function Urunler() {
   useBarkodTarama({ ref: aramaRef, aktif: !formAcik, onKod: setArama })
 
   function handleDuzenle(u) {
-    setForm({ ad: u.ad||'', barkod: u.barkod||'', sku: u.sku||'', marka_id: u.marka_id||'', kategori_id: u.kategori_id||'', tedarikci_id: u.tedarikci_id||'', aciklama: u.aciklama||'', alis_fiyati: u.alis_fiyati||'', satis_fiyati: u.satis_fiyati||'', kdv_orani: u.kdv_orani||20, web_link: u.web_link||'' })
+    setForm({ ad: u.ad||'', barkod: u.barkod||'', sku: u.sku||'', marka_id: u.marka_id||'', kategori_id: u.kategori_id||'', tedarikci_id: u.tedarikci_id||'', aciklama: u.aciklama||'', alis_fiyati: u.alis_fiyati||'', satis_fiyati: u.satis_fiyati||'', kdv_orani: u.kdv_orani||20, web_link: u.web_link||'', model: u.model||'' })
+    // Sunucunun çözdüğü model (elle değer + sözlük + "Diğer" sırasının sonucu).
+    // Model kutusu boşken kullanıcıya "boş bırakırsan bu kullanılacak" diye gösterilir.
+    setCozulenModel(u.cozulen_model || '')
     setDuzenlenenId(u.id); setFormAcik(true)
   }
 
   async function handleSubmit(e) {
     e.preventDefault()
-    const veri = { ...form, marka_id: form.marka_id || null, kategori_id: form.kategori_id || null, tedarikci_id: form.tedarikci_id || null, alis_fiyati: parseFloat(form.alis_fiyati)||0, satis_fiyati: parseFloat(form.satis_fiyati), kdv_orani: parseInt(form.kdv_orani)||20 }
+    const veri = { ...form, marka_id: form.marka_id || null, kategori_id: form.kategori_id || null, tedarikci_id: form.tedarikci_id || null, alis_fiyati: parseFloat(form.alis_fiyati)||0, satis_fiyati: parseFloat(form.satis_fiyati), kdv_orani: parseInt(form.kdv_orani)||20, model: form.model.trim() }
     try {
       if (duzenlenenId) await urunlerApi.guncelle(duzenlenenId, veri)
       else await urunlerApi.olustur(veri)
+
+      // Ana tip ürün kaydı BAŞARILI olduktan SONRA yazılır: kategoriye ait bir alan,
+      // ürün kaydı barkod/SKU çakışmasıyla düşerse kategori de değişmemeli.
+      // Değişmediyse hiç çağrılmaz — her ürün kaydında kategoriyi senkrona sokmayalım.
+      const anaTipDegisti = formKategorisi && (formKategorisi.ana_tip || '') !== seciliAnaTip
+      if (anaTipDegisti) {
+        const r = await kategoriApi.anaTipGuncelle(formKategorisi.id, seciliAnaTip)
+        toast.success(`"${formKategorisi.ad}" ana tipi: ${seciliAnaTip || 'yok'} — ${r.etkilenen_urun} ürünü etkiledi`)
+        await yukleYardimcilar()
+      }
+
       toast.success(duzenlenenId ? 'Ürün güncellendi' : 'Ürün eklendi')
-      setFormAcik(false); setDuzenlenenId(null); setForm(BOSH); yukle()
+      setFormAcik(false); setDuzenlenenId(null); setForm(BOSH); setCozulenModel(''); yukle()
+    } catch (e) { toast.error(e.message) }
+  }
+
+  // Yeni ana tip: serbest metin. ana-tip.js haritası KODDA sabittir ve yalnız
+  // migrate()'in geri doldurmasını besler; buradan açılan tip doğrudan kategoriye
+  // yazılır ve 'kategoriler:ana-tipler' onu birleşim listesinde geri döndürür.
+  function anaTipEkle(ad) {
+    const yeni = ad.trim()
+    if (!yeni) return
+    if (!anaTipler.some(t => t.ad.toLocaleLowerCase('tr') === yeni.toLocaleLowerCase('tr'))) {
+      setAnaTipler(l => [...l, { ad: yeni, kategori_sayisi: 0 }].sort((a, b) => a.ad.localeCompare(b.ad, 'tr')))
+    }
+    setSeciliAnaTip(yeni)
+  }
+
+  // Modeli markanın sözlüğüne ekler VE bu ürüne uygular. Sözlük marka geneli olduğu
+  // için anında yazılır (ürün kaydını beklemez) — Model Sözlüğü ekranındaki davranışla aynı.
+  async function modelEkle(ad) {
+    const yeni = ad.trim()
+    if (!yeni) return
+    if (!form.marka_id) return toast.error('Önce marka seçin — model sözlüğü marka başınadır')
+    try {
+      await modelSozlukApi.ekle({ marka_id: Number(form.marka_id), model_adi: yeni, oncelik: 0 })
+      const r = await modelSozlukApi.listele(Number(form.marka_id))
+      setMarkaModelleri(r?.modeller || [])
+      setForm(f => ({ ...f, model: yeni }))
+      toast.success(`"${yeni}" sözlüğe eklendi ve bu ürüne atandı`)
     } catch (e) { toast.error(e.message) }
   }
 
@@ -226,8 +304,19 @@ export default function Urunler() {
     setWebLinkMesgul(false)
   }
 
-  async function markaEkle(ad) {
-    try { await markaApi.olustur(ad); await yukleYardimcilar(); toast.success('Marka eklendi') } catch (e) { toast.error(e.message) }
+  // Marka eklenince forma DA seçilir ve stok kodu önerisi çekilir: kullanıcı markayı
+  // ürün eklerken oluşturuyor, listeden yeniden seçmesini beklemek gereksiz adım.
+  async function markaEkle(ad, sku_kisaltma) {
+    try {
+      const m = await markaApi.olustur(ad, sku_kisaltma)
+      await yukleYardimcilar()
+      toast.success(`Marka eklendi — stok kodu öneki TNC.${m.sku_kisaltma}.`)
+      setForm(f => ({ ...f, marka_id: m.id }))
+      if (!duzenlenenId) {
+        const kod = await urunlerApi.sonrakiStokKodu(m.id).catch(() => null)
+        if (kod) setForm(f => f.sku ? f : ({ ...f, sku: kod }))
+      }
+    } catch (e) { toast.error(e.message) }
   }
   async function tedarikciEkle(ad) {
     try { await tedarikciApi.olustur({ ad }); await yukleYardimcilar(); toast.success('Tedarikçi eklendi') } catch (e) { toast.error(e.message) }
@@ -511,7 +600,11 @@ export default function Urunler() {
                         }).catch(() => {})
                       }
                     }} placeholder="Marka seç" />
-                  <InlineEkle label="marka" onEkle={markaEkle} />
+                  <InlineEkle label="marka" onEkle={markaEkle} ikinciAlan={{
+                    placeholder: 'SKU kıs.*',
+                    title: 'SKU kısaltması zorunlu — stok kodu TNC.<KISALTMA>.00001 olarak üretilir',
+                    hata: 'Marka için SKU kısaltması zorunludur (örn. LAV)',
+                  }} />
                 </div>
 
                 {/* Kategori */}
@@ -520,6 +613,76 @@ export default function Urunler() {
                   <AranabilirSecici secenekler={kategoriSecenekleri(kategoriler)}
                     deger={form.kategori_id} onChange={v => setForm(f=>({...f,kategori_id:v}))} placeholder="Kategori seç" />
                   <InlineEkle label="kategori" onEkle={kategoriEkle} />
+                </div>
+
+                {/* --- Satış ekranı sınıflandırması: Marka › Ana Tip › Model --- */}
+                {/* Kasiyer barkodu okutamadığında ürünü BU üç düzeyden bulur. Bu yüzden
+                    sınıflandırma ürün girişinin bir parçası: sonradan düzeltilmek üzere
+                    bırakılırsa ürün satış ekranında "Diğer" dalına düşer. */}
+                <div className="col-span-2 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="text-xs font-semibold text-indigo-900">Satış ekranı sınıflandırması</span>
+                    <span className="text-[11px] text-indigo-700 font-mono">
+                      {markalar.find(m => String(m.id) === String(form.marka_id))?.ad || 'Marka?'}
+                      {' › '}{seciliAnaTip || 'Diğer'}
+                      {' › '}{form.model.trim() || cozulenModel || 'Diğer'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Ana tip — KATEGORİYE ait, ürüne değil. */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Ana tip <span className="text-gray-400">(kategoriye ait)</span>
+                      </label>
+                      {form.kategori_id ? (
+                        <>
+                          <AranabilirSecici
+                            secenekler={[{ deger: '', etiket: '— yok (Diğer) —' },
+                              ...anaTipler.map(t => ({ deger: t.ad, etiket: t.ad }))]}
+                            deger={seciliAnaTip} onChange={v => setSeciliAnaTip(v || '')}
+                            placeholder="Ana tip seç" />
+                          <InlineEkle label="ana tip" onEkle={anaTipEkle} />
+                          {formKategorisi && (formKategorisi.ana_tip || '') !== seciliAnaTip && (
+                            <p className="text-[11px] text-amber-700 mt-1">
+                              ⚠ "{formKategorisi.ad}" kategorisinin ana tipi değişecek —
+                              bu kategorideki {formKategorisi.urun_sayisi || 0} ürünü etkiler.
+                              Ürünü kaydedince uygulanır.
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-[11px] text-gray-500 mt-2">Ana tip kategoriden gelir — önce kategori seçin.</p>
+                      )}
+                    </div>
+
+                    {/* Model — ÜRÜNE ait. Boşsa sunucu markanın sözlüğünden çözer. */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Model <span className="text-gray-400">(bu ürüne ait)</span>
+                      </label>
+                      {form.marka_id ? (
+                        <>
+                          <AranabilirSecici
+                            secenekler={[{ deger: '', etiket: '— otomatik (ürün adından) —' },
+                              ...markaModelleri.filter(m => m.aktif !== 0)
+                                .map(m => ({ deger: m.model_adi, etiket: `${m.model_adi} (${m.urun_sayisi})` }))]}
+                            deger={form.model} onChange={v => setForm(f => ({ ...f, model: v || '' }))}
+                            placeholder="Model seç" />
+                          <InlineEkle label="model" onEkle={modelEkle} />
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            {form.model.trim()
+                              ? 'Elle seçildi — ürün adındaki sözlük eşleşmesini ezer.'
+                              : cozulenModel
+                                ? <>Boş: sözlükten <b>{cozulenModel}</b> çözülüyor.</>
+                                : 'Boş bırakılırsa ürün adı markanın sözlüğünde aranır.'}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-[11px] text-gray-500 mt-2">Model sözlüğü marka başınadır — önce marka seçin.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Tedarikçi */}

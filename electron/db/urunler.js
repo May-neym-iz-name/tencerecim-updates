@@ -26,29 +26,57 @@ function magazaBarkoduUret(cekirdek) {
   return govde + ean13KontrolHanesi(govde)
 }
 
-// Marka-bazlı otomatik stok kodu: TNC.<MARKA_KISA>.<00001> şablonu.
-// Markanın mevcut ürünlerindeki TNC.X.N kodlarından şablonu öğrenir (en yüksek
-// numara + 1). Marka için henüz hiç TNC kodu yoksa null döner → ilk kodu kullanıcı
-// bir kez elle girer (örn. TNC.SFL.00001), sonrakiler otomatik türetilir.
-// En yüksek numaralı TEK satırı SQL'de bulur — eskiden markanın TÜM ürünleri JS'e çekilip
-// regex ile taranıyordu (Lava'da 3925, Rollers'ta 751 satır, her ürün eklemede).
-// rtrim(sku,'0123456789') sondaki rakamları soyar → 'TNC.LAV.' ; replace ile sayı kısmı kalır.
-// (SQLite'ın instr() fonksiyonu 3 argüman almadığı için bu yol kullanıldı.)
-// Doğrulama: 13 markanın 13'ünde de eski JS mantığıyla birebir aynı kodu üretiyor.
+// Marka-bazlı otomatik stok kodu: TNC.<MARKA_KISALTMA>.<00001> şablonu.
+//
+// v1.2.219'da KAYNAK DEĞİŞTİ: kısaltma artık markanın ürünlerinden ÖĞRENİLMİYOR,
+// markalar.sku_kisaltma alanından okunuyor. Eski yol markanın mevcut TNC kodlarına
+// bakıyordu, bu yüzden HİÇ ÜRÜNÜ OLMAYAN yeni markada null dönüyor ve kullanıcı ilk
+// kodu elle yazmak zorunda kalıyordu. Artık marka eklenirken kısaltma zorunlu alan
+// (markalar:olustur), böylece ilk üründen itibaren kod otomatik üretilir.
+//
+// MÜKERRERLİK — iddia ve dayanağı ayrı ayrı:
+//   * Tekilliği fiilen sağlayan şey "en büyük + 1" aritmetiği ile urunler.sku /
+//     setler.sku UNIQUE kısıtıdır. Kısaltma markalar arası TEKİL olduğundan
+//     (markalar.js: kisaltmaDogrula) iki marka aynı numara dizisini paylaşamaz.
+//   * SKU havuzu urunler + setler ORTAK'tır (setler.js: bir ürüne ait TNC.* kodu sete
+//     verilemez) → max iki tablodan birlikte alınır. Tarama aktif/pasif AYIRMAZ: pasif
+//     bir üründe duran kod da UNIQUE yüzünden yeniden kullanılamaz.
+//   * Aşağıdaki "boşta mı" döngüsü SAVUNMA DERİNLİĞİDİR, kanıt değil. Ölçüldü
+//     (16.09.2026): mevcut 6717 TNC kodunun tamamı TNC.XXX.NNNNN biçiminde ve
+//     max+1 hiçbirinde çakışmıyor; döngü bugünkü veride hiç tetiklenmiyor. Kod
+//     biçimi ileride bozulursa sessiz UNIQUE çökmesi yerine bir sonraki boş kodu verir.
+//
+// GLOB ile YALNIZ saf sayısal kuyruklu kodlar sayılır: rakam-dışı karakter taşıyan bir
+// kod (elle giriş / içe aktarım) hem max'ı hem hane genişliğini yanıltırdı.
 function sonrakiStokKodu(db, marka_id) {
   if (!marka_id) return null
+  const marka = db.prepare('SELECT sku_kisaltma FROM markalar WHERE id = ?').get(marka_id)
+  const kisaltma = String(marka?.sku_kisaltma || '').trim().toUpperCase()
+  if (!kisaltma) return null           // kısaltmasız marka → çağıran elle SKU ister
+  const onek = `TNC.${kisaltma}.`
+
+  // Havuzdaki en yüksek numara (urunler + setler birlikte).
   const satir = db.prepare(`
-    SELECT sku, CAST(replace(sku, rtrim(sku, '0123456789'), '') AS INTEGER) AS num
-    FROM urunler
-    WHERE marka_id = ? AND sku LIKE 'TNC.%'
-    ORDER BY num DESC
-    LIMIT 1
-  `).get(marka_id)
-  if (!satir) return null
-  const m = /^TNC\.([A-Za-z0-9ÇĞİÖŞÜçğıöşü]+)\.(\d+)$/.exec(String(satir.sku).trim())
-  if (!m) return null
-  const hane = Math.max(m[2].length, 5)
-  return `TNC.${m[1]}.${String(satir.num + 1).padStart(hane, '0')}`
+    SELECT MAX(num) AS enYuksek, MAX(hane) AS enGenis FROM (
+      SELECT CAST(substr(sku, ?) AS INTEGER) AS num, length(substr(sku, ?)) AS hane
+        FROM urunler WHERE sku GLOB ? AND substr(sku, ?) NOT GLOB '*[^0-9]*'
+      UNION ALL
+      SELECT CAST(substr(sku, ?) AS INTEGER), length(substr(sku, ?))
+        FROM setler WHERE sku GLOB ? AND substr(sku, ?) NOT GLOB '*[^0-9]*'
+    )
+  `).get(onek.length + 1, onek.length + 1, onek + '[0-9]*', onek.length + 1,
+         onek.length + 1, onek.length + 1, onek + '[0-9]*', onek.length + 1)
+
+  const hane = Math.max(satir?.enGenis || 0, 5)
+  const kullanilmis = db.prepare(
+    'SELECT 1 FROM urunler WHERE sku = ? UNION ALL SELECT 1 FROM setler WHERE sku = ?')
+
+  // Çakışma olursa ilerle. Üst sınır yalnız sonsuz döngüye karşı emniyet supabı.
+  for (let n = (satir?.enYuksek || 0) + 1; n < (satir?.enYuksek || 0) + 10000; n++) {
+    const aday = onek + String(n).padStart(hane, '0')
+    if (!kullanilmis.get(aday, aday)) return aday
+  }
+  return null
 }
 
 const URUN_SELECT = `
@@ -236,7 +264,7 @@ module.exports = {
 
   'urunler:olustur': (veri, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
-    let { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani } = veri
+    let { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani, model } = veri
     // SKU boş bırakıldıysa marka şablonundan otomatik türet (TNC.XXX.00001+).
     if ((!sku || !String(sku).trim()) && marka_id) {
       sku = sonrakiStokKodu(db, marka_id)
@@ -258,25 +286,25 @@ module.exports = {
       }
       db.prepare(`
         UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
-        aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?, aktif=1, guncelleme_tarihi=datetime('now','localtime')
+        aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?, model=?, aktif=1, guncelleme_tarihi=datetime('now','localtime')
         WHERE id=?
       `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null,
-         aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20, cakisan.id)
+         aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20, model || null, cakisan.id)
       stokSatirlariOlustur(db, cakisan.id)
       return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(cakisan.id)
     }
 
     const r = db.prepare(`
-      INSERT INTO urunler (ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null, aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20)
+      INSERT INTO urunler (ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani, model)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null, aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20, model || null)
     stokSatirlariOlustur(db, r.lastInsertRowid)
     return db.prepare(`${URUN_SELECT} WHERE u.id = ?`).get(r.lastInsertRowid)
   },
 
   'urunler:guncelle': ({ id, ...veri }, db = getDb()) => {
     yetkiKontrol('urun_duzenle')
-    const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani, web_link } = veri
+    const { ad, barkod, sku, marka_id, kategori_id, tedarikci_id, aciklama, alis_fiyati, satis_fiyati, kdv_orani, web_link, model } = veri
     // Satış fiyatı değişiyorsa ayrıca fiyat_degistir yetkisi gerekir.
     const mevcut = db.prepare('SELECT satis_fiyati, alis_fiyati FROM urunler WHERE id = ?').get(id)
     if (mevcut && Number(mevcut.satis_fiyati) !== Number(satis_fiyati)) {
@@ -295,14 +323,18 @@ module.exports = {
       // mevcut link KORUNUR. '' = kullanıcı kutuyu boşalttı → silinir. Bu ayrım olmadan
       // ikas'tan toplu çekilen linkler her ürün düzenlemesinde sessizce kaybolurdu.
       const linkYaz = web_link !== undefined
+      // model AYNI kurala tabi (v1.2.219): undefined = alanı hiç göndermeyen çağrı
+      // (toplu içe aktarma, eski arayüz) → elle girilmiş model KORUNUR. '' = kullanıcı
+      // kutuyu boşalttı → silinir ve model yeniden sözlükten çözümlenir.
+      const modelYaz = model !== undefined
       db.prepare(`
         UPDATE urunler SET ad=?, barkod=?, sku=?, marka_id=?, kategori_id=?, tedarikci_id=?,
-        aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?${linkYaz ? ', web_link=?' : ''},
+        aciklama=?, alis_fiyati=?, satis_fiyati=?, kdv_orani=?${linkYaz ? ', web_link=?' : ''}${modelYaz ? ', model=?' : ''},
         guncelleme_tarihi=datetime('now','localtime')
         WHERE id=?
       `).run(ad, barkod||null, sku||null, marka_id||null, kategori_id||null, tedarikci_id||null,
          aciklama||null, alis_fiyati||0, satis_fiyati, kdv_orani||20,
-         ...(linkYaz ? [web_link || null] : []), id)
+         ...(linkYaz ? [web_link || null] : []), ...(modelYaz ? [model || null] : []), id)
     } catch (e) {
       if (String(e.message).includes('UNIQUE') && e.message.includes('barkod')) throw new Error('Bu barkod başka bir üründe kullanılıyor')
       if (String(e.message).includes('UNIQUE') && e.message.includes('sku')) throw new Error('Bu SKU başka bir üründe kullanılıyor')
@@ -339,6 +371,7 @@ module.exports = {
   _barkodListe: barkodListe,
   _modelleriCozumle: modelleriCozumle,
   _URUN_SELECT: URUN_SELECT,
+  _sonrakiStokKodu: sonrakiStokKodu,
   _barkodEkle: barkodEkle,
   _barkodSil: barkodSil,
 
