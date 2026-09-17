@@ -125,21 +125,28 @@ Yeni bir kapsam-aşırı bağ eklersen bu tabloya yaz.
 
 ### Üç kalıcı tuzak
 
-1. 🔴 **Yeniden indeksleme, o projeyi AÇIK BAŞKA BİR CLAUDE OTURUMU varsa ÇÖKER.**
-   (Ölçüldü 14.09; eski not bunu "CLI kullanma" diye yanlış teşhis etmişti — kabahat
-   CLI'de değil.) MCP sunucusu dokunduğu her proje veritabanını **açık tutar**.
-   Aynı anda 9 oturum varken `tencerecim-uygulama.db` dosyası silinemedi bile
-   ("Device or resource busy") ve her `index_repository` çağrısı
-   "Indexing worker crashed on a file" verdi. Aynı yol + aynı kip, **temiz proje
-   adıyla üç kez üst üste sorunsuz** kuruldu — yani dosyayla ilgisi yok, **kilitle**.
+1. 🔴🔴 **"Indexing worker crashed on a file" = YANLIŞ PARAMETRE ADI.** (Ölçüldü 17.09.)
+   Mesaj yalan söylüyor; suçlu dosya yoktur. `index_repository` şunları ister:
 
-   Teşhis:
-   ```powershell
-   Get-CimInstance Win32_Process -Filter "Name='codebase-memory-mcp.exe'" |
-     Select ProcessId, ParentProcessId, CreationDate
-   ```
-   Her satırın canlı bir `claude` ebeveyni vardır. **Çare: yeniden indekslemeden
-   önce diğer Claude oturumlarını kapat.** Sadece bu oturum açık olmalı.
+   | Yanlış (çöker) | Doğru |
+   |---|---|
+   | `path` | **`repo_path`** |
+   | `project_name` | **`name`** |
+
+   `name` verilmezse proje yol türevli çirkin ada yazılır
+   (`C-Users-Burak-Desktop-tencerecim-mac49faza-programc4b1`) ve asıl kapsam bayat
+   kalır — sessiz ikizleşme. **Her çağrıda `repo_path` + `name` ver.**
+
+   Kanıt: worker günlükleri (`~/.cache/codebase-memory-mcp/logs/.worker-<pid>.log`)
+   **0 bayt** — worker dosya işlemeye başlamadan ölüyor. `CBM_INDEX_SUPERVISOR=0` ile
+   süreç-içi koşturunca gerçek hata çıkıyor: `repo_path is required`. Gerçek hatayı
+   görmen gerekirse bu yolu kullan, supervisor hatayı yutuyor.
+
+   ❌ **"Başka Claude oturumu açıksa çöker" kuralı ÇÜRÜDÜ.** Süreç sayısı belirleyici
+   değil, iki yönden ölçüldü: 15.09'da **10 MCP süreci açıkken 6/6 başarılı**;
+   17.09'da 9 süreç sonlandırılıp **tek süreç kalınca yine çöktü** — çöküşü bitiren
+   şey `repo_path`'e geçmek oldu. Bu hatada oturum kapatma, süreç öldürme veya suçlu
+   dosya arama **boşa iştir** — önce argüman adlarına bak.
 
 2. **`auto_watch` bu klasörde hiç çalışmaz.** Sunucu Türkçe karakterli yolu
    çözemiyor (`index_status` → `root_exists:false`, `is_git:false` — oysa klasör ve
