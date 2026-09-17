@@ -71,25 +71,45 @@ dönüşüm takibi, feed, politika — hepsi orada. Ezberden konuşma, benchmark
 
 ## Kod indeksi (codebase-memory) — her oturumda
 
-Bu klasör **tek proje olarak indekslenemez**: indeksleyici `.gitignore`'a uyar ve
-`.gitignore` ticari veriyi (public repo) dışarıda tutmak zorunda. Hangi kipte olursa olsun
-`URUN-ESLESTIRME`, `REKLAM-KAMPANYALARI`, `FATURALAR`, `_lava-calisma` ana projeye
-**giremez**. Bu yüzden 5 kapsam:
+Bu klasör **tek proje olarak indekslenemez**. İki ayrı sebep var, ikisi de
+ölçüldü (14.09):
+
+1. **Ticari veri ayrılmalı.** `URUN-ESLESTIRME`, `REKLAM-KAMPANYALARI`, `FATURALAR`,
+   `_lava-calisma` ana grafiğe **giremez** (repo public).
+2. **`full` kipi ~9,9k düğümde çöküyor.** `docs/` tek başına 5.638 düğüm, kod tek
+   başına 4.243 düğüm; ikisi de ayrı ayrı geçiyor, **birlikte worker ölüyor**.
+   `docs/` zaten kod grafiğine kenar katmıyor (5.638 düğüm / 5.644 kenar = sadece
+   içerme kenarları), o yüzden ayrı kapsam kayıp değil.
+
+Bu yüzden **6 kapsam**:
 
 | Proje adı | Yol | Kip | Ne var |
 |---|---|---|---|
-| `tencerecim-uygulama` | `.` | **full** | electron/, src/, frontend/src, **docs/**, **scripts/**, cloudflare/, supabase/ |
-| `tencerecim-urun-eslestirme` | `URUN-ESLESTIRME` | moderate | SKU/barkod/fiyat yazma + YouTube otomasyonu (54 betik) |
-| `tencerecim-reklam` | `REKLAM-KAMPANYALARI` | moderate | Meta `k1..k26` + google-pmax (26) |
-| `tencerecim-faturalar` | `FATURALAR` | moderate | pazaryeri ürün→fatura, Asaflar, alış XML (20) |
-| `tencerecim-lava` | `_lava-calisma` | moderate | Lava Trendy ürün girişi (18) |
+| `tencerecim-uygulama` | `.` | **full** | electron/, src/, frontend/src, **scripts/**, cloudflare/, supabase/ — 4.243 düğüm / 11.204 kenar |
+| `tencerecim-dokuman` | `docs` | **full** | 1.049 belge dosyası — 5.638 düğüm |
+| `tencerecim-urun-eslestirme` | `URUN-ESLESTIRME` | moderate | SKU/barkod/fiyat yazma + YouTube otomasyonu |
+| `tencerecim-reklam` | `REKLAM-KAMPANYALARI` | moderate | Meta `k1..k26` + google-pmax |
+| `tencerecim-faturalar` | `FATURALAR` | moderate | pazaryeri ürün→fatura, Asaflar, alış XML |
+| `tencerecim-lava` | `_lava-calisma` | moderate | Lava Trendy ürün girişi |
 
-**Ana proje `full` kipiyle indekslenir** — `moderate`/`fast` filtresi `docs/` ve `scripts/`
-klasörlerini de atıyor (1.033 dosya kaybı). `full` kipi bir zamanlar çöküyordu; sebebi
-aşağıdaki 1. tuzaktı, kipin kendisi değil.
+### `.cbmignore` — kapsamın tek kaynağı
+Kökteki **`.cbmignore`** dosyası indeksleyicinin kendi yoksayma kanalıdır ve
+`full` kipinde de uygulanır (ölçüldü: bir klasör eklenince düğüm 329 → 101).
+Kapsamı değiştirmek istiyorsan **kipi değil bu dosyayı** düzenle.
 
-**Kural:** oturumda ilk grafik sorgusundan önce bu 5 kapsamı `index_repository` ile tazele.
-`SessionStart` hook'u hatırlatır.
+🔴 **`full` kipi `.gitignore`'a UYMAZ.** (CLAUDE.md eskiden tersini yazıyordu.)
+Kanıt: gitignore'lu `cloudflare/arama-worker/veri/` `full` kipinde indeksleniyordu.
+`full`'ün tek dışladığı şey sabit kodlu isimlerdir (`node_modules`, `.git`,
+`.claude`, `.wrangler`, `dist`, `build`…). Bu yüzden `dist-electron/` (**30 GB**)
+taramaya giriyordu — kökte `full` = 32 GB. Ticari klasörleri `full` kipinde
+dışarıda tutan tek şey `.cbmignore`'dur.
+
+🔴 **Kök kalıplarını `/` ile SABİTLE.** Anchor'sız `TRENDYOL/` kalıbı
+`electron/trendyol/` kaynak klasörünü de yakalayabilir — aynı tuzak `.gitignore`'da
+yaşandı, oradaki uyarıya bak.
+
+**Kural:** oturumda ilk grafik sorgusundan önce bu 6 kapsamı `index_repository` ile
+tazele. `SessionStart` hook'u hatırlatır.
 
 ### 🔴 Kapsam sınırını geçen bağlar — grafik BUNLARI GÖREMEZ
 Ayrı projeler ayrı grafiklerdir; aralarında kenar oluşmaz. Ölçüldü (11.09), tüm kod
@@ -103,14 +123,33 @@ tabanında sınırı geçen **2 bağ** var:
 `_gorsel-guvence` veya `web-link` üzerinde çalışırken **grafiğe güvenme, grep yap**.
 Yeni bir kapsam-aşırı bağ eklersen bu tabloya yaz.
 
-### İki kalıcı tuzak (ölçüldü 11.09)
-1. **Harici CLI ile indeksleme ÇÖKER.** `codebase-memory-mcp cli index_repository`, proje
-   veritabanı başka bir Claude oturumunun MCP sunucusu tarafından açık tutulduğunda
-   "Indexing worker crashed on a file" verir. Dosyayla ilgisi yok — aynı klasör, MCP
-   aracıyla sorunsuz indeksleniyor. **Her zaman MCP aracını kullan, CLI'yi değil.**
-2. **`auto_watch` bu klasörde hiç çalışmaz.** Sunucu Türkçe karakterli yolu çözemiyor
-   (`index_status` → `root_exists:false`, `is_git:false`). Aynı nedenle `file_hashes`
-   boş kalır → `detect_changes` her dosyayı "değişmiş" sayar (1265), **kullanma**.
+### Üç kalıcı tuzak
+
+1. 🔴 **Yeniden indeksleme, o projeyi AÇIK BAŞKA BİR CLAUDE OTURUMU varsa ÇÖKER.**
+   (Ölçüldü 14.09; eski not bunu "CLI kullanma" diye yanlış teşhis etmişti — kabahat
+   CLI'de değil.) MCP sunucusu dokunduğu her proje veritabanını **açık tutar**.
+   Aynı anda 9 oturum varken `tencerecim-uygulama.db` dosyası silinemedi bile
+   ("Device or resource busy") ve her `index_repository` çağrısı
+   "Indexing worker crashed on a file" verdi. Aynı yol + aynı kip, **temiz proje
+   adıyla üç kez üst üste sorunsuz** kuruldu — yani dosyayla ilgisi yok, **kilitle**.
+
+   Teşhis:
+   ```powershell
+   Get-CimInstance Win32_Process -Filter "Name='codebase-memory-mcp.exe'" |
+     Select ProcessId, ParentProcessId, CreationDate
+   ```
+   Her satırın canlı bir `claude` ebeveyni vardır. **Çare: yeniden indekslemeden
+   önce diğer Claude oturumlarını kapat.** Sadece bu oturum açık olmalı.
+
+2. **`auto_watch` bu klasörde hiç çalışmaz.** Sunucu Türkçe karakterli yolu
+   çözemiyor (`index_status` → `root_exists:false`, `is_git:false` — oysa klasör ve
+   `.git` yerinde, 14.09 doğrulandı). Aynı nedenle `file_hashes` boş kalır →
+   `detect_changes` her dosyayı "değişmiş" sayar, **kullanma**.
+
+3. **`query_graph` bazı Cypher biçimlerinde sessizce yanlış sonuç veriyor.**
+   Ölçüldü 14.09: `MATCH ()-[r]->() RETURN type(r), count(*)` tek satır döndü ve
+   `type(r)` sütununa kenar SAYISINI yazdı. `toLower()` ise ayrıştırıcı hatası
+   verdi. Toplulaştırmalı sorgunun çıktısını **başka bir yolla doğrula**.
 
 ## Kural önceliği
 

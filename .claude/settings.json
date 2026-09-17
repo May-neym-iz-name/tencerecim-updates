@@ -32,5 +32,8 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "ikas-code-components@ikas-cc-skills": true
   }
 }

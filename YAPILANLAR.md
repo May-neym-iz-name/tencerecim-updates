@@ -1,5 +1,9 @@
 # Tencerecim Mağaza Programı — Yapılanlar / Geliştirme Notları
 
+> **ARŞİV: Bu günlük yalnızca ~v1.2.35'e (23.06.2026) kadarki dönemi kapsar ve artık güncellenmiyor.**
+> Sonrası için tek kaynak: `git log` (sürüm commit'leri) + oturum hafızası.
+> Buradaki bir konu güncel sanılmamalı; uygulama v1.2.193'te.
+>
 > Son güncelleme: 2026-06-23
 
 ---

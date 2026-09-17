@@ -1,0 +1,59 @@
+# codebase-memory indeksleyici kapsam sınırı
+#
+# NEDEN: `full` kipi kökte 32 GB tarıyor ve worker çöküyor (dist-electron tek
+# başına 30 GB). `moderate` kipi ise docs/ ve scripts/ klasörlerini atıyor.
+# Bu dosya ikisinin arasını açar: full kipi çalışır ama sadece kaynak + docs.
+#
+# Ayrı kapsam olarak indekslenen ticari klasörler buraya girer — ana grafiğe
+# ASLA karışmamalılar (bkz. CLAUDE.md "Kod indeksi" bölümü).
+
+# NOT: Kök klasör kalıpları '/' ile SABİTLENDİ. Anchor'sız "TRENDYOL/"
+# kalıbı electron/trendyol/ kaynak klasörünü de yakalayabilir — aynı tuzak
+# .gitignore'da yaşandı, oradaki uyarıya bak.
+
+# --- Paketleme / derleme çıktısı (asıl çökme sebebi) ---
+/dist-electron/
+/dist/
+/build/
+
+# --- Bağımlılıklar ---
+node_modules/
+frontend/node_modules/
+.wrangler/
+
+# --- Ayrı kapsamı olan ticari veri klasörleri ---
+/FATURALAR/
+/REKLAM-KAMPANYALARI/
+/URUN-ESLESTIRME/
+/_lava-calisma/
+
+# --- Ticari veri / çalışma dosyaları (kaynak kod değil) ---
+/HEPSIBURADA/
+/TRENDYOL/
+/MAL KABUL/
+/ÜRÜN GİRİŞİ/
+/TEDARIKCIDEN LISTELER/
+/UPS GÖNDERİ HESAPLAMA/
+/UPS KARGO ENTEGRASYONU/
+/bizimhesap-ugyulama-ikas-ürünler/
+/Dara/
+/video edit/
+/_bh-mutabakat/
+/_tmp_gonderi_gorsel/
+/_urun-aciklama-onizleme/
+
+# --- Bu projeye ait olmayan kopya (CLAUDE.md klasör uyarısı) ---
+/ecc-kaynak/
+
+# --- Üretilmiş veri / ikili ---
+cloudflare/arama-worker/veri/
+electron/ups/sehir-ilce.json
+
+# --- docs/ : AYRI KAPSAM (tencerecim-dokuman) ---
+# ÖLÇÜLDÜ 14.09: docs/ tek başına 5.638 düğüm, kod tek başına 4.243 düğüm;
+# ikisi de ayrı ayrı `full` kipinde geçiyor, BİRLİKTE (~9.9k düğüm) worker
+# çöküyor — full kipinin benzerlik/anlamsal kenar aşaması bellek tavanına
+# çarpıyor. docs/ zaten kod grafiğine kenar katmıyor (5.638 düğüm / 5.644
+# kenar = sadece içerme kenarları), o yüzden ayrı kapsam kayıp değil.
+# docs/ ayrıca `tencerecim-dokuman` projesi olarak indekslenir.
+/docs/

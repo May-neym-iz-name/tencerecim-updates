@@ -7,8 +7,8 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "build": "vite build && electron-builder",
-    "build:win": "vite build && electron-builder --win",
+    "build": "vite build && electron-builder && node scripts/dist-buda.js",
+    "build:win": "vite build && electron-builder --win && node scripts/dist-buda.js",
     "electron": "electron .",
     "vite": "vite",
     "test": "vitest run",
@@ -16,7 +16,8 @@
     "guvenlik:kur": "node scripts/guvenlik-kur.js",
     "guvenlik:tara": "node scripts/sizinti-tara.js --tumu",
     "guvenlik:denetle": "node scripts/sizinti-tara.js --tumu && npm audit --omit=dev --audit-level=high",
-    "postinstall": "node scripts/guvenlik-kur.js"
+    "postinstall": "node scripts/guvenlik-kur.js",
+    "dist:buda": "node scripts/dist-buda.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.108.2",

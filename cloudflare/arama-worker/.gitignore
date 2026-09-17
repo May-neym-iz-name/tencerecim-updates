@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.dry/
+.dev.vars
+# Urun adi/fiyati TICARI VERIDIR - repoya girmez, yayindan once uretilir.
+veri/

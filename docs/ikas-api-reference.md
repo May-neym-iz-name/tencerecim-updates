@@ -13,6 +13,16 @@ Curated reference for the Tencerecim desktop app's ikas integration (private app
 - Source: https://ikas.dev/docs/intro and the pages cited per section below.
 - **Note:** ikas now markets a v2 ("builders") API at https://builders.ikas.com/docs/app-development for new builds. This doc targets the **v1 Admin API** that the app currently uses.
 
+> 🔴 **v1 vs v2 — ÖLÇÜLDÜ 14.09.2026.** v2 bir üst sürüm **değil**, ayrı ve daha dar
+> bir API'dir (v1: 132 operasyon / v2: 124). v1 sessizce v2'ye düşürülmüyor; kendi
+> şemasını sunuyor. **Karar: v2'ye geçilmeyecek.** Gerekçe, tam fark listesi ve
+> yeniden ölçüm yöntemi: **`docs/ikas-builders/40-v1-v2-api-surumleri.md`**
+>
+> 🔴🔴 **MCP TUZAĞI:** ikas MCP sunucusu **v2** üzerinde çalışır. MCP'de gördüğünüz
+> `createProduct`/`updateProduct`/`updateVariantPrices` **v1'de YOKTUR** — buradaki
+> karşılıkları `saveProduct` / `saveVariantPrices`'tir. MCP'den gelen her operasyon
+> adını uygulamaya yazmadan önce v1'de var mı diye kontrol edin.
+
 ---
 
 ## 1. Getting Started / App Types
@@ -401,7 +411,9 @@ hsCode: String
   `VariantPriceInput { productId! variantId! price: ProductPriceInput! deleted }`
   `ProductPriceInput { sellPrice! buyPrice discountPrice currency priceListId }`
   `sellPrice` ZORUNLU: yalniz alis fiyatini guncellerken bile ikas'taki mevcut satis fiyati okunup geri yazilmalidir,
-  yoksa istek reddedilir. `discountPrice`/`currency` gonderilmezse SILINIR.
+  yoksa istek reddedilir.
+  **BU BIR FIYAT DEGISIKLIGI DEGILDIR** — okunan `sellPrice` aynen geri yazilir. ikas'a farkli bir
+  satis fiyati yazmak YASAK (satis fiyatinin tek kaynagi faturalardir; bkz. CLAUDE.md > Kural onceligi). `discountPrice`/`currency` gonderilmezse SILINIR.
 - `updateProductSalesChannelStatus` — channel visibility.
 - Categories: `saveCategory` / `productCategory` (with their own `metaData` SEO).
 - **Image upload is REST, not GraphQL:** `POST /api/v1/admin/product/upload/image` with `productImage { variantIds(required), order, isMain, url|base64 }` (also `categoryImage`, `brandImage`).

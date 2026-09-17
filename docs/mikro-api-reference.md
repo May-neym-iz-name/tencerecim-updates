@@ -1,5 +1,14 @@
 # Mikro API — Tam Referans
 
+> ## ⛔ BU DOSYA e-FATURA KESME ICIN DEGIL
+> Mikro'nun **UC ayri API'si** var. Bu dosya bunlardan yalnizca birini (yerel ERP
+> REST API'si, sunucu `https://localhost:8094`) anlatir. **e-Fatura/e-Arsiv
+> entegrasyonu bu API'de YOKTUR.**
+>
+> - e-Fatura icin dogru katman: **entegrator katmani — Firmbox SOAP + UBL-TR XML**
+>   (bu belgede anlatilmiyor; UBL-TR XML'i biz uretiriz).
+> - Bu dosyayi yalniz yerel ERP okuma/yazma isleri icin referans al.
+>
 > Kaynak: https://apidocs.mikro.com.tr — indirilme tarihi: 2026-08-31
 > Bu dosya otomatik indirildi. Guncellemek icin: scripts/mikro-doc-indir.sh
 

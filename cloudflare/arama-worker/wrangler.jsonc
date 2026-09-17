@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tencerecim-arama",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-20",
+  // Hesap AÇIKÇA yazılır: wrangler birden çok hesaba erişimi olan bir oturumda
+  // sessizce yanlış hesaba yükleyebilir. Kargo worker'ı da bu hesapta.
+  "account_id": "9c347c235d3503fc66bfb2666ff5be33",
+
+  // İndeks verisi STATİK VARLIK olarak taşınır. İki sebep:
+  //  1) Varlıklar Worker'ın 3 MB'lık kod sınırına DAHİL DEĞİL.
+  //  2) Ürün adı/fiyatı ticari veridir → repoya girmez (.gitignore).
+  //     Yayına almadan önce prototipteki 9-worker-veri.mjs ile üretilir.
+  "assets": { "directory": "./veri", "binding": "VERI" },
+
+  // Sorgu gömme modeli. İNDEKSLE AYNI OLMAK ZORUNDA — farklı model, vektörleri
+  // farklı uzaya koyar ve sonuçlar sessizce anlamsızlaşır.
+  "ai": { "binding": "AI" },
+
+  "vars": {
+    // Arama yapabilecek kökenler (virgülle). www'lu VE www'suz hal ŞART:
+    // mağaza www'suz adreste çalışıyor, tarayıcı ikisini farklı köken sayar.
+    "IZINLI_KOKEN": "https://tencerecim.store,https://www.tencerecim.store",
+    // Popülerliğin sıra değiştirme gücü ve alaka eşiği — test sayfasındaki
+    // kaydırıcılarla aynı anlam.
+    "POP_KUVVET": "0.5",
+    "POP_BANT": "0.5",
+    // ALAKA KAPISI eşikleri. Biri yeterli: ya sorgu kelimeleri katalogda geçsin,
+    // ya anlamsal benzerlik yüksek olsun. Ölçümle seçildi (18/18 doğru ayrım).
+    "ESIK_KAPSAMA": "0.5",
+    "ESIK_BENZERLIK": "0.55"
+  },
+
+  "observability": { "enabled": true }
+}

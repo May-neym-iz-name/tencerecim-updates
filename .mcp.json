@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ikas": {
+      "type": "http",
+      "url": "https://api.myikas.com/api/v2/admin/mcp",
+      "headers": {
+        "Authorization": "${IKAS_MCP_TOKEN}"
+      }
+    }
+  }
+}

@@ -1,4 +1,11 @@
-# Kod İncelemesi — 2026-07-18
+# Kod İncelemesi — 2026-07-18 (ARŞİV — ANLIK GÖRÜNTÜ)
+
+> **DİKKAT: Bu belge 18.07.2026 tarihli bir fotoğraftır, güncel açık listesi DEĞİLDİR.**
+> Buradaki "🔴 KRİTİK" başlıkları o günün durumunu gösterir; büyük kısmı sonradan kapatıldı
+> (örn. **G-1 kapalı** → `electron/db/ayar-senk.js` artık `yetkiKontrol('ayarlar_duzenle')` çağırıyor;
+> güvenlik Faz B/C/D **TAMAMLANDI**).
+>
+> **Güncel güvenlik durumu için tek kaynak: `docs/GUVENLIK.md`.**
 
 Kapsam: 110 dosya / 17.069 satır (`electron/` 7.665 + `src/` 9.404)
 Yöntem: 4 paralel uzman incelemesi (mantık, React, güvenlik, performans). Her bulgu kod okunarak doğrulandı; doğrulanamayan iddialar rapordan çıkarıldı.

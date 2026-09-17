@@ -1,6 +1,10 @@
 # Cloudflare Planı — Tencerecim Mağaza Programı
 
-Hazırlanma: 2026-07-29 · Uygulama sürümü: v1.2.144 · Durum: **araştırma / karar bekliyor** (hiçbir şey uygulanmadı)
+Hazırlanma: 2026-07-29 · Uygulama sürümü: v1.2.144
+
+> **DURUM (03.09.2026): UYGULANDI — kargo worker v1.2.145'ten beri CANLI** (`cloudflare/kargo-worker/`).
+> Aşağıdaki "karar bekliyor / uygulanmadı" ifadeleri **planlama anına** aittir, bugüne değil.
+> Kalan işler: UPS şifre rotasyonu + 2. PC güncellemesi.
 
 Bu belge, mevcut kod tabanı incelenerek "hangi işlevler Cloudflare'e taşınırsa ne kazanırız"
 sorusuna cevap verir. Tavsiyeler önceliklendirilmiştir; **taşınmaması gerekenler** bölümü de
